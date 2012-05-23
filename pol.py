@@ -1,0 +1,1081 @@
+# ---------------------------------------------------------------------------------------------------------- #
+# pol.py
+
+#from Numeric import *
+from numpy import *
+import math
+import cmath
+import random
+import matplotlib.pyplot as py
+
+# ---------------------------------------------------------------------------------------------------------- #
+# define basis vectors in reference coordinate system (aligned with OMT axes)
+# each vector consists of 2 complex numbers [ (Re_x,Im_x), (Re_y,Im_y) ]
+# R and L propagate in +Z direction according to right hand rule
+# note: x.conjugate() gives complex conjugate of a number
+# ---------------------------------------------------------------------------------------------------------- #
+X = array( [1,0] )
+Y = array( [0,1] )
+R = array( [1./sqrt(2.), -1j*(1./sqrt(2.))] ) 
+L = array( [1./sqrt(2.), +1j*(1./sqrt(2.))] ) 
+clight = 29.9792458	# speed of light, cm/nanosec
+
+# ---------------------------------------------------------------------------------------------------------- #
+# returns new basis vector in a coordinate system rotated by thetaDegrees
+# ---------------------------------------------------------------------------------------------------------- #
+def Jrot ( vec, thetaDegrees ) :
+  rad = math.pi * thetaDegrees/180.
+  rotmat = array( [[cos(rad),sin(rad)],[-sin(rad),cos(rad)]] )
+  return dot(rotmat,vec)
+
+# ---------------------------------------------------------------------------------------------------------- #
+# returns basis vector after passing through polarizer section
+# component 2 (Y-axis) is advanced by delayDegrees relative to component 1 (X-axis)
+# ---------------------------------------------------------------------------------------------------------- #
+def Jdelay ( vec, delayDegrees ) :
+  rad = math.pi * delayDegrees/180.
+  rotmat = array( [ [1, 0], [0, cmath.exp(-1.j * rad)] ] )
+  return dot( rotmat,vec )
+
+# ---------------------------------------------------------------------------------------------------------- #
+# returns basis vector after transmission through a beamsplitter
+# tpel is thickness in inches, angI is angle of incidence in degrees
+# X axis is assumed parallel to the plane of incidence; light polarized parallel to the plane of incidence
+#   is less strongly reflected; at Brewster's angle none will be reflected
+# Y axis is perp to plane of incidence; it is more strongly reflected
+# ---------------------------------------------------------------------------------------------------------- #
+def Jbsplit ( vec, tpel=.001, angI=45., fGHz=230. ) :
+   [tpar,tperp,Rpar,Rperp] = pellicle( tpel=tpel, angI=angI, fGHz=fGHz)
+   rotmat = array( [ [tpar, 0.], [0., tperp] ] )
+   return dot( rotmat,vec ) 
+
+# ---------------------------------------------------------------------------------------------------------- #
+# returns cutoff freqs [fcX, fcY], in GHz, for faceted circular waveguide that is squeezed along Y-direction
+# r is waveguide radius in inches, x is the normalized facet depth f/r
+# based on 5th order polynomial fit to analytic results from Appendix A, or HFSS simulations
+# use source='HFSS' for HFSS (default), source='Wang' for analytic fits
+# ---------------------------------------------------------------------------------------------------------- #
+def cutoff( r, x, source='HFSS' ) :
+  if ( source == 'Wang') :
+    kX = 1.841184 + 0.309847*x + 8.60483*pow(x,2.) - 29.3916*pow(x,3.) + 75.4104*pow(x,4.) - 67.4144*pow(x,5.)
+    kY = 1.841184 - 0.0900839*x - 3.30519*pow(x,2.) + 13.3106*pow(x,3.) - 26.8144*pow(x,4.) + 22.970*pow(x,5.)
+  else :
+    kX = 1.841184 + 0.301574*x + 8.9118*pow(x,2.) - 33.253*pow(x,3.) + 93.2359*pow(x,4.) - 94.615*pow(x,5.)
+    kY = 1.841184 - 0.0862305*x - 3.41638*pow(x,2.) + 14.65*pow(x,3.) - 32.7615*pow(x,4.) + 31.7498*pow(x,5.)
+  fcX = clight * kX / (2. * math.pi * r * 2.54)
+  fcY = clight * kY / (2. * math.pi * r * 2.54)
+  return [fcX, fcY]
+     
+# ---------------------------------------------------------------------------------------------------------- #
+# compute length in inches of faceted guide to achieve differential phase shift dphi0, in degrees 
+# r is waveguide radius in inches, f is facet depth in inches, fGHz is freq in GHz
+# fcX and fcY are override cutoff freqs in GHz; if either is zero, cutoff freqs will be taken from 
+#   subroutine cutoff, using 5th order polynomial fit to the HFSS-derived cutoffs
+# ---------------------------------------------------------------------------------------------------------- #
+def length( r=0.0235, f=0.006, dphi0=90., fGHz=230., fcX=0., fcY=0. ) :
+  if (f == 0.) : return 0.
+  if ( (fcX == 0.) or (fcY == 0.) ) :
+    [fcX,fcY] = cutoff( r, f/r, source='HFSS' )
+  length = clight * dphi0 / (2.54 * 360.* (sqrt(fGHz*fGHz-fcY*fcY) - sqrt(fGHz*fGHz-fcX*fcX)))
+  return length
+
+# --- L90 retarder lengths in table 1 are from the actual HFSS freqs, not the polynomial fit --- #
+def table1 () :
+  print "0.001 %8.4f" % length( r=0.0235, fcX=149.307, fcY=146.471, fGHz=230.)
+  print "0.002 %8.4f" % length( r=0.0235, fcX=153.119, fcY=145.203, fGHz=230.)
+  print "0.003 %8.4f" % length( r=0.0235, fcX=158.048, fcY=143.674, fGHz=230.)
+  print "0.004 %8.4f" % length( r=0.0235, fcX=163.985, fcY=142.030, fGHz=230.)
+  print "0.005 %8.4f" % length( r=0.0235, fcX=170.938, fcY=140.363, fGHz=230.)
+  print "0.006 %8.4f" % length( r=0.0235, fcX=178.985, fcY=138.732, fGHz=230.)
+  print "0.007 %8.4f" % length( r=0.0235, fcX=188.256, fcY=137.176, fGHz=230.)
+
+# --- generate smooth curves of cutoff freq for FIG 4 --- #
+def fig4() :
+  r = .0235
+  for f in arange( 0.000, 0.0072, 0.0002) :
+    [fcX,fcY] = cutoff( r, f/r )
+    print "%6.4f  %8.4f  %8.4f" % (f, fcX, fcY)
+   
+# ---------------------------------------------------------------------------------------------------------- #
+# compute phase delay in degrees of Y-pol vs X-pol signals traveling through length L; dimensions in inches
+# fcX and fcY are override cutoff freqs in GHz; if either is zero, use values from subroutine cutoff
+# ---------------------------------------------------------------------------------------------------------- #
+def dphi( r=0.0235, f=0.006, L=0.001, fGHz=230., fcX=0., fcY=0. ) :
+  if ( (fcX == 0.) or (fcY == 0.) ) :
+    [fcX,fcY] = cutoff( r, f/r, source='HFSS' )
+  dphi = 360. * L * 2.54 * (sqrt(fGHz*fGHz-fcY*fcY) - sqrt(fGHz*fGHz-fcX*fcX)) / clight
+  return dphi
+
+# ---------------------------------------------------------------------------------------------------------- #
+# compute [length, differential phase shift] through a radiused adapter from faceted circ to circ guide
+# Rc is the cutter radius in inches; axis of cutter is perpendicular to axis of waveguide
+# ---------------------------------------------------------------------------------------------------------- #
+def dphitaper2 ( r=0.0235, f=0.006, Rc=0.125, fGHz=230., nsteps=1000 ) :
+  df = f/nsteps                                                  # increment in facet depth
+  f1 = f                                                         # facet depth at start of segment
+  x1 = 0.                                                        # x-coordinate at start of segment
+  totphase = 0.
+  for n in range(nsteps) :
+    f2 = f1 - df                                                 # facet depth at end of segment
+    x2 = sqrt(Rc*Rc - pow((f - f2 - Rc), 2.))                    # x-coordinate at end of segment
+    dphase = dphi(r=r, f=(f1+f2)/2., L=(x2-x1), fGHz=fGHz )      # using avg facet depth
+    totphase = totphase + dphase
+    x1 = x2
+    f1 = f2
+  return [x2, totphase]           # return X length of transition in inches, and total diff phase through it
+
+# ---------------------------------------------------------------------------------------------------------- #
+# predictions for Kband scale models; gap = 0.382" for straight case 1, 0.338" for straight case 2
+# ---------------------------------------------------------------------------------------------------------- #
+def fig8ab () :
+  ofile = open("KbandStraight.dat","w")
+  for f in arange(19.,30.05,.05) :
+    ofile.write("%6.2f %8.4f %8.4f\n" % 
+     (f, dphi( r=0.2275, f=.0365, L=1.822, fGHz=f ), dphi( r=0.2275, f=.0585, L=1.822, fGHz=f )) )
+  ofile.close()
+
+def fig8c () :
+  ofile = open("KbandCurved.dat","w")
+  for f in arange(19.,30.05,.05) :
+    [x2, ph] = dphitaper2( r=0.2275, f=.05675, Rc=1.210, fGHz=f )    # min gap is 0.3415"
+    ofile.write("%6.2f %8.4f \n" % (f, 2.*ph))
+  ofile.close()
+  
+# ---------------------------------------------------------------------------------------------------------- #
+# reflection coefficient from circular guide of radius r1 (inches) to guide of radius r2 (inches)
+# ---------------------------------------------------------------------------------------------------------- #
+def reflect( fGHz, r1, r2 ) :
+  fc1 = clight/(3.4126 * r1 * 2.54)
+  fc2 = clight/(3.4126 * r2 * 2.54)
+  Z1 = fGHz * 377./sqrt(fGHz*fGHz - fc1*fc1)
+  Z2 = fGHz * 377./sqrt(fGHz*fGHz - fc2*fc2)
+  vR = (Z1 - Z2)/(Z1 + Z2)
+  print "voltage, power reflection coefficients: %.3e %.3e" % (vR, vR*vR)
+
+# ---------------------------------------------------------------------------------------------------------- #
+# check algebra of example at end of section 5
+# ---------------------------------------------------------------------------------------------------------- #
+def example() :
+  v1 = X
+  v2 = Jrot(v1, 45)
+  v3 = Jdelay(v2, 90)
+  v4 = Jrot(v3, -45)
+  print v4
+  rad = math.pi/4
+  print cmath.exp(+1.j * rad) * v4
+  print "D_L ", dot(v4,L), abs(dot(v4,L))	# note: R* = L
+  print "D_R ", dot(v4,R), abs(dot(v4,R))	# note: L* = R
+
+# ---------------------------------------------------------------------------------------------------------- #
+# writes out dimensions of a single polarizer to 1 line of output file; 
+# convert inches to mils for more compact format 
+# ---------------------------------------------------------------------------------------------------------- #
+def dumpDimensions( dimfile, r, a1, f1, L1, a2, f2, L2, a3, f3, L3 ) :
+  ofile = open(dimfile, "a")
+  ofile.write(" %6.3f %7.2f %5.3f %6.2f" % (1000.*r, a1, 1000.*f1, 1000.*L1) )
+  ofile.write(" %7.2f %5.3f %6.2f" % (a2, 1000.*f2, 1000.*L2) )
+  ofile.write(" %7.2f %5.3f %6.2f\n" % (a3, 1000.*f3, 1000.*L3) )
+  ofile.close()
+
+# ---------------------------------------------------------------------------------------------------------- #
+# writes out one polarizer dimension (e.g., facet depth of section 1) per line for multiple polarizers 
+# ---------------------------------------------------------------------------------------------------------- #
+def dumplist ( ofile, x, label, fmt, mult ):
+  ofile.write( label ) 
+  ntrials = len(x)
+  for n in range(ntrials) :
+    ofile.write( fmt % (mult * x[n] ) )
+  ofile.write("\n")
+
+# ---------------------------------------------------------------------------------------------------------- #
+# compute ampX, phsX, ampY, phsY, phsdif given a pol vector [ (re X, im X), (re Y, im Y) ]
+# ---------------------------------------------------------------------------------------------------------- #
+def ampPhs( vec ) :
+  phsX = 180. * math.atan2(vec[0].imag,vec[0].real) / math.pi
+  phsY = 180. * math.atan2(vec[1].imag,vec[1].real) / math.pi
+  phsdif = phsX - phsY
+  if (phsdif > 180.) :
+    phsdif = phsdif - 360.
+  if (phsdif < -180.) :
+    phsdif = phsdif + 360.
+  return [ abs(vec[0]), phsX, abs(vec[1]), phsY, phsdif ]
+
+# ---------------------------------------------------------------------------------------------------------- #
+# compute leakages vs freq for 1-section, 2-section, or 3-section polarizers
+# read polarizer dimensions from 'dimfile', write leakages to 'leakfile'
+# note: one polarizer per ROW on input, one per COLUMN on output
+# dimfile should have 10 columns (as in dumpDimensions); angles in degrees, lengths in mils
+# optional: apfile lists amps and phase difference of X and Y components for comparison with HFSS
+# optional: evaluate leakage after beamsplitter  apel,tpel,aIpel,aeval
+#    apel = angle of plane of incidence, relative to X=0 axis 
+#    tpel = beamsplitter ("pellicle") thickness in inches
+#    aIpel = angle of incidence to the beamsplitter, degrees (0 = beamsplitter normal to axis)
+# optional: evaluate leakage at angle aeval (shouldn't affect magnitude of the leakage) 
+# optional: compute correlation efficiency < V1 V0* > for all polarizers vs the first one
+# ---------------------------------------------------------------------------------------------------------- #
+def computeLeakage( dimfile, leakfile, apfile=None, apel=0., tpel=0., aIpel=0., aeval=0., efficfile=None ) :
+  r  = []   # empty list of circular waveguide radii
+  a1 = []   # angle of section 1 relative to input Y-pol
+  f1 = []   # facet depth of section 1
+  L1 = []   # length of section 1
+  a2 = []   # angle of section 2 relative to section 1
+  f2 = []   # facet depth of section2
+  L2 = []   # length of section 2
+  a3 = []   # angle of section 3 relative to section 2
+  f3 = []   # facet depth of section 3
+  L3 = []   # length of section 3
+  
+  # --- read the dimensions into internal lists --- #
+  infile = open(dimfile, "r")
+  ofile = open(leakfile, "w")
+  if (efficfile) : ofile3 = open( efficfile, "w" )
+  if (apfile) :
+    ofile2 = open( apfile, "w")
+    ofile2.write("# fGHz, abs(Ex), phs(Ex), abs(Ey), phs(Ey), phsdif, leakage, phsleak\n" )
+  ntrials = 0
+  for line in infile:
+    if line.startswith("#"):
+      ofile.write(line)
+    else:
+      a = line.split()                      # split line into string tokens
+      r.append( float(a[0])/1000. )         # convert diameter from mils back to inches
+      a1.append( float(a[1]) )
+      f1.append( float(a[2])/1000. )	    # convert facet depth from mils back to inches
+      L1.append( float(a[3])/1000. )
+      a2.append( float(a[4]) )
+      f2.append( float(a[5])/1000. )	    # convert facet depth from mils back to inches
+      L2.append( float(a[6])/1000. )
+      a3.append( float(a[7]) )
+      f3.append( float(a[8])/1000. )	    # convert facet depth from mils back to inches
+      L3.append( float(a[9])/1000. )
+      ntrials = ntrials + 1
+  infile.close()
+    
+  # --- compute leakage array for each set of polarizer dimensions --- #
+  freq = arange(200.,271.)
+  leakage = zeros([len(freq),ntrials],Float)    # create array to hold leakages
+  effic = zeros([len(freq),ntrials],Float)      # create array to hold correlation efficiencies
+  for n in range(ntrials) :
+    m = 0                                       # freq index
+    for fGHz in freq :
+
+      v1 = Y                                    # Y-pol incident on section 1
+      v2 = Jrot( v1, a1[n] )
+      afinal = -1.*a1[n]
+      v3 = Jdelay( v2, dphi( r[n], f1[n], L1[n], fGHz ) )
+
+      if (f2[n] > 0.) :                         # section 2, if present
+        v2 = Jrot( v3, a2[n] )
+        afinal = afinal - a2[n]
+        v3 = Jdelay( v2, dphi( r[n], f2[n], L2[n], fGHz ) )
+
+      if (f3[n] > 0.) :                         # section 3, if present
+        v2 = Jrot( v3, a3[n] )
+        afinal = afinal - a3[n]
+        v3 = Jdelay( v2, dphi( r[n], f3[n], L3[n], fGHz ) )
+
+      v1 = Jrot(v3, afinal)	             	# rotate back to original reference frame
+
+      if (tpel > 0.) :		                # optional beamsplitter section
+        v2 = Jrot( v1, apel )                   # rotate X axis parallel to plane of plane of incidence
+        v3 = Jbsplit(v2, tpel, aIpel, fGHz )    # apply amplitude and phase shifts
+        v1 = Jrot( v3, -1.*apel )		# rotate back to original reference frame
+
+      vout = Jrot( v1, aeval )			# evaluate leakage at angle aeval
+
+      if (n == 0) : vsave = array( [vout[0].conjugate(), vout[1].conjugate() ] )
+        # save polarization vector of 1st trial for optional efficiency calculations
+
+      # --- assume RCP out (true for positive angles a1,a2,a3) --- #
+      cleak = dot(vout, R)                      # single complex number; note R = L*
+      leakage[m,n] = abs(cleak)	                # magnitude of the leakage 
+
+      if (efficfile) : effic[m,n] = abs(dot(vsave,vout))
+      if (apfile) :
+        [ampX, phsX, ampY, phsY, phdif ] = ampPhs( vout )
+        ofile2.write("%6.1f  %8.4f %8.4f %8.4f %8.4f %8.4f\n" % (fGHz, ampX, phsX, ampY, phsY, leakage[m,n]))
+      m = m + 1
+
+  if (apfile) : ofile2.close()
+
+  # --- write dimensions in columns to output file --- #
+  dumplist ( ofile, r,  "# r  :", " %6.3f", 1000.) 
+  dumplist ( ofile, a1, "# a1 :", " %6.2f", 1.) 
+  dumplist ( ofile, f1, "# f1 :", " %6.3f", 1000.) 
+  dumplist ( ofile, L1, "# L1 :", " %6.2f", 1000.) 
+  dumplist ( ofile, a2, "# a2 :", " %6.2f", 1.) 
+  dumplist ( ofile, f2, "# f2 :", " %6.3f", 1000.) 
+  dumplist ( ofile, L2, "# L2 :", " %6.2f", 1000.) 
+  dumplist ( ofile, a3, "# a3 :", " %6.2f", 1.) 
+  dumplist ( ofile, f3, "# f3 :", " %6.3f", 1000.) 
+  dumplist ( ofile, L3, "# L3 :", " %6.2f", 1000.) 
+  if (tpel == 0.) :
+    ofile.write("# evaluated without any beamsplitter\n")
+  else :
+    ofile.write("# beamsplitter at angle apel = %.2f\n" % apel)
+    ofile.write("# beamsplitter thickness tpel = %.4f\n" % tpel)
+    ofile.write("# beamsplitter angIncidence aIpel = %.2f\n" % aIpel)
+  ofile.write("# leakages evaluated after rotation by aeval= %.2f\n" % aeval)
+
+  # --- dump leakages at each freq, for all polarizers; also compute avg and rms --- #
+  m = 0
+  for fGHz in freq :
+    ofile.write("%6.1f" % fGHz)
+    if (efficfile) : ofile3.write("%6.1f" % fGHz)
+    sum = 0.
+    for n in range(ntrials) :
+      ofile.write(" %6.4f" % leakage[m,n])
+      sum = sum + leakage[m,n]
+      if (efficfile) : ofile3.write(" %6.4f" % effic[m,n] )
+    avg = sum/ntrials
+    var = 0.
+    for n in range(ntrials) :
+      dif = leakage[m,n] - avg
+      var = var + dif*dif
+    if (ntrials > 1) :
+      var = var/(ntrials-1)
+    ofile.write("   %6.4f %6.4f\n" % (avg,sqrt(var)))
+    if (efficfile) : ofile3.write("\n")
+    m = m + 1
+  ofile.close()     
+  if (efficfile) : ofile3.close()
+
+# ---------------------------------------------------------------------------------------------------------- #
+# leakage of idealized polarizers
+# ---------------------------------------------------------------------------------------------------------- #
+def fig9() :
+  r = .0235
+  f = 0.006
+  L90 = length( r=r, f=f, dphi0=90., fGHz=230. ) 
+  L180 = 2. * L90
+
+  a1 = 45.
+  dumpDimensions( 'dim9A.dat', r, a1, f, L90, 0., 0., 0., 0., 0., 0.)
+  computeLeakage( 'dim9A.dat', 'leak9A.dat' )
+     # simple 1-section polarizer
+
+  a1 = 15.
+  a2 = 60.
+  dumpDimensions( 'dim9B.dat', r, a1, f, L180, a2, f, L90, 0., 0., 0.)
+  computeLeakage( 'dim9B.dat', 'leak9B.dat' )
+     # 2-section polarizer, maximally flat, from Kovac
+
+  a1 = 15.
+  a2 = 59.5
+  dumpDimensions( 'dim9C.dat', r, a1, f, L180, a2, f, L90, 0., 0., 0.)
+  computeLeakage( 'dim9C.dat', 'leak9C.dat' )
+    # 2-section polarizer, CARMA design
+
+  a1 = 6.05
+  a2 = 28.63
+  a3 = 67.59
+  dumpDimensions( 'dim9D.dat', r, a1, f, L180, a2, f, L180, a3, f, L90 )
+  computeLeakage( 'dim9D.dat', 'leak9D.dat' )
+    # 3-section polarizer, maximally flat, from Kovac 
+
+  a1 = 6.50
+  a2 = 28.07
+  a3 = 66.57
+  dumpDimensions( 'dim9E.dat', r, a1, f, L180, a2, f, L180, a3, f, L90 )
+  computeLeakage( 'dim9E.dat', 'leak9E.dat' )
+    # wideband 3-section polarizer derived by Pancharatnam
+
+def fig10() :
+  r = .0235
+  f = 0.006
+  L90 = length( r=r, f=f, dphi0=90., fGHz=230. ) 
+  L180 = 2. * L90
+  a1 = 15.
+  a2 = 60.
+    # nominal dimensions of 2-section polarizer, maximally flat, from Kovac
+
+  dumpDimensions( 'dim10a.dat', r, a1, f-.0002, L180, a2, f-.0002, L90, 0., 0., 0. )
+  dumpDimensions( 'dim10a.dat', r, a1, f,       L180, a2, f,       L90, 0., 0., 0. )
+  dumpDimensions( 'dim10a.dat', r, a1, f+.0002, L180, a2, f+.0002, L90, 0., 0., 0. )
+  computeLeakage( 'dim10a.dat', 'leak10a.dat' )
+    # change facet depths for both sections
+
+  dumpDimensions( 'dim10b.dat', r, a1, f, L180, a2-1., f, L90, 0., 0., 0.)
+  dumpDimensions( 'dim10b.dat', r, a1, f, L180, a2,    f, L90, 0., 0., 0.)
+  dumpDimensions( 'dim10b.dat', r, a1, f, L180, a2+1., f, L90, 0., 0., 0.)
+  computeLeakage( 'dim10b.dat', 'leak10b.dat' )
+    # change angle between section 1 and section 2
+  
+# ---------------------------------------------------------------------------------------------------------- #
+# return dimension = (xtarg +/- random error)
+# error is gaussian distributed with sigma=xtol, but cannot exceed xtol
+# ---------------------------------------------------------------------------------------------------------- #
+def dimension( xtarg, xtol ) :
+  if (xtarg == 0.) : return 0.
+  x = xtarg + 2.*xtol                  # enter loop with dummy value guaranteed to be unacceptable
+  while (abs(x - xtarg) > xtol) :
+    x = random.gauss( xtarg, xtol )
+  return x
+   
+# ---------------------------------------------------------------------------------------------------------- #
+# writes file of polarizer dimensions with truncated Gaussian deviations (one line per polarizer) 
+# ---------------------------------------------------------------------------------------------------------- #
+def gaussdim( ntrials=200, dimfile='dims.txt', rtarg=0.0235, rtol=0.0001, ftarg=0.003, ftol=0.0001, 
+              a1targ=15.0, a1tol=0.2, L1targ=0.4718, Ltol=0.001, a2targ=59.5, atol=0.1, L2targ=0.2359, 
+              a3targ=0., L3targ=0. ) :
+  ofile = open(dimfile, "w")
+  
+  # --- dump input parameters for future reference --- #
+  ofile.write("# rtarg = %.6f, rtol = %.6f\n" % (rtarg,rtol) )
+  ofile.write("# ftarg = %.6f, ftol = %.6f\n" % (ftarg,ftol) )
+  ofile.write("# a1targ = %.2f, a1tol = %.2f, L1targ= %.6f, L1tol = %.6f \n" % (a1targ,a1tol,L1targ,Ltol) )
+  ofile.write("# a2targ = %.2f, a2tol = %.2f, L2targ= %.6f, L2tol = %.6f \n" % (a2targ,atol,L2targ,Ltol) )
+  ofile.write("# a3targ = %.2f, a3tol = %.2f, L3targ= %.6f, L3tol = %.6f \n" % (a3targ,atol,L3targ,Ltol) )
+
+  # --- write one line per polarizer --- #
+  for n in range(ntrials) :
+    ofile.write(" %6.3f" % (1000.*dimension(rtarg,rtol)) )    # circ waveguide radius in mils
+    ofile.write(" %7.2f" % dimension(a1targ,a1tol) )		  # angle of section 1 relative to input ref axis
+    ofile.write(" %5.3f" % (1000.*dimension(ftarg,ftol)) )	  # facet depth of section 1, mils
+    ofile.write(" %6.2f" % (1000.*dimension(L1targ,Ltol)) )   # length of section 1, mils
+    ofile.write(" %7.2f" % dimension(a2targ,atol) )           # angle of section 2 relative to input section 1
+    ofile.write(" %5.3f" % (1000.*dimension(ftarg,ftol)) )    # facet depth of section 2, mils  
+    ofile.write(" %6.2f" % (1000.*dimension(L2targ,Ltol)) )   # length of section 2, mils
+    ofile.write(" %7.2f" % dimension(a3targ,atol) )           # angle of section 3 relative to input section 2
+    ofile.write(" %5.3f" % (1000.*dimension(ftarg,ftol)) )    # facet depth of section 3, mils  
+    ofile.write(" %6.2f" % (1000.*dimension(L3targ,Ltol)) )   # length of section 3, mils
+    ofile.write("\n")                             
+  ofile.close()
+
+# ---------------------------------------------------------------------------------------------------------- #
+# leakages of polarizers with fabrication tolerances
+# ---------------------------------------------------------------------------------------------------------- #
+def fig11() :
+  r = .0235
+  f = 0.003
+  L90 = length( r=r, f=f, dphi0=90., fGHz=230. ) 
+  L180 = 2. * L90
+  a1 = 15.
+  a2 = 59.5
+  gaussdim( ntrials=200, dimfile='dim11a.dat', rtarg=r, rtol=0.00010, ftarg=f, ftol=0.00010, 
+      a1targ=a1, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=a2, atol=0.2, L2targ=L90 ) 
+  gaussdim( ntrials=200, dimfile='dim11b.dat', rtarg=r, rtol=0.00015, ftarg=f, ftol=0.00015, 
+      a1targ=a1, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=a2, atol=0.2, L2targ=L90 ) 
+  gaussdim( ntrials=200, dimfile='dim11c.dat', rtarg=r, rtol=0.00020, ftarg=f, ftol=0.00020, 
+      a1targ=a1, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=a2, atol=0.2, L2targ=L90 ) 
+  computeLeakage( 'dim11a.dat', 'leak11a.dat' )
+  computeLeakage( 'dim11b.dat', 'leak11b.dat' )
+  computeLeakage( 'dim11c.dat', 'leak11c.dat' )
+
+  f = 0.006
+  L90 = length( r=r, f=f, dphi0=90., fGHz=230. ) 
+  L180 = 2. * L90
+  gaussdim( ntrials=200, dimfile='dim11d.dat', rtarg=r, rtol=0.00010, ftarg=f, ftol=0.00010, 
+      a1targ=a1, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=a2, atol=0.2, L2targ=L90 ) 
+  gaussdim( ntrials=200, dimfile='dim11e.dat', rtarg=r, rtol=0.00015, ftarg=f, ftol=0.00015, 
+      a1targ=a1, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=a2, atol=0.2, L2targ=L90 ) 
+  gaussdim( ntrials=200, dimfile='dim11f.dat', rtarg=r, rtol=0.00020, ftarg=f, ftol=0.00020, 
+      a1targ=a1, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=a2, atol=0.2, L2targ=L90 ) 
+  computeLeakage( 'dim11d.dat', 'leak11d.dat' )
+  computeLeakage( 'dim11e.dat', 'leak11e.dat' )   # also used for fig 12a
+  computeLeakage( 'dim11f.dat', 'leak11f.dat' )
+
+def fig12b() :
+  r = .0235
+  f = 0.006
+  L90 = length( r=r, f=f, dphi0=90., fGHz=230. ) 
+  L180 = 2. * L90
+  gaussdim( ntrials=200, dimfile='dim12b.dat', rtarg=r, rtol=0.00015, ftarg=f, ftol=0.00015, 
+      a1targ=6.50, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=28.07, atol=0.2, L2targ=L180,
+      a3targ=66.57, L3targ=L90) 
+  computeLeakage( 'dim12b.dat', 'leak12b.dat' )
+
+# ---------------------------------------------------------------------------------------------------------- #
+# Fresnel formulae, transmission and reflection amplitude coeff, 1.5.2, eqn 20,21 (p. 40); for 1 surface
+# ---------------------------------------------------------------------------------------------------------- #
+def fresnel( n1, thetaI, n2, thetaT ) :
+  tpar = 2. * n1 * cos(thetaI) / (n2 * cos(thetaI) + n1 * cos(thetaT))
+  tperp = 2. * n1 * cos(thetaI) / (n1 * cos(thetaI) + n2 * cos(thetaT))
+  rpar = (n2 * cos(thetaI) - n1 * cos(thetaT)) / (n2 * cos(thetaI) + n1 * cos(thetaT))
+  rperp = (n1 * cos(thetaI) - n2 * cos(thetaT)) / (n1 * cos(thetaI) + n2 * cos(thetaT))
+  return [tpar, tperp, rpar, rperp]
+
+# ---------------------------------------------------------------------------------------------------------- #
+# compute transmission through beamsplitter ("pellicle") of thickness tpel (inches)
+# angI is the angle of incidence (degrees), nn is the refractive index of the beamsplitter material
+# default nn=1.83 is appropriate for PETP = Mylar (Lamb 1996, Int. J. IR MM Waves, 17, pp. 1997-2034)
+# returns  [tpar,tperp,Rpar,Rperp] 
+# tpar and tperp are the AMPLITUDE TRANSMISSION coefficients (complex numbers)
+# Rpar and Rperp are the POWER REFLECTION coefficients (real numbers)
+# equations referenced to Born & Wolf 1970, Principles of Optics, Fourth Ed. (Oxford: Pergamon Press). 
+# ---------------------------------------------------------------------------------------------------------- #
+def pellicle( tpel=.001, angI=45, nn=1.83, fGHz=230. ) :
+  if (tpel == 0.00) : return [1.,1.,0.,0.]
+  thetaI = math.pi * angI / 180.	                        # convert to radians 
+  thetaT = math.asin((sin(thetaI))/nn)	                        # Snell's law, eqn 8 (p. 38)
+  [tpar,tperp,rpar,rperp] = fresnel( 1., thetaI, nn, thetaT )                        # entering dielectric
+  [tprimepar,tprimeperp,rprimepar,rprimeperp] = fresnel( nn, thetaT, 1., thetaI )    # leaving dielectric
+  delta = 4. * math.pi * 2.54 * tpel * nn * cos(thetaT) / (clight/fGHz)	  
+    # phase shift of signal propagating once through the pellicle; eqn (1), p. 324
+  result = []
+  result.append(tpar*tprimepar/(1.-rpar*rpar*cmath.exp(1.j * delta)))
+  result.append(tperp*tprimeperp/(1.-rperp*rperp*cmath.exp(1.j * delta)))
+    # amplitude transmission coefficient, eqn (11), p. 325
+  Fpar = 4.*rpar*rpar/pow((1. - rpar*rpar),2.)  
+  Fperp = 4.*rperp*rperp/pow((1.-rperp*rperp),2.)
+  sinsq = pow( sin(delta/2.), 2. )
+  result.append( Fpar * sinsq/(1. + Fpar * sinsq) )	
+  result.append( Fperp * sinsq/(1. + Fperp * sinsq) )
+    # power reflection coefficients, eqn (15,16) p. 327 
+  return result
+
+# --- beamsplitter reflectivity --- #
+def fig18( outfile='pelR.dat' ) :
+  ofile = open( outfile, "w" )
+  ofile.write("# tpel  Rpar35  Rperp35  Rpar45  Rperp45\n")
+  for tpel in arange(0.00002,.00202,.00002) :
+    [tpar,tperp,Rpar,Rperp] = pellicle( tpel=tpel, angI=35, fGHz=230.)
+    ofile.write("%7.5f %10.4f %10.4f" % (tpel, 10.*math.log10(Rpar), 10.*math.log10(Rperp)))
+    [tpar,tperp,Rpar,Rperp] = pellicle( tpel=tpel, angI=45, fGHz=230.)
+    ofile.write("  %10.4f %10.4f\n" % (10.*math.log10(Rpar), 10.*math.log10(Rperp)))
+
+# --- leakages including degradation by beamsplitter --- #
+def fig19() :
+  r = .0235
+  f = 0.006
+  L90 = length( r=r, f=f, dphi0=90., fGHz=230. ) 
+  L180 = 2. * L90
+  a1 = 15.
+  a2 = 59.5
+  dumpDimensions( 'nominal.dat', r, a1, f, L180, a2, f, L90, 0., 0., 0. )
+  computeLeakage( 'nominal.dat', 'bs-none.dat', apel=0., tpel=0.000, aIpel=45. ) 
+  computeLeakage( 'nominal.dat', 'bs-0-45-1mil.dat', apel=0., tpel=0.001, aIpel=45. ) 
+  computeLeakage( 'nominal.dat', 'bs-45-45-1mil.dat', apel=45., tpel=0.001, aIpel=45. ) 
+  computeLeakage( 'nominal.dat', 'bs-90-45-1mil.dat', apel=90., tpel=0.001, aIpel=45. ) 
+  computeLeakage( 'dim11e.dat', 'leak11e-0-45-1mil.dat', apel=0., tpel=0.001, aIpel=45. ) 
+  computeLeakage( 'dim11e.dat', 'leak11e-45-45-1mil.dat', apel=45., tpel=0.001, aIpel=45. ) 
+  computeLeakage( 'dim11e.dat', 'leak11e-90-45-1mil.dat', apel=90., tpel=0.001, aIpel=45. ) 
+
+# ---------------------------------------------------------------------------------------------------------- #
+# compute leakage from HFSS simulation results
+# normally the HFSS calculation launches an X-polarized signal, returns S21(X,Y) 
+# each infile line: f_GHz, S21(X:X)amp_dB, S21(X:X)phs_degr, S21(X:Y)amp_dB, S21(X:Y)phs_degr
+# ---------------------------------------------------------------------------------------------------------- #
+def HFSSleak( infile, leakfile ) :
+  infile = open( infile, "r" )
+  ofile = open( leakfile, "w")
+  for line in infile:
+    if line.startswith("#"):
+      ofile.write( line )
+    else:
+      a = line.split()                                # split line into string tokens
+      fGHz =  float(a[0]) 	                      # frequency
+      ampX = math.sqrt(pow(10.,float(a[1])/10.))      # convert amp to VOLTAGE
+      phsX = math.pi * float(a[2]) / 180.	      # convert phs to RADIANS
+      ampY = math.sqrt(pow(10.,float(a[3])/10.))
+      phsY = math.pi * float(a[4]) / 180.
+      vec = array( [ (ampX*math.cos(phsX) + 1j*ampX*math.sin(phsX)),
+                     (ampY*math.cos(phsY) + 1j*ampY*math.sin(phsY)) ] )
+      print vec, dot(vec,R), dot(vec,L)
+      Rleak = abs(dot(vec, R)) 		# amplitude of single complex number 
+      Lleak = abs(dot(vec, L))
+      ofile.write("%8.3f %8.3f %8.3f %8.3f %8.3f %10.5f %10.5f\n" %
+        (fGHz, ampX, float(a[2]), ampY, float(a[4]), Rleak, Lleak))
+  ofile.close()
+  
+# ---------------------------------------------------------------------------------------------------------- #
+# analytic simulation of full polarizer including curved transitions
+# ---------------------------------------------------------------------------------------------------------- #
+def fig16( outfile='fullsim1.dat' ) :
+  ofile = open( outfile, "w")
+  for freq in arange(200.,271.,1.) :
+    v1 = Y
+    v2 = Jrot( v1, -15. )
+    [dx, ph] = dphitaper2 ( r=0.0235, f=0.006, Rc=0.125, fGHz=freq, nsteps=1000 ) 
+    phshift = 2.*ph + dphi( r=0.0235, f=0.006, L=0.1058, fGHz=freq ) 
+    v3 = Jdelay( v2, phshift )
+    v2 = Jrot( v3, -59.5 )
+    phshift = 2.*ph + dphi( r=0.0235, f=0.006, L=0.0302, fGHz=freq ) 
+    v3 = Jdelay( v2, phshift )
+    v2 = Jrot( v3, 74.5 )
+    vout = v2
+    Rleak = abs(dot(vout, R)) 		# amplitude of single complex number 
+    Lleak = abs(dot(vout, L))
+    ofile.write("%6.1f %8.5f %8.5f\n" % (freq, Rleak, Lleak ) )
+  ofile.close()
+
+# ==== superfluous older routines below this line ===== #
+
+def finalcheck3( outfile='reversed.dat' ) :
+  ofile = open( outfile, "w")
+  for freq in arange(200.,271.,1.) :
+    v1 = L
+    v2 = Jrot( v1, 74.5 )
+    phshift = dphi( r=0.0235, f=0.006, L=0.0752, fGHz=freq ) 
+    v3 = Jdelay( v2, phshift )
+    v2 = Jrot( v3, -59.5 )
+    phshift = dphi( r=0.0235, f=0.006, L=0.1504, fGHz=freq ) 
+    v3 = Jdelay( v2, phshift )
+    vout = Jrot( v3, -15. )
+    cleak = dot(vout, Y) 		# single complex number 
+    ofile.write("%6.1f %6.4f\n" % (freq, abs(cleak)) )
+  ofile.close()
+
+
+
+# ---------------------------------------------------------------------------------------------------------- #
+# for each set of (2-section) polarizer dimensions in infile, compute X- and Y- output powers in Perficio test
+# in this test, linear polarized signal is injected at angle a3 into the circ pol output, and we
+#   measure the relative powers from the X- and Y- outputs of an OMT that is connected to the other port
+# note that, as usual, a1 is the angle of the halfwave section relative to the OMT reference axis, etc.
+# ---------------------------------------------------------------------------------------------------------- #
+def perflist( dimfile, outfile ) :
+  r = []	# empty list of circular waveguide radii
+  a1 = []   # angle of section 1 relative to OMT reference axis
+  f1 = []   # facet depth of section 1
+  L1 = []   # length of section 1
+  a2 = []   # angle of section 2 relative to section 1
+  f2 = []   # facet depth of section2
+  L2 = []   # length of section 2
+  a3 = []   # angle of input linear pol relative to section 2
+  
+  # --- read the dimensions into internal lists --- #
+  infile = open(dimfile, "r")
+  ofile = open(outfile, "w")
+  ntrials = 0
+  for line in infile:
+    if line.startswith("#"):
+      ofile.write(line)
+    else:
+      a = line.split()                            # split line into string tokens
+      r.append( float(a[0])/1000. )		# convert from mils to inches
+      a1.append( float(a[1]) )
+      f1.append( float(a[2])/1000. )	    # convert facet depth from mils to inches
+      L1.append( float(a[3])/1000. )
+      a2.append( float(a[4]) )
+      f2.append( float(a[5])/1000. )	    # convert facet depth from mils to inches
+      L2.append( float(a[6])/1000. )
+      a3.append( float(a[7]) )
+      ntrials = ntrials + 1
+  infile.close()
+    
+  # --- compute power from OMT X and Y ports for each polarizer in the list --- #
+  freq = arange(205.,271.)
+  powX = zeros([len(freq),ntrials],Float)
+  powY = zeros([len(freq),ntrials],Float)
+  for n in range(ntrials) :
+    m = 0									# freq index
+    for fGHz in freq :
+      v1 = Y
+      v2 = Jrot( v1, a3[n] )
+      v3 = Jdelay( v2, dphi( r[n], f2[n], L2[n], fGHz ) )
+      v2 = Jrot( v3, a2[n] )
+      v3 = Jdelay( v2, dphi( r[n], f1[n], L1[n], fGHz ) )
+      v2 = Jrot( v3, a1[n] )
+      powX[m,n] = pow(abs(dot(v2,X)),2.)
+      powY[m,n] = pow(abs(dot(v2,Y)),2.)
+      m = m + 1
+
+  # --- write dimensions to output file --- #
+  dumplist ( ofile, r,  "# r  :", "    %6.3f   ", 1000.) 
+  dumplist ( ofile, a1, "# a1 :", "    %6.2f   ", 1.) 
+  dumplist ( ofile, f1, "# f1 :", "    %6.3f   ", 1000.) 
+  dumplist ( ofile, L1, "# L1 :", "    %6.2f   ", 1000.) 
+  dumplist ( ofile, a2, "# a2 :", "    %6.2f   ", 1.) 
+  dumplist ( ofile, f2, "# f2 :", "    %6.3f   ", 1000.) 
+  dumplist ( ofile, L2, "# L2 :", "    %6.2f   ", 1000.) 
+  dumplist ( ofile, a3, "# a3 :", "    %6.2f   ", 1.) 
+
+  # --- dump powers at each freq, for all polarizers; also compute avg and rms --- #
+  m = 0
+  for fGHz in freq :
+    ofile.write("%6.1f" % fGHz)
+    sum = 0.
+    for n in range(ntrials) :
+      ofile.write(" %6.4f %6.4f" % (powX[m,n], powY[m,n]) )
+      sum = sum + powX[m,n]
+    avg = sum/ntrials
+    var = 0.
+    for n in range(ntrials) :
+      dif = powX[m,n] - avg
+      var = var + dif*dif
+    if (ntrials > 1) :
+      var = var/(ntrials-1)
+    ofile.write("  %6.4f %6.4f\n" % (avg,sqrt(var)))
+    m = m + 1
+  ofile.close()     
+
+
+# --- simulate test data for Perficio polarizers --- #
+# --- inject linear pol at angle1, compute emergent X and Y power --- #
+def perf( angle1=15.5, angle2=59.5, angle3=15., fdepth=.006, outfile='perf.dat' ) :
+  ofile = open( outfile, "w")
+  ofile.write("# angle1 = %.2f  # incoming linear to quarter wave section\n" % angle1)
+  ofile.write("# angle2 = %.2f  # quarter wave to halfwave\n" % angle2)
+  ofile.write("# angle3 = %.2f  # halfwave to OMT\n" % angle3)
+  ofile.write("# fdepth = %.4f  # facet depth\n" % fdepth)
+  for freq in arange(205.,271.,1.) :
+    v1 = Y
+    v2 = Jrot( v1, angle1 )
+    [dx, ph] = dphitaper2 ( r=0.0235, f=fdepth, Rc=0.0625, fGHz=freq, nsteps=100 ) 
+    phshift1 = 2.*ph + dphi( r=0.0235, f=fdepth, L=0.0444, fGHz=freq ) 
+    v3 = Jdelay( v2, phshift1 )
+    v2 = Jrot( v3, angle2 )
+    phshift2 = 2.*ph + dphi( r=0.0235, f=fdepth, L=0.1196, fGHz=freq ) 
+    v3 = Jdelay( v2, phshift2 )
+    v2 = Jrot( v3, angle3 )
+    magX = abs(dot(v2,X))
+    magY = abs(dot(v2,Y))
+    # --- also compute leakage --- #
+    v1 = R
+    v2 = Jrot( v1, angle1 )
+    v3 = Jdelay( v2, phshift1 )
+    v2 = Jrot( v3, angle2 )
+    v3 = Jdelay( v2, phshift2 )
+    v2 = Jrot( v3, angle3 )
+    cleak = dot(v2, X) 		# single complex number 
+   
+    ofile.write("%6.1f %6.4f %6.4f %6.4f\n" % (freq, pow(magX,2.), pow(magY,2.), abs(cleak)) )
+  ofile.close()
+
+
+def fig2 ( ) :
+  ofile = open("fig2.dat","w")
+  for f1 in arange(0.0020, 0.0071, .0001):
+    L1 = length( f=f1 )
+    ofile.write("%6.4f %6.4f %6.2f\n" % ( f1, L1, dphi( f=(f1+.0001), L=L1 ) ))
+  ofile.close()
+
+# ---------------------------------------------------------------------------------------------------------- #
+# writes file of polarizer dimensions (one line per polarizer), stepping one or more over linear range 
+# rtarg = radius of circular guide; ftarg = facet depth; a1targ,a2targ,a3targ = angles of sections 1,2,3;
+# L1targ,L2targ,L3targ = lengths of sections 1,2,3
+# ---------------------------------------------------------------------------------------------------------- #
+def lindim( ntrials=1, dimfile='dims.txt', rtarg=0.0235, rstep=0.0, ftarg=0.006, fstep=0.0, 
+            a1targ=15.0, a1step=0.0, L1targ=0.1658, L1step=0.0,
+            a2targ=59.5, a2step=0.0, L2targ=0.0829, L2step=0.0,
+            a3targ=0., a3step=0.0, L3targ=0., L3step=0.0 ) :
+  ofile = open(dimfile, "w")
+  ofile.write("# rtarg = %.6f, rstep = %.6f\n" % (rtarg,rstep) )
+  ofile.write("# ftarg = %.6f, fstep = %.6f\n" % (ftarg,fstep) )
+  ofile.write("# a1targ = %.2f, a1step = %.2f, L1targ= %.6f, L1step = %.6f \n" % (a1targ,a1step,L1targ,L1step) )
+  ofile.write("# a2targ = %.2f, a2step = %.2f, L2targ= %.6f, L2step = %.6f \n" % (a2targ,a2step,L2targ,L2step) )
+  ofile.write("# a3targ = %.2f, a3step = %.2f, L3targ= %.6f, L3step = %.6f \n" % (a3targ,a3step,L3targ,L3step) )
+  ofile.close()
+  nn = ntrials/2
+
+  # --- write out nominal design first - guarantees that there is at least one output line --- #
+  dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2targ, ftarg, L2targ, a3targ, ftarg, L3targ, a4targ )
+
+  # --- now write out one line per step for variables with step .ne. 0 --- #
+  if (rstep != 0.) :
+    for r in arange( rtarg-nn*rstep, rtarg+(nn+1)*rstep, rstep ) :
+      dumpDimensions( dimfile, r, a1targ, ftarg, L1targ, a2targ, ftarg, L2targ, a3targ, ftarg, L3targ )
+  if (fstep != 0.) :
+    for f in arange( ftarg-nn*fstep, ftarg+(nn+1)*fstep, fstep ) :
+      dumpDimensions( dimfile, rtarg, a1targ, f, L1targ, a2targ, f, L2targ, a3targ, f, L3targ, a4targ )
+  if (a1step != 0.) :
+    for a1 in arange( a1targ-nn*a1step, a1targ+(nn+1)*a1step, a1step ) :
+      dumpDimensions( dimfile, rtarg, a1, ftarg, L1targ, a2targ, ftarg, L2targ, a3targ, ftarg, L3targ )
+  if (L1step != 0.) :
+    for L1 in arange( L1targ-nn*L1step, L1targ+(nn+1)*L1step, L1step ) :
+      dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1, a2targ, ftarg, L2targ, a3targ, ftarg, L3targ )
+  if (a2step != 0.) :
+    for a2 in arange( a2targ-nn*a2step, a2targ+(nn+1)*a2step, a2step ) :
+      dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2, ftarg, L2targ, a3targ, ftarg, L3targ )
+  if (L2step != 0.) :
+    for L2 in arange( L2targ-nn*L2step, L2targ+(nn+1)*L2step, L2step ) :
+      dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2targ, ftarg, L2, a3targ, ftarg, L3targ )
+  if (a3step != 0.) :
+    for a3 in arange( a3targ-nn*a3step, a3targ+(nn+1)*a3step, a3step ) :
+      dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2targ, ftarg, L2targ, a3, ftarg, L3targ )
+  if (L3step != 0.) :
+    for L3 in arange( L3targ-nn*L3step, L3targ+(nn+1)*L3step, L3step ) :
+      dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2targ, ftarg, L2targ, a3targ, ftarg, L3 )
+
+# ---------------------------------------------------------
+# returns cutoff freqs for circular waveguide of radius r inches
+#  from Harvey pp 16-17: lamdaCutoff/r = 2.6127 for TM01, 
+#    1.6398 for TM11, TE01, 3.4126 for TE11, 2.0572 for TE21
+# ----------------------------------------------------------
+def modeCutoffs ( r=.0235 ) :
+  print "diam = %.4f inches:" % (2.*r)
+  r = 2.54 * r
+  c = 29.9792458
+  print "  %.4f GHz TE11" % (c/(3.4126 * r))
+  print "  %.4f GHz TM01" % (c/(2.6127 * r))
+  print "  %.4f GHz TE21" % (c/(2.0572 * r))
+  print "  %.4f GHz TM11,TE01" % (clight/(1.6398 * r))
+  fratio = 220./(c/(3.4126*r)) # f/fc
+  alphac = (0.423/pow(r,1.5)) * \
+    ((pow(fratio,-0.5) + pow(fratio,1.5)/2.38)/(math.sqrt(pow(fratio,2.) - 1.)))
+  print "  %.2f dB/inch loss at 220 GHz" % (alphac/1200.)
+
+ 
+# --- compute tsys expected for beamsplitter transmission trans ---
+def tsys( trcvr, trans ) : 
+  tcold = 77.
+  tamb = 297.
+  tsys = (tamb-tcold)*(trcvr + trans*tcold + (1.-trans)*tamb)/(tamb - trans*tcold - (1.-trans)*tamb) - tcold
+  return tsys 
+
+def perfplots() :
+  r = .0235
+  f = 0.006
+  a1 = 15.
+  a2 = 59.5
+  L90 = length( r=r, f=f, dphi0=90., fGHz=230. ) 
+  L180 = 2. * L90
+
+  #gaussdim( ntrials=200, dimfile='dim1.dat', rtarg=r, rtol=0.00015, ftarg=f, ftol=0.00015, 
+  #    a1targ=a1, a1tol=0.2, L1targ=L180, Ltol=0.001, a2targ=a2, atol=0.2, L2targ=L90, a3targ=15. ) 
+  #perflist("dim1.dat","meetsSpec.dat")		
+
+  #gaussdim( ntrials=200, dimfile='dim2.dat', rtarg=r, rtol=0.0005, ftarg=f, ftol=0.0008, 
+  #    a1targ=a1, a1tol=2, L1targ=L180, Ltol=0.005, a2targ=a2, atol=2, L2targ=L90, a3targ=15. ) 
+  #perflist("dim2.dat","badSpec.dat")		
+
+  # gaussdim( ntrials=1, dimfile='dim3.dat', rtarg=r, rtol=0.000, ftarg=f, ftol=0.000, 
+  #    a1targ=a1, a1tol=0, L1targ=L180, Ltol=0.000, a2targ=a2, atol=0, L2targ=L90, a3targ=15. ) 
+  #perflist("dim3.dat","perfect.dat")		
+
+  # --- pretty good match to the test results --- #
+  #  gaussdim( ntrials=200, dimfile='dim4.dat', rtarg=r, rtol=0.0005, ftarg=f, ftol=0.0008, 
+    #    a1targ=a1, a1tol=2., L1targ=L180, Ltol=0.005, a2targ=a2, atol=2, L2targ=L90, a3targ=15. )
+    #computeLeakage( dimfile='dim4.dat', leakfile='leak4.dat', efficfile='effic4.dat' ) 
+    #perflist("dim4.dat","dim4Spec.dat")		
+
+  gaussdim( ntrials=200, dimfile='dim5.dat', rtarg=r, rtol=0.00015, ftarg=f, ftol=0.00015, 
+      a1targ=a1, a1tol=0.2, L1targ=L180-.04, Ltol=0.001, a2targ=70., atol=0.2, L2targ=L90, a3targ=15. )
+  computeLeakage( dimfile='dim5.dat', leakfile='leak5.dat', efficfile='effic5.dat' ) 
+
+
+# --- emulate tests of CP11 done at Agilent on 29jan2010 --- #
+def Agilentcheck( outfile='Agilent1.dat' ) :
+  ofile = open( outfile, "w")
+  for freq in arange(200.,271.,1.) :
+    v1 = Y
+    v2 = Jrot( v1, -15. )
+    [dx, ph] = dphitaper2 ( r=0.0235, f=0.006, Rc=0.0625, fGHz=freq, nsteps=100 ) 
+    phshift = 2.*ph + dphi( r=0.0235, f=0.006, L=0.1196, fGHz=freq ) 
+    print freq, ph, phshift
+    v3 = Jdelay( v2, phshift )
+    v2 = Jrot( v3, -59.5 )
+    phshift = 2.*ph + dphi( r=0.0235, f=0.006, L=0.0444, fGHz=freq ) 
+    v3 = Jdelay( v2, phshift )
+    v2 = Jrot( v3, 74.5 )
+    Xout = dot(v2, X) 		# single complex number 
+    Yout = dot(v2, Y)
+    phsX = 180. * math.atan2(Xout.imag,Xout.real) / math.pi
+    phsY = 180. * math.atan2(Yout.imag,Yout.real) / math.pi
+    ofile.write("%6.1f %6.4f %8.4f %6.4f %8.4f %10.4f\n" % (freq, abs(Xout), phsX, abs(Yout), phsY, phsX-phsY)) 
+  ofile.close()
+
+# ---------------------------------------------------------------------------------------------------------- #
+# compute differential phase shift through linear tapered section at frequency fGHz
+# the facet depth starts at 0.000 and increases linearly to f; all dimensions in inches
+# ---------------------------------------------------------------------------------------------------------- #
+def dphitaper( r=0.0235, f=0.006, L=.04, fGHz=230., nsteps=1000 ) :
+  dL = L/nsteps      # increment in x
+  df = f/nsteps      # increment in facet depth
+  x = dL/2.          # mean x-coordinate of 1st section
+  fx = f - df/2.     # mean facet depth of 1st section
+  totphase = 0.
+  for n in range(nsteps) :
+    totphase = totphase + dphi(r=r, f=fx, L=dL, fGHz=fGHz)
+    fx = fx - df
+  return totphase
+
+# ---------------------------------------------------------------------------------------------------------- #
+# compute optimum facet depth and length for stepped matching section from circular to faceted guide
+# ---------------------------------------------------------------------------------------------------------- #
+def stepmatch(dfacet=.006, r=0.0235, fGHz=230., outfile="match.dat" ) :
+  ofile = open(outfile,"w")
+  [fcx0,fcy0] = cutoff( r, 0. )
+  [fcx1,fcy1] = cutoff( r, dfacet/r )
+  Zx0 = fGHz * 377. / sqrt(fGHz*fGHz - fcx0*fcx0)
+  Zy0 = fGHz * 377. / sqrt(fGHz*fGHz - fcy0*fcy0)
+  Zx1 = fGHz * 377. / sqrt(fGHz*fGHz - fcx1*fcx1)
+  Zy1 = fGHz * 377. / sqrt(fGHz*fGHz - fcy1*fcy1)
+  vRx = (Zx1 - Zx0) / (Zx1 + Zx0)
+  vRy = (Zy1 - Zy0) / (Zy1 + Zy0)
+  print "voltage, power reflection coeff with no matching section"
+  print " .. x: %.3e %.2f" % (vRx, -20.*log(abs(vRx))/2.30259 )
+  print " .. y: %.3e %.2f" % (vRy, -20.*log(abs(vRy))/2.30259 )
+  ofile.write("# dmatch   fcutoffX    Zx-Zxm    fcutoffY    Zy-Zym\n") 
+  Zxm = sqrt(Zx0*Zx1)
+  Zym = sqrt(Zy0*Zy1)
+  dmatchx = 0.
+  dmatchy = 0.
+  Zdifxleast = 100000.
+  Zdifyleast = 100000.
+  for d in arange (0., dfacet, .00001) :
+    [fcxm,fcym] = cutoff( r, d/r )
+    Zx = fGHz * 377. / sqrt(fGHz*fGHz - fcxm*fcxm)
+    Zy = fGHz * 377. / sqrt(fGHz*fGHz - fcym*fcym)
+    ofile.write("%8.5f  %10.3f %10.6f  %10.3f %10.6f\n" % (d, fcxm,(Zx-Zxm),fcym,(Zy-Zym))) 
+    if (abs(Zx-Zxm) < Zdifxleast) :
+       dmatchx = d
+       Zdifxleast = abs(Zx-Zxm)
+    if (abs(Zy-Zym) < Zdifyleast) :
+       dmatchy = d
+       Zdifyleast = abs(Zy-Zym)
+  [fcxm,fcym] = cutoff( r, dmatchx/r )
+  lmatch = clight/(2.54 * 4. * sqrt(fGHz*fGHz - fcxm*fcxm)) 		# lambda_guide/4.
+  print "best X match is depth %.5f, length %.4f" % (dmatchx,lmatch)
+  [fcxm,fcym] = cutoff( r, dmatchy/r )
+  lmatch = clight/(2.54 * 4. * sqrt(fGHz*fGHz - fcym*fcym)) 
+  print "best Y match is depth %.5f, length %.4f" % (dmatchy,lmatch)
+  ofile.close()
+
+# --- check fresnel by reproducing Fig 1.12 in Born and Wolf --- #
+def BWfig12():
+  ofile = open( "BWfig12.dat", "w" )
+  nn = 1.52
+  for angI in arange(0., 90., .5) :
+    thetaI = math.pi * angI / 180.	  
+    thetaT = math.asin((sin(thetaI))/nn)
+    [tpar,tperp,rpar,rperp] = fresnel( 1., thetaI, nn, thetaT ) 
+    ofile.write("%.2f %.4f %.4f\n" % (angI, rpar*rpar, rperp*rperp))
+  ofile.close()
+    
+def testpellicle(ang) :
+  ofile = open("testpellicle", "w")
+  for tp in arange(0.,.05,.0001) :
+      [tpar,tperp,rpar,rperp] = pellicle( tpel=tp, angI=ang )
+      ofile.write("%6.4f %8.5f %8.5f\n" % (tp,rpar,rperp))
+  ofile.close()
+
+# --- added 18apr2010 - check whether DR and DL can have different magnitudes --- #
+def LeakageRealityCheck() :
+  v1 = R
+  v2 = Jrot(v1, -15.5)
+  v3 = Jdelay(v2, 85)
+  v2 = Jrot(v3, -60.)
+  v3 = Jdelay(v2, 180)
+  v2 = Jrot(v3, -15.)
+  print "D_L ", dot(v2,X), abs(dot(v2,X))   # note: R* = L
+  print "D_R ", dot(v2,Y), abs(dot(v2,Y))   # note: L* = R
+  v1 = L
+  v2 = Jrot(v1, -15.5)
+  v3 = Jdelay(v2, 85)
+  v2 = Jrot(v3, -60.)
+  v3 = Jdelay(v2, 180)
+  v2 = Jrot(v3, -15.)
+  print "D_L ", dot(v2,X), abs(dot(v2,X))   # note: R* = L
+  print "D_R ", dot(v2,Y), abs(dot(v2,Y))   # note: L* = R
+
+
+def plotVecs( infile ) :
+  DLx = []
+  DLy = []
+  DRx = [] 
+  DRy = []
+  max = 0.1
+  #py.ion()
+  #py.clf()
+  py.axis( [-max,max,-max,max] )
+  fin = open( infile, "r" )
+  for line in fin:
+    if not line.startswith("#") :
+      a = line.split()
+      DLx.append(  a[2] )
+      DLy.append(  a[3] )
+      DRx.append(  a[5] )
+      DRy.append(  a[6] )
+      py.plot( array(DLx), array(DLy), 'rD', markersize=6., linewidth=4 )
+      py.plot( array(DRx), array(DRy), 'b+', markersize=6., linewidth=4 )
+  fin.close() 
+  py.xlabel('real')
+  py.ylabel('imag')
+  py.grid(True)
+  py.axes().set_aspect('equal')
+  # py.figlegend( ('r+','g+'), ('Dx','Dy'), 'upper right')   saw nothing
+  py.text( -0.95*max, .9*max, infile )
+  #py.annotate( filename, (0., 0.) )
+  #py.savefig("testfig.ps")    
+  py.show()
+  #py.draw()
+    
+
+# ---------------------------------------------------------------------------------------------------------- #
+# propagate Y, R, L from antenna to OMT through beamsplitter and 2-section polarizer to simulate xyauto and 
+#    leakage measurements
+# assume r = 0.0235 circular waveguide radius
+# X-axis is along the meridian ('vert' pol), Y-axis is parallel to the horizon ('horiz' pol)
+#    
+#    tpel = beamsplitter ("pellicle") thickness in inches
+#    aIpel = angle of incidence to the beamsplitter, degrees (30 for bima, 45 for ovro)
+#    aPpel = angle from X-axis to plane of incidence of beamsplitter, degrees (90 for bima, ? for ovro)
+#    f = facet depth, inches (nominal = 0.006)
+#    L180 = length of halfwave section (nominal = 0.15126)
+#    L90 = length of quarterwave section (nominal = 0.07563)
+#    a1 = angle of halfwave section relative to OMT Y-axis (nominal = 15)
+#    a2 = angle of quarterwave section relative to halfwave section (nominal = 59.5)
+# ----------------------------------------------------------------------------------------------------------- #
+def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.5, L90=0.07563, \
+     L180=0.15126, outfile="aleak.6") :
+  r = 0.0235
+  ofile = open(outfile, "w")
+  ofile.write("# beamsplitter thickness tpel = %.4f\n" % tpel)
+  ofile.write("# beamsplitter angIncidence aIpel = %.2f\n" % aIpel)
+  ofile.write("# beamsplitter angPlaneIncidence aPpel = %.2f\n" % aPpel)
+  ofile.write("# facet depth fdepth = %.4f\n" % fdepth)
+  ofile.write("# L90 = %.5f\n" % L90)
+  ofile.write("# L180 = %.5f\n" % L180)
+  ofile.write("# angle of halfwave section relative to OMT X-axis a1 = %.2f\n" % a1)
+  ofile.write("# angle of quarterwave section relative to halfwave section a2 = %.2f\n" % a2)
+  veclist = [R,L]
+  for fGHz in arange(205.,271.,1.) :
+    ofile.write("%6.1f" % fGHz)
+    phshift1 = dphi( r=0.0235, f=fdepth, L=L180, fGHz=fGHz )
+    phshift2 = dphi( r=0.0235, f=fdepth, L=L90, fGHz=fGHz )
+    for vec in veclist :
+      v1 = Jrot( vec, aPpel)
+      v2 = Jbsplit( v1, tpel, aIpel, fGHz )
+      v1 = Jrot( v2, -1.*aPpel )	# rotate back to original reference frame
+      v2 = Jrot( v1, -1.*(a1+a2) )	# angle of quarterwave section relative to telescope X-axis
+      v1 = Jdelay( v2, phshift2 )	# delay through quarterwave section
+      v2 = Jrot( v1, a2 )			# angle of halfwave relative to quarterwave section
+      v1 = Jdelay( v2, phshift1 )	# delay through halfwave section
+      v2 = Jrot( v1, a1 )
+      leak = dot(v2,X)
+      if (abs(leak) > abs(dot(v2,Y))) :
+        leak = dot(v2,Y)
+      ofile.write("     %7.5f %8.5f %8.5f" % (abs(leak),leak.real,leak.imag))
+    ofile.write("\n")
+  ofile.close()
+  plotVecs( outfile )
+
+# ---------------------------------------------------------------------------------------------------------- #
+# propagate X, R, L from antenna to OMT to simulate xyauto and leakage measurements
+# assume r = 0.0235 circular waveguide radius
+#    
+#    angle1 = angle of quarterwave section relative to telescope Y-axis
+#    angle3 = angle of OMT axis to quarterwave section
+# ---------------------------------------------------------------------------------------------------------- #
+def computeLeakage3( angle1=-45., angle3=45., outfile="aleak.1") :
+  r = 0.0235
+  fdepth = 0.006 
+  ofile = open(outfile, "w")
+  L90 = length( r=r, f=fdepth, dphi0=90., fGHz=230. ) 
+  ofile.write("# angle1 = %.2f\n" % angle1)
+  veclist = [R,L]
+  for fGHz in arange(205.,271.,1.) :
+    ofile.write("%6.1f" % fGHz)
+    phshift1 = dphi( r=0.0235, f=fdepth, L=L90, fGHz=fGHz )
+    for vec in veclist :
+      v2 = Jrot( vec, angle1 )
+      v3 = Jdelay( v2, phshift1 )
+      v2 = Jrot( v3, angle3 )
+      leak = dot(v2,X)
+      if (abs(leak) > abs(dot(v2,Y))) :
+        leak = dot(v2,Y)
+      ofile.write("     %7.5f %8.5f %8.5f" % (abs(leak),leak.real,leak.imag))
+    ofile.write("\n")
+  ofile.close()
+  
+
+def doit() :
+  #computeLeakage3( angle1=-45., angle3=45., outfile="aleak.1") 
+  #computeLeakage3( angle1=-47., angle3=47., outfile="aleak.2") 
+  #computeLeakage3( angle1=-47., angle3=45., outfile="aleak.3") 
+  tpel = 0.
+  aIpel = 30.
+  #computeLeakage2( tpel, aIpel, fdepth=0.006, angle1=-74.5, angle2=59.5, angle3=15.0, outfile="aleak.4") 
+  computeLeakage2( 0., 30., fdepth=0.006, angle1=0., angle2=59.5, angle3=14.0, outfile="aleak.5") 
