@@ -14,8 +14,8 @@ import matplotlib.pyplot as py
 # R and L propagate in +Z direction according to right hand rule
 # note: x.conjugate() gives complex conjugate of a number
 # ---------------------------------------------------------------------------------------------------------- #
-X = array( [1,0] )
-Y = array( [0,1] )
+X = array( [1,0], dtype=complex )
+Y = array( [0,1], dtype=complex )
 R = array( [1./sqrt(2.), -1j*(1./sqrt(2.))] ) 
 L = array( [1./sqrt(2.), +1j*(1./sqrt(2.))] ) 
 clight = 29.9792458	# speed of light, cm/nanosec
@@ -35,6 +35,12 @@ def Jrot ( vec, thetaDegrees ) :
 def Jdelay ( vec, delayDegrees ) :
   rad = math.pi * delayDegrees/180.
   rotmat = array( [ [1, 0], [0, cmath.exp(-1.j * rad)] ] )
+  return dot( rotmat,vec )
+
+# --- delays both components --- #
+def J2delay ( vec, delayDegrees ) :
+  rad = math.pi * delayDegrees/180.
+  rotmat = array( [ [cmath.exp(-1.j * rad), 0], [0, cmath.exp(-1.j * rad)] ] )
   return dot( rotmat,vec )
 
 # ---------------------------------------------------------------------------------------------------------- #
@@ -1020,8 +1026,8 @@ def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.
   ofile.write("# L180 = %.5f\n" % L180)
   ofile.write("# angle of halfwave section relative to OMT X-axis a1 = %.2f\n" % a1)
   ofile.write("# angle of quarterwave section relative to halfwave section a2 = %.2f\n" % a2)
-  veclist = [R,L]
-  for fGHz in arange(205.,271.,1.) :
+  veclist = [X,R,L]
+  for fGHz in arange(212.,233.,1.) :
     ofile.write("%6.1f" % fGHz)
     phshift1 = dphi( r=0.0235, f=fdepth, L=L180, fGHz=fGHz )
     phshift2 = dphi( r=0.0235, f=fdepth, L=L90, fGHz=fGHz )
@@ -1034,13 +1040,22 @@ def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.
       v2 = Jrot( v1, a2 )			# angle of halfwave relative to quarterwave section
       v1 = Jdelay( v2, phshift1 )	# delay through halfwave section
       v2 = Jrot( v1, a1 )
-      leak = dot(v2,X)
-      if (abs(leak) > abs(dot(v2,Y))) :
-        leak = dot(v2,Y)
-      ofile.write("     %7.5f %8.5f %8.5f" % (abs(leak),leak.real,leak.imag))
+      if (vec[0] == 1.) :				# vec=Y; compute xyphase
+        [ampX,phsX,ampY,phsY,phsdifsave] = ampPhs(v2)
+      v1 = Jdelay(v2, -1.*phsdifsave)		# apply xyphase correction for this freq to Y,R,L
+      if (vec[0] == 1.) :				
+        [ampX,phsX,ampY,phsY,phsdif] = ampPhs(v1)	 # if Y, recompute to make sure we corrected properly
+      else :
+        leak = dot(v1,X)
+        if (abs(leak) > abs(dot(v1,Y))) :
+          leak = dot(v1,Y)
+        ofile.write("     %7.5f %8.5f %8.5f" % (abs(leak),leak.real,leak.imag))
+        if (vec[1] > 0.1j ) :
+          ofile.write("    %7.5f %7.2f %7.5f %7.2f  %7.2f" % (ampX,phsX,ampY,phsY,phsdif))
     ofile.write("\n")
   ofile.close()
   plotVecs( outfile )
+
 
 # ---------------------------------------------------------------------------------------------------------- #
 # propagate X, R, L from antenna to OMT to simulate xyauto and leakage measurements
