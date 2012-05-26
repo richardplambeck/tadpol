@@ -221,9 +221,8 @@ goto end
   # =================================
 
   # Check parang coverage of leakage calibrator 
-start:
     uvplt vis=wide.av select='source('$LEAKCAL'),pol(LL)' axis=time,parang device=/xs options=nobase,nopol
-    $<
+   
 goto end
 # ... parang changes from -70 to -140; note that C8 will have poor leakage solution, if any,
 # ... because it is flagged after 13:00
@@ -234,6 +233,11 @@ goto end
     gpplt vis=wide.av options=polarization device=/xs nxy=2,2 yrange=0,0.2 
     uvflux vis=wide.av select='source('$LEAKCAL')' line=chan,1,1,6 stokes=I,Q,U,V \
 	  options=uvpol,nopass
+    gpnorm vis=wide.av cal=$DSBLEAK options=noxy
+start:
+	gpplt vis=$DSBLEAK options=polarization log=polList
+	gpplt vis=wide.av options=polarization log=polList2
+goto end
 
     rm -r junk
     cp -r wide.av junk
