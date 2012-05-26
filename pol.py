@@ -1015,7 +1015,7 @@ def plotVecs( infile ) :
 #    a2 = angle of quarterwave section relative to halfwave section (nominal = 59.5)
 # ----------------------------------------------------------------------------------------------------------- #
 def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.5, L90=0.07563, \
-     L180=0.15126, outfile="aleak.6") :
+     L180=0.15126, outfile="aleak.6", xyphase=True) :
   r = 0.0235
   ofile = open(outfile, "w")
   ofile.write("# beamsplitter thickness tpel = %.4f\n" % tpel)
@@ -1026,24 +1026,39 @@ def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.
   ofile.write("# L180 = %.5f\n" % L180)
   ofile.write("# angle of halfwave section relative to OMT X-axis a1 = %.2f\n" % a1)
   ofile.write("# angle of quarterwave section relative to halfwave section a2 = %.2f\n" % a2)
-  veclist = [X,R,L]
-  for fGHz in arange(212.,233.,1.) :
+  veclist = [Y,R,L]
+  for fGHz in arange(212.,232.,1.) :
+    print " "
     ofile.write("%6.1f" % fGHz)
     phshift1 = dphi( r=0.0235, f=fdepth, L=L180, fGHz=fGHz )
     phshift2 = dphi( r=0.0235, f=fdepth, L=L90, fGHz=fGHz )
     for vec in veclist :
-      v1 = Jrot( vec, aPpel)
-      v2 = Jbsplit( v1, tpel, aIpel, fGHz )
-      v1 = Jrot( v2, -1.*aPpel )	# rotate back to original reference frame
-      v2 = Jrot( v1, -1.*(a1+a2) )	# angle of quarterwave section relative to telescope X-axis
-      v1 = Jdelay( v2, phshift2 )	# delay through quarterwave section
-      v2 = Jrot( v1, a2 )			# angle of halfwave relative to quarterwave section
-      v1 = Jdelay( v2, phshift1 )	# delay through halfwave section
-      v2 = Jrot( v1, a1 )
-      if (vec[0] == 1.) :				# vec=Y; compute xyphase
-        [ampX,phsX,ampY,phsY,phsdifsave] = ampPhs(v2)
-      v1 = Jdelay(v2, -1.*phsdifsave)		# apply xyphase correction for this freq to Y,R,L
-      if (vec[0] == 1.) :				
+
+      v1 = Jrot( vec, aPpel)                   # rotate into plane of incidence of beamsplitter
+      v2 = Jbsplit( v1, tpel, aIpel, fGHz )	   # propagate X,Y through beamsplitter
+      v1 = Jrot( v2, -1.*aPpel )	           # rotate back to original reference frame
+      v2 = Jrot( v1, -1.*(a1+a2) )             # angle of quarterwave section relative to telescope X-axis
+      v1 = Jdelay( v2, phshift2 )              #  delay through quarterwave section
+      v2 = Jrot( v1, a2 )			           # angle of halfwave relative to quarterwave section
+      v1 = Jdelay( v2, phshift1 )	           # delay through halfwave section
+      v2 = Jrot( v1, a1 )			           # rotate into OMT frame
+
+      [ampA,phsA,ampB,phsB,phsdifAB] = ampPhs(v2)
+      print "%5.0f   %7.5f %7.2f %7.5f %7.2f  %7.2f" % (fGHz, ampA,phsA,ampB,phsB,phsdifAB)
+        # ... print amp,phs of X and Y components, and phs(X)-phs(Y)
+
+      if (vec[1] == 1.) :				       # vec=Y: save for xyphase correction (if desired)
+        phsdifsave = phsdifAB 
+      if (xyphase) :
+        v1 = Jdelay(v2, -1.*phsdifsave)		   # apply xyphase correction for this freq to Y,R,L
+      else :
+        v1 = v2
+
+      [ampA,phsA,ampB,phsB,phsdifAB] = ampPhs(v1)
+      print "%5.0f   %7.5f %7.2f %7.5f %7.2f  %7.2f" % (fGHz, ampA,phsA,ampB,phsB,phsdifAB)
+
+
+      if (vec[1] == 1.) :				
         [ampX,phsX,ampY,phsY,phsdif] = ampPhs(v1)	 # if Y, recompute to make sure we corrected properly
       else :
         leak = dot(v1,X)
@@ -1056,35 +1071,6 @@ def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.
   ofile.close()
   plotVecs( outfile )
 
-
-# ---------------------------------------------------------------------------------------------------------- #
-# propagate X, R, L from antenna to OMT to simulate xyauto and leakage measurements
-# assume r = 0.0235 circular waveguide radius
-#    
-#    angle1 = angle of quarterwave section relative to telescope Y-axis
-#    angle3 = angle of OMT axis to quarterwave section
-# ---------------------------------------------------------------------------------------------------------- #
-def computeLeakage3( angle1=-45., angle3=45., outfile="aleak.1") :
-  r = 0.0235
-  fdepth = 0.006 
-  ofile = open(outfile, "w")
-  L90 = length( r=r, f=fdepth, dphi0=90., fGHz=230. ) 
-  ofile.write("# angle1 = %.2f\n" % angle1)
-  veclist = [R,L]
-  for fGHz in arange(205.,271.,1.) :
-    ofile.write("%6.1f" % fGHz)
-    phshift1 = dphi( r=0.0235, f=fdepth, L=L90, fGHz=fGHz )
-    for vec in veclist :
-      v2 = Jrot( vec, angle1 )
-      v3 = Jdelay( v2, phshift1 )
-      v2 = Jrot( v3, angle3 )
-      leak = dot(v2,X)
-      if (abs(leak) > abs(dot(v2,Y))) :
-        leak = dot(v2,Y)
-      ofile.write("     %7.5f %8.5f %8.5f" % (abs(leak),leak.real,leak.imag))
-    ofile.write("\n")
-  ofile.close()
-  
 
 def doit() :
   #computeLeakage3( angle1=-45., angle3=45., outfile="aleak.1") 
