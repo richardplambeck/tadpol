@@ -98,22 +98,22 @@ goto end
     xyauto vis=$RAW select='purpose(P)'
     smagpplt vis=$RAW options=bandpass,nofit,wrap device=/xs yrange=-180,180 \
       xaxis=chan yaxis=phase
-	  # ... all phases will be 0 except LCP for ants 1-6
+      # ... all phases will be 0 except LCP for ants 1-6
 
   # Plot grid data, confirm that corrected phases are near 0
     uvspec vis=$RAW select='auto,-ant(7,8,9,10,11,12,13,14,15),purpose(P)' \
       axis=chan,phase device=/xs nxy=3,2 yrange=-50,50 interval=10
 
   # Rewrite to apply xyphase calibration; segregate wides and narrows here
-	rm -r wide.xy
+    rm -r wide.xy
     uvcat vis=$RAW out=wide.xy options=nopol \
-	  select='-source(noise),win(1,3,5,9,11,13),-auto,-purpose(P)' 
+      select='-source(noise),win(1,3,5,9,11,13),-auto,-purpose(P)' 
     rm -r win7.xy
     uvcat vis=$RAW out=win7.xy options=nopol \
-	  select='-source(noise),win(7),-auto,-purpose(P)' 
+      select='-source(noise),win(7),-auto,-purpose(P)' 
     rm -r win15.xy
     uvcat vis=$RAW out=win15.xy options=nopol \
-	  select='-source(noise),win(15),-auto,-purpose(P)' 
+      select='-source(noise),win(15),-auto,-purpose(P)' 
 
       # ... note: at this point phase(LL) = phase(RR) on 10-m, but not 6-m, telescopes
       # ... we have not yet solved for a passband - there will be band-to-band offsets
@@ -125,13 +125,13 @@ goto end
     mfcal vis=wide.xy select='source('$PASSCAL'),-purpose(P)' interval=0.1 refant=$REFANT 
     smagpplt vis=wide.xy options=bandpass,nofit,wrap device=/xs yrange=-180,180 \
       xaxis=chan yaxis=phase
-	$<
+    $<
     smagpplt vis=wide.xy options=bandpass device=/xs yrange=0.5,1.5 \
       xaxis=chan yaxis=amp nxy=5,3
-	$<
-	gpplt vis=wide.xy device=/xs yaxis=phase yrange=-180,180 options=wrap nxy=5,3
-	$<
-	gpplt vis=wide.xy device=/xs yaxis=amp yrange=0,5 nxy=5,3
+    $<
+    gpplt vis=wide.xy device=/xs yaxis=phase yrange=-180,180 options=wrap nxy=5,3
+    $<
+    gpplt vis=wide.xy device=/xs yaxis=amp yrange=0,5 nxy=5,3
 goto end
 
 # >>> flag any data (wide and narrow) with crazy gains, refit passbands if necessary <<< #
@@ -146,14 +146,14 @@ goto end
       interval=120 device=/xs yrange=-180,180 nxy=4,4
 
   # Segregate MWC349 channel data, if present, for later analysis of H30alpha polarization
-	if ($FLUXCAL == MWC349) then
-	  rm -r MWC349.pb
-	  uvcat vis=wide.pb select='source(MWC349)' out=MWC349.pb
-	  selfcal vis=MWC349.pb interval=0.1 select='pol(LL,RR)' options=amp,noscale flux=2.0 \
-		refant=$REFANT line=chan,1,1,235
-	  uvspec vis=MWC349.pb axis=chan,amp interval=100 device=/xs options=avall,nobase \
-	    hann=3 nxy=1,1 yrange=-2,40
-	endif
+    if ($FLUXCAL == MWC349) then
+      rm -r MWC349.pb
+      uvcat vis=wide.pb select='source(MWC349)' out=MWC349.pb
+      selfcal vis=MWC349.pb interval=0.1 select='pol(LL,RR)' options=amp,noscale flux=2.0 \
+        refant=$REFANT line=chan,1,1,235
+      uvspec vis=MWC349.pb axis=chan,amp interval=100 device=/xs options=avall,nobase \
+        hann=3 nxy=1,1 yrange=-2,40
+    endif
 
   # Condense wide to just 6 channels to speed further analysis
     rm -r wide.av
@@ -165,18 +165,18 @@ goto end
   # ==============================
 
   # Inspect amplitude gains on flux calibrator (planet or MWC349) --- #	
-	if ($FLUXCAL != MWC349) then
-		selfcal vis=wide.av select='source('$FLUXCAL'),pol(LL,RR)' interval=0.1 \
-		  refant=$REFANT options=amplitude,apriori,noscale line=chan,1,1,6
-    	uvplt vis=wide.av axis=uvdist,amp device=/xs options=nobase nxy=1,1 \
-		  select='source('$FLUXCAL')'
+    if ($FLUXCAL != MWC349) then
+      selfcal vis=wide.av select='source('$FLUXCAL'),pol(LL,RR)' interval=0.1 \
+        refant=$REFANT options=amplitude,apriori,noscale line=chan,1,1,6
+       uvplt vis=wide.av axis=uvdist,amp device=/xs options=nobase nxy=1,1 \
+        select='source('$FLUXCAL')'
     else
-	    selfcal vis=wide.av interval=0.1 select='source(MWC349),pol(LL,RR)' \
-		  options=amp,noscale flux=2.0 refant=$REFANT line=chan,1,1,5
-		    # ... omit window(6) = original win(13) because it covers the H30alpha recomb line
-		gpplt vis=wide.av yaxis=amp device=/xs yrange=0,3 nxy=5,3
+      selfcal vis=wide.av interval=0.1 select='source(MWC349),pol(LL,RR)' \
+        options=amp,noscale flux=2.0 refant=$REFANT line=chan,1,1,5
+        # ... omit window(6) = original win(13) because it covers the H30alpha recomb line
+      gpplt vis=wide.av yaxis=amp device=/xs yrange=0,3 nxy=5,3
     endif
-	gplist vis=wide.av
+    gplist vis=wide.av
 goto end
 
 # >>> if desired, edit BADANTS to exclude any antennas with crazy gains on fluxcal <<< #
@@ -187,13 +187,13 @@ goto end
     gpplt vis=wide.av yaxis=phase options=wrap yrange=-180,180 device=/xs nxy=5,3
     $<
     foreach CAL ( $ALLCALS ) 
-	  if ($FLUXCAL == "MWC349" ) then
+      if ($FLUXCAL == "MWC349" ) then
         bootflux vis=wide.av line=chan,1,1,5 primary=MWC349,1.9 \
-	 	  select='source(MWC349,'$CAL'),pol(LL,RR),-ant('$BADANTS')' taver=5
-	  else
+          select='source(MWC349,'$CAL'),pol(LL,RR),-ant('$BADANTS')' taver=5
+      else
         bootflux vis=wide.av line=chan,1,1,5 primary=$FLUXCAL \
-	 	  select='source('$FLUXCAL','$CAL'),pol(LL,RR),-ant('$BADANTS')' taver=5
-	  endif
+	  select='source('$FLUXCAL','$CAL'),pol(LL,RR),-ant('$BADANTS')' taver=5
+          endif
       $<
     end
 goto end
@@ -205,12 +205,9 @@ goto end
 # >>> edit LEAKFLUX <<< #
 
   # Final check for any crazy antenna gains, using source fluxes in FluxSource.cat
-	selfcal vis=wide.av refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
-	  select='-source('$SRC',MWC349),pol(LL,RR)' 
-    gpplt vis=wide.av yaxis=amp device=/xs yrange=0,3 nxy=5,3 nxy=5,3
-    $<
-    gpaver vis=wide.av options=scalar interval=15
-    gpplt vis=wide.av yaxis=amp device=/xs yrange=0,3 nxy=5,3
+    selfcal vis=wide.av refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
+      select='-source('$SRC',MWC349),pol(LL,RR)' line=chan,1,1,6
+    gpplt vis=wide.av yaxis=amp device=/xs yrange=0,3 nxy=5,3 
 goto end
 
 # >>> flag any data with completely crazy gains; remember to flag win7 and win15 also <<< #
@@ -231,28 +228,27 @@ goto end
     $<
 
   # fit DSB leakages 
-	gpcal vis=wide.av options=circular,qusolve,noxy,nopass flux=$LEAKFLUX interval=0.5 \
-	  refant=$REFANT select='source('$LEAKCAL')' line=chan,1,1,6 > gpcal.DSB.log
+    gpcal vis=wide.av options=circular,qusolve,noxy,nopass flux=$LEAKFLUX interval=0.5 \
+      refant=$REFANT select='source('$LEAKCAL')' line=chan,1,1,6 > gpcal.DSB.log
     gpplt vis=wide.av options=polarization device=/xs nxy=2,2 yrange=0,0.2 
     uvflux vis=wide.av select='source('$LEAKCAL')' line=chan,1,1,6 stokes=I,Q,U,V \
 	  options=uvpol,nopass
- 
-    # .., uvflux is informational only, to compare calibrator polarization derived
-    # ... from DSB, LSB, USB (it's comforting if they are similar)
+      # .., uvflux is informational only, to compare calibrator polarization derived
+      # ... from DSB, LSB, USB (it's comforting if they are similar)
 
   # fit LSB leakages
-	gpcal vis=wide.lsb options=circular,qusolve,noxy,nopass flux=$LEAKFLUX interval=0.5 \
-	  refant=$REFANT select='source('$LEAKCAL')' line=chan,1,1,3 > gpcal.LSB.log
+    gpcal vis=wide.lsb options=circular,qusolve,noxy,nopass flux=$LEAKFLUX interval=0.5 \
+      refant=$REFANT select='source('$LEAKCAL')' line=chan,1,1,3 > gpcal.LSB.log
     gpplt vis=wide.lsb options=polarization device=/xs nxy=2,2 yrange=0,0.2
     uvflux vis=wide.lsb select='source('$LEAKCAL')' line=chan,1,1,3 stokes=I,Q,U,V \
-	  options=uvpol,nopass
+      options=uvpol,nopass
 
   # fit USB leakages
-	gpcal vis=wide.usb options=circular,qusolve,noxy,nopass flux=$LEAKFLUX interval=0.5 \
-	  refant=$REFANT select='source('$LEAKCAL')' line=chan,1,1,3 > gpcal.USB.log
+    gpcal vis=wide.usb options=circular,qusolve,noxy,nopass flux=$LEAKFLUX interval=0.5 \
+      refant=$REFANT select='source('$LEAKCAL')' line=chan,1,1,3 > gpcal.USB.log
     gpplt vis=wide.usb options=polarization device=/xs nxy=2,2 yrange=0,0.2
     uvflux vis=wide.usb select='source('$LEAKCAL')' line=chan,1,1,3 stokes=I,Q,U,V \
-	  options=uvpol,nopass
+      options=uvpol,nopass
 
 # >>> Chat maintains master leakage list; send him uvindex.log and gpcal.log files <<< #
 
@@ -262,19 +258,19 @@ goto end
   # Copy leakages from master leak file
     gpcopy vis=$DSBLEAK out=wide.av options=nocal,nopass
     uvflux vis=wide.av select='source('$LEAKCAL')' line=chan,1,1,6 stokes=I,Q,U,V \
-	  options=uvpol,nopass
+      options=uvpol,nopass
     
     gpcopy vis=$LSBLEAK out=wide.lsb options=nocal,nopass
     uvflux vis=wide.lsb select='source('$LEAKCAL')' line=chan,1,1,3 stokes=I,Q,U,V \
-	  options=uvpol,nopass
+      options=uvpol,nopass
  
     gpcopy vis=$USBLEAK out=wide.usb options=nocal,nopass
     uvflux vis=wide.usb select='source('$LEAKCAL')' line=chan,1,1,3 stokes=I,Q,U,V \
-	  options=uvpol,nopass
+      options=uvpol,nopass
 
   # Once again fit gain vs time, smooth to 15 min time resolution, copy to lsb and usb
-	selfcal vis=wide.av refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
-	  select='-source('$SRC',MWC349),pol(LL,RR)' 
+    selfcal vis=wide.av refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
+      select='-source('$SRC',MWC349),pol(LL,RR)' 
     gpaver vis=wide.av options=scalar interval=15
     gpplt vis=wide.av yaxis=amp device=/xs yrange=0,3 nxy=5,3
     gpcopy vis=wide.av out=wide.lsb options=nopass,nopol
@@ -286,66 +282,58 @@ goto end
 
     # ... at this point wide.lsb and wide.usb are fully calibrated; xyphase and
     # ... passband corrections were applied in deriving the window-averaged data;
-    # ... each file contains a gains item and a leakage item; senmodel=GSV supposedly
-    # ... will induce Miriad to include the gains in the variance calculation done
-    # ... for 'invert options=systemp' - this should downweight data with lousy pointing
+    # ... each file contains a gains item and a leakage item; senmodel=GSV 
+    # ... tells Miriad to include the gains in the variance calculations for 
+    # ... 'invert options=systemp' - this should downweight data with poor gains
 
   # ================================
   # ====== Dust continuum map ====== 
   # ================================
 
-	rm -r  $MAP.I.mp $MAP.Q.mp $MAP.U.mp $MAP.V.mp $MAP.bm
-	invert vis=wide.lsb,wide.usb line=chan,3,1,1 \
-  	  map=$MAP.I.mp,$MAP.Q.mp,$MAP.U.mp,$MAP.V.mp beam=$MAP.bm stokes=I,Q,U,V sup=0 \
-	  'select=source('$SRC')' options=mfs,systemp cell=0.25 imsize=512
-	implot in=$MAP.I.mp device=/xs
+    rm -r  $MAP.I.mp $MAP.Q.mp $MAP.U.mp $MAP.V.mp $MAP.bm
+    invert vis=wide.lsb,wide.usb line=chan,3,1,1 \
+      map=$MAP.I.mp,$MAP.Q.mp,$MAP.U.mp,$MAP.V.mp beam=$MAP.bm stokes=I,Q,U,V sup=0 \
+      'select=source('$SRC')' options=mfs,systemp cell=0.25 imsize=512
 
-	rm noiseList
-	foreach MP ($MAP.I $MAP.Q $MAP.U $MAP.V)
-	  rm -r $MP.sl
-	  clean map=$MP.mp beam=$MAP.bm out=$MP.sl niters=3000
-	  rm -r $MP.cm
-	  restor map=$MP.mp beam=$MAP.bm model=$MP.sl out=$MP.cm 
-	  cgdisp in=$MP.cm device=/xs region='arcsec,box(-15,-15,15,15)' labtyp=arcsec 
-	  echo " " >> noiseList
-	  echo $MP".cm" >> noiseList
-	  imlist options=stat in=$MP.cm region='arcsec,box(20,-20,-20,-5)' | tail -2 >> noiseList
-	  $<
-	end
-	tail -20 noiseList
+    rm noiseList
+    foreach MP ($MAP.I $MAP.Q $MAP.U $MAP.V)
+      rm -r $MP.sl
+      clean map=$MP.mp beam=$MAP.bm out=$MP.sl niters=3000
+      rm -r $MP.cm
+      restor map=$MP.mp beam=$MAP.bm model=$MP.sl out=$MP.cm 
+      cgdisp in=$MP.cm device=/xs region='arcsec,box(-15,-15,15,15)' labtyp=arcsec 
+      echo " " >> noiseList
+      echo $MP".cm" >> noiseList
+      imlist options=stat in=$MP.cm region='arcsec,box(20,-20,-20,-5)' | tail -2 >> noiseList
+      $<
+    end
+    tail -20 noiseList
 goto end
 
 # >>> edit INOISE and QUNOISE <<< #
 
   # Plot contour images of Q and U on gray scale image of I 
-	cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=full \
-	  region=$REGION labtyp=hms,dms cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
-      levs1=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
-      levs2=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
-      device=/xs
-	cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=full \
-	  region=$REGION labtyp=hms,dms cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
-      levs1=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
-      levs2=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
-      device=$MAP.IQU.ps/cps
-	$<
+    foreach DEVICE ( /xs $MAP.IQU.ps/cps )
+      cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=full \
+        region=$REGION labtyp=hms,dms cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
+        levs1=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
+        levs2=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
+        line=1,3,3 device=$DEVICE
+     end
+     $<
 
-	rm -r $MAP.poli.cm $MAP.polm.cm $MAP.pa.cm
-	impol poli=$MAP.poli.cm polm=$MAP.polm.cm pa=$MAP.pa.cm sigma=$QUNOISE,$INOISE \
-	  in=$MAP.Q.cm,$MAP.U.cm,$MAP.I.cm sncut=3,2
+     rm -r $MAP.poli.cm $MAP.polm.cm $MAP.pa.cm
+     impol poli=$MAP.poli.cm polm=$MAP.polm.cm pa=$MAP.pa.cm sigma=$QUNOISE,$INOISE \
+       in=$MAP.Q.cm,$MAP.U.cm,$MAP.I.cm sncut=3,2
 
-  # Polarization vectors on I contour map
-	cgdisp in=$MAP.I.cm,$MAP.poli.cm,$MAP.pa.cm type=contour,amp,angle \
-	  region=$REGION options=full,rot90 labtyp=hms,dms vecfac=1.2,4,4 beamtyp=b,l,4 \
-      lines=1,1,10 cols1=1 slev=a,$INOISE \
-      levs1=-6,-5,-4,-3,3,4,5,6,8,10,15,20,25,30,35,40,45,50,55 \
-      device=/xs
-	cgdisp in=$MAP.I.cm,$MAP.poli.cm,$MAP.pa.cm type=contour,amp,angle \
-	  region=$REGION options=full,rot90 labtyp=hms,dms vecfac=1.2,4,4 beamtyp=b,l,4 \
-      lines=1,1,10 cols1=1 slev=a,$INOISE \
-      levs1=-6,-5,-4,-3,3,4,5,6,8,10,15,20,25,30,35,40,45,50,55 \
-      device=$MAP.ps/cps
-
+  # Plot polarization vectors on I contour map
+    foreach DEVICE ( /xs $MAP.rot90.ps/cps )
+      cgdisp in=$MAP.I.cm,$MAP.poli.cm,$MAP.pa.cm type=contour,amp,angle \
+        region=$REGION options=full,rot90 labtyp=hms,dms vecfac=1.2,4,4 beamtyp=b,l,4 \
+        lines=1,1,10 cols1=1 slev=a,$INOISE \
+        levs1=-6,-5,-4,-3,3,4,5,6,8,10,15,20,25,30,35,40,45,50,55 \
+        device=$DEVICE
+    end
 goto end
 
   # Cleanup
@@ -358,9 +346,9 @@ goto end
   # ====== channel maps, preliminary steps ====== 
   # ============================================
 
-  # once again do wideband phaseonly selfcal on calibrators
-    selfcal vis=wide.av select='-source('$SRC'),pol(LL,RR)' interval=0.1 refant=$REFANT \
-      line=chan,1,1,6
+  # once again do wideband selfcal on calibrators
+    selfcal vis=wide.av refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
+      select='-source('$SRC',MWC349),pol(LL,RR)' line=chan,1,1,6
 
   # for later use, create wideband calibrator file with phases (but not amps) corrected
     rm -r wide.tmp
