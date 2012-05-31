@@ -1,0 +1,43 @@
+# $Id: FluxSource.cat,v 1.129 2010/09/28 10:01:49 tyu Exp $
+# Modified $MIRCAT/cals.fluxes for use with carma/services/Table class
+#
+# MIRCAT:Calibrator.fluxes
+#| Source   |    Day.UT    | Freq  |  Flux   |  Rms   | Ref.  | PrimaryCal  | PrimCalFlux |
+#|   s      |      s       |  r    |   r     |   r    |  s    |      s      |     r       |
+#|          |              |  GHz  |   Jy    |   Jy   |       |             |     Jy      |
+
+3c84	     2011-OCT-28.0   225.0     8.8     0.00   Uranus at elev 52; 1.2 Jy/K; ct002.230IRAS2A.1
+3c84	     2012-MAR-04.0   225.0     8.3     0.00
+3c84	     2012-MAY-08.0   225.0     5.75    0.00	  MWC349 at elev 40 gives 5.7; Uranus at elev ? gives 5.8
+
+3c111	     2012-MAR-04.0   225.0     3.8     0.00
+3c111	     2012-MAY-08.0   225.0     4.0     0.00
+
+3C273        2011-AUG-31.0   228.0     3.06     0.06 
+
+1337-129     2012-MAY-06.0   225.0     2.75   0.0      MWC349 at elev 30, 1.27 Jy/K; c0888V.17D_230Ser6.2
+
+1625-254     2011-AUG-31.0   228.0     0.64   0.005
+
+1733-130     2011-AUG-31.0   228.0     2.12   0.008
+
+1751+096     2012-MAY-06.0   225.0     2.2    0.0	   MWC349 at elev 30, 1.27 Jy/K; c0888V.17D_230Ser6.2
+
+1924-292     2011-AUG-31.0   224.0     5.48   0.02
+1924-292     2012-MAR-04.0   224.0     4.8    0.0	   MWC349 at elev 70, 1.17 Jy/K; c0888V.23C_230L1157
+
+MWC349       2012-MAR-01.0   223.0     2.00   0.00 
+
+BLLAC        2011-OCT-28.0   223.0     8.80   0.00 	   MWC349 at elev 50; 1.20 Jy/K; ct002.230DR21.2
+BLLAC        2012-MAY-07.0   223.0     7.10   0.00 	   MWC349 at elev 46; 1.15 Jy/K; c0888I. DR21OH
+BLLAC        2012-MAY-12.0   223.0     6.90   0.00 	   MWC349 at elev 80; 1.20 Jy/K; c0888I. DR21OH
+
+3c454.3	     2011-SEP-29.0   225.0     2.6    0.00
+
+0510+180     2012-MAR-04.0   225.0     2.7    0.00
+0510+180     2012-MAY-08.0   225.0     1.6    0.00
+
+1927+739	 2011-SEP-29.0   225.0     1.0     0.00
+1927+739     2012-MAR-04.0   224.0     1.85    0.0	   MWC349 at elev 70, 1.17 Jy/K; c0888V.23C_230L1157
+1927+739     2012-MAY-08.0   224.0     1.95    0.0	   MWC349 at elev 40, 1.17 Jy/K; c0888.23D_230CB230
+
