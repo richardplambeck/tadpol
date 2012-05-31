@@ -349,30 +349,17 @@ goto end
   # once again do wideband selfcal on calibrators
     selfcal vis=wide.av refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
       select='-source('$SRC',MWC349),pol(LL,RR)' line=chan,1,1,6
-
-  # for later use, create wideband calibrator file with phases (but not amps) corrected
-    rm -r wide.tmp
-    uvcat vis=wide.av out=wide.tmp select='-source('$SRC','$FLUXCAL')'
-	selfcal vis=wide.tmp refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
-	  select='-source('$SRC','$FLUXCAL'),pol(LL,RR)' 
-    gpplt vis=wide.tmp yaxis=phase options=wrap yrange=-180,180 device=/xs nxy=5,3
-    gpplt vis=wide.tmp yaxis=amp device=/xs yrange=0,3 nxy=5,3
-    gpaver vis=wide.tmp options=scalar interval=15
-    gpplt vis=wide.tmp yaxis=amp device=/xs yrange=0,3 nxy=5,3
-
-  # now time average the gains in wide.av
-    gpaver vis=wide.av interval=15
- 
-    # ... at this point, gains in wide.av correct phase vs time (amps=1)
-    # ... gains in wide.tmp correct amp vs time (phases=0)
-
+    gpaver vis=wide.av options=scalar interval=15
+    gpplt vis=wide.av yaxis=amp device=/xs yrange=0,3 nxy=5,3
 
   # =============================
   # ====== CO channel maps ====== 
   # =============================
 
-  # Copy phase vs time from wide.av, rewrite data to apply
+  # Remove phase vs time so we can fit passband to win15
+  # Copy phase vs time from wide.av, edit amplitudes to 1.0, rewrite data to apply
 	gpcopy vis=wide.av out=win15.xy options=nopass,nopol
+	gpedit vis=win15.xy options=phase		# sets amplitudes to 1.0
 	rm -r win15.tmp
     uvcat vis=win15.xy out=win15.tmp options=nopass,nopol
     uvplt vis=win15.tmp axis=time,phase device=/xs line=chan,1,1,191 average=10 \
@@ -391,25 +378,29 @@ goto end
       interval=10000 refant=$REFANT
     smagpplt vis=win15.tmp options=bandpass,nofit,wrap device=/xs yrange=-180,180 \
       xaxis=chan yaxis=phase nxy=5,3
+	$<
     smagpplt vis=win15.tmp options=bandpass,nofit,wrap device=/xs yrange=0,3 \
       xaxis=chan yaxis=amp nxy=5,3
-	$<
-	gpplt vis=win15.tmp yaxis=amp device=/xs yrange=0,3 nxy=5,3
-	$<
+    gpedit vis=win15.tmp options=phase   # set amplitudes to 1.0
 	gpplt vis=win15.tmp yaxis=phase device=/xs yrange=-180,180 options=wrap nxy=5,3
 	$<
 goto end
 
-  # Rewrite the data to apply the passband 
+  # Rewrite the data to apply the passband and gains
     rm -r win15.cal
     uvcat vis=win15.tmp out=win15.cal options=nopol
+      # ... passband phase corrects for phase slope across window; avg across window is 0
+      # ... passband amplitude corrects for amp slope; avg across window is 1.0
+      # ... gain phase corrects for avg phase offset of this antenna relative to refant
+      # ... gain amp WOULD HAVE corrected for relative gain of this ant, but was set to 1.0
 
   # Copy amplitude gains vs time from wide.tmp, leakages from wide.USB
-    gpcopy vis=wide.tmp out=win15.cal options=nopass,nopol
-	gpcopy vis=wide.usb out=win15.cal options=nopass,nocal
-    puthd in=win15.cal/senmodel value='GSV' type=ascii
+    gpcopy vis=wide.av out=win15.cal options=nopass,nopol	# copy gains from wide.av	
+    gpedit vis=win15.cal options=amplitude		            # sets gain phases to 0
+	gpcopy vis=wide.usb out=win15.cal options=nopass,nocal  # copy leakages from wide.usb
+    puthd in=win15.cal/senmodel value='GSV' type=ascii		# jedi mind trick
     uvplt vis=win15.cal axis=time,phase device=/xs line=chan,1,1,191 average=10 \
-	  select='-source('$SRC')'
+	  select='-source('$SRC','$FLUXCAL')'
     $<
     uvspec vis=win15.cal interval=10000 device=/xs axis=chan,phase yrange=-180,180 \
 	  select='source('$PASSCAL')' nxy=4,4 line=chan,38,1,5,5
@@ -477,6 +468,7 @@ goto end
     
   # Copy phase vs time from wide.av, rewrite data to apply
 	gpcopy vis=wide.av out=win7.xy options=nopass,nopol
+	gpedit vis=win7.xy options=phase	# sets amplitudes to 1.0
 	rm -r win7.tmp
     uvcat vis=win7.xy out=win7.tmp options=nopass,nopol
     uvplt vis=win7.tmp axis=time,phase device=/xs line=chan,1,1,191 average=10 \
@@ -487,13 +479,12 @@ goto end
       interval=10000 refant=$REFANT
     smagpplt vis=win7.tmp options=bandpass,nofit,wrap device=/xs yrange=-180,180 \
       xaxis=chan yaxis=phase nxy=5,3
+	$<
     smagpplt vis=win7.tmp options=bandpass,nofit,wrap device=/xs yrange=0,3 \
       xaxis=chan yaxis=amp nxy=5,3
-	$<
-	gpplt vis=win7.tmp yaxis=amp device=/xs yrange=0,3 nxy=5,3
+    gpedit vis=win15.tmp options=phase   # set amplitudes to 1.0
 	$<
 	gpplt vis=win7.tmp yaxis=phase device=/xs yrange=-180,180 options=wrap nxy=5,3
-	$<
 goto end
 
   # Rewrite the data to apply the passband 
@@ -501,7 +492,8 @@ goto end
     uvcat vis=win7.tmp out=win7.cal options=nopol
 
   # Copy amplitude gains vs time from wide.tmp, leakages from wide.lsb
-    gpcopy vis=wide.tmp out=win7.cal options=nopass,nopol
+    gpcopy vis=wide.av out=win7.cal options=nopass,nopol
+    gpedit vis=win7.cal options=amplitude		# set gain phases to 0
 	gpcopy vis=wide.lsb out=win7.cal options=nopass,nocal
     puthd in=win7.cal/senmodel value='GSV' type=ascii
     uvplt vis=win7.cal axis=time,phase device=/xs line=chan,1,1,191 average=10 \
