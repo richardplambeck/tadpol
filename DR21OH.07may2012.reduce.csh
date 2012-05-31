@@ -34,7 +34,7 @@ set LEAKCAL = BLLAC
 set LEAKFLUX = 7.1 
 set INOISE = 0.01
 set QUNOISE = 0.00060
-set REGION = 'arcsec,box(12,-12,-12,12)'
+set REGION = 'arcsec,box(13,-12,-11,12)'
 set MAP = DR21OH
 set BADANTS = 23
   # ... antenna numbers not to use in flux calibration
@@ -86,6 +86,21 @@ goto start
   # =================================
   # ====== XYphase calibration ====== 
   # =================================
+
+start:
+gpplt vis=$LSBLEAK options=polarization yaxis=real device=/xs yrange=-.15,.15
+goto end
+
+  # extract purpose(P) data
+    gpcopy vis=$DSBLEAK out=$RAW options=nocal,nopass
+    rm -r griddata
+    uvcat vis=$RAW select='purpose(P)' out=griddata options=nowide stokes='ll,rr,lr'
+    xyauto vis=griddata 
+    smagpplt vis=griddata options=bandpass,nofit,wrap device=/xs yrange=-180,180 \
+      xaxis=chan yaxis=phase
+    smagpplt vis=griddata options=bandpass,nofit,wrap log=xyphase.leak \
+      xaxis=chan yaxis=phase
+goto end
 
   # Fit grid data, denoted by purpose(P), examine passband fit
     xyauto vis=$RAW select='purpose(P)'
@@ -234,7 +249,6 @@ goto end
     uvflux vis=wide.av select='source('$LEAKCAL')' line=chan,1,1,6 stokes=I,Q,U,V \
 	  options=uvpol,nopass
     gpnorm vis=wide.av cal=$DSBLEAK options=noxy
-start:
 	gpplt vis=$DSBLEAK options=polarization log=polList
 	gpplt vis=wide.av options=polarization log=polList2
 goto end
@@ -362,16 +376,17 @@ goto end
 # >>> edit INOISE and QUNOISE <<< #
 
   # Plot contour images of Q and U on gray scale image of I 
-	cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=full \ 
-	  region=$REGION labtyp=hms,dms cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
+	cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=noepoch \
+	  region=$REGION labtyp=arcsec cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
       levs1=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
       levs2=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
       device=/xs
-	cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=full \ 
-	  region=$REGION labtyp=hms,dms cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
+
+	cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=noepoch \
+	  region=$REGION labtyp=arcsec cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
       levs1=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
       levs2=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
-      device=$MAP.IQU.ps/cps
+      device=$MAP.IQU.ps/cps lines=3,3,3
 	$<
 
 	rm -r $MAP.poli.cm $MAP.polm.cm $MAP.pa.cm
@@ -380,13 +395,13 @@ goto end
 
   # Polarization vectors on I contour map
 	cgdisp in=$MAP.I.cm,$MAP.poli.cm,$MAP.pa.cm type=contour,amp,angle \
-	  region=$REGION options=full,rot90 labtyp=hms,dms vecfac=1.2,4,4 beamtyp=b,l,4 \
-      lines=1,1,10 cols1=1 slev=a,$INOISE \
+	  region=$REGION options=noepoch labtyp=arcsec vecfac=1.2,4,4 beamtyp=b,l,4 \
+      lines=1,3,10 cols1=1 slev=a,$INOISE \
       levs1=-6,-5,-4,-3,3,4,5,6,8,10,15,20,25,30,35,40,45,50,55 \
       device=/xs
 	cgdisp in=$MAP.I.cm,$MAP.poli.cm,$MAP.pa.cm type=contour,amp,angle \
-	  region=$REGION options=full,rot90 labtyp=hms,dms vecfac=1.2,4,4 beamtyp=b,l,4 \
-      lines=1,1,10 cols1=1 slev=a,$INOISE \
+	  region=$REGION options=noepoch labtyp=arcsec vecfac=1.2,4,4 beamtyp=b,l,4 \
+      lines=3,3,10 cols1=1 slev=a,$INOISE \
       levs1=-6,-5,-4,-3,3,4,5,6,8,10,15,20,25,30,35,40,45,50,55 \
       device=$MAP.ps/cps
 
