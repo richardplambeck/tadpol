@@ -1,23 +1,29 @@
 #!/bin/csh
-# pol_basic.csh
+# pol_basic.csh   version 1.0
 
-# basic csh script to reduce continuum polarization data with Miriad
-# assumes CARMA data taken with FULLPOL correlator setup 
+# basic csh script to reduce CARMA continuum polarization data with Miriad
+# assumes FULLPOL correlator mode with 8 wideband windows, win(1,3,5,7,9,11,13,15)
+# Dick Plambeck, 31-may-2012
 
-
+# ---------------------------------------------------------------------------------------#
+# user-settable parameters
+#
 set RAW = ...              # name of miriad dataset
 set REFANT = 1             # MUST be a 10-m telescope!
 set SRC = ...              # source name
 set PASSCAL = ...          # passband calibrator name
 set GAINCAL = ...          # gain calibrator name
-set GAINFLUX = ...         # flux density of gain calibrator if you know it
-set LEAKFILE = ...         # visibility data file with leak corrections, if available
+set GAINFLUX = ...         # flux density of gain calibrator, if you know it
+set LEAKFILE = "None"      # visibility data file with leak corrections, if available
 set MAP = ...              # continuum map name
 set I_RMS = ...            # noise in total intensity map
 set QU_RMS = ...           # measured noise in Stokes Q,U,V maps
 set REGION = 'arcsec,box(12,-12,-12,12)'	# region to plot
+# ---------------------------------------------------------------------------------------#
 
 goto start
+
+start:
 
   # ------------------------------------------------------------------------------------- #
   # step 1: 'xyphase' calibration
@@ -70,7 +76,8 @@ goto start
   # (because of receiver swaps).  If feasible, use standard leakage tables.  For now, 
   # obtain these by emailing chat@astro.berkeley.edu.  Or, if the gain calibrator was 
   # observed  over a sufficiently wide range of parallactic angle (> 90 degrees, say), 
-  # fit the # leakages to your own data, as shown below.
+  # fit the leakages to these data, as shown below.  Delete flux=$GAINFLUX if flux of
+  # gain calibrator is unknown.
   # ------------------------------------------------------------------------------------- #
   
     uvplt vis=wide.av select='source('$GAINCAL'),pol(LL)' axis=time,parang device=/xs \
@@ -123,29 +130,31 @@ goto start
     tail -20 noiseList
         # ... rms for I probably will be greater than for Q,U,V
 
+goto end
+
   # ------------------------------------------------------------------------------------- #
   # step 5: plot the polarization; enter noise levels I_RMS and QU_RMS before proceeding
   # ------------------------------------------------------------------------------------- #
   
     cgdisp in=$MAP.I.cm,$MAP.Q.cm,$MAP.U.cm type=pixel,contour,contour options=full \
-      region=$REGION labtyp=hms,dms cols1=2 cols2=4 slev=a,$QUNOISE,a,$QUNOISE \
+      region=$REGION labtyp=hms,dms cols1=2 cols2=4 slev=a,$QU_RMS,a,$QU_RMS \
       levs1=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
       levs2=-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,3,4,5,6,7,8,9,10,11,12,13,14,15 \
-      line=1,3,3 device=\xs
-        # ... > 3 sigma detection of Stokes Q and/or U required for a polarization detection
+      line=1,3,3 device=/xs
+        # ... >3 sigma detection of Stokes Q and/or U needed for a polarization detection
         # ... remember that Q and U can be positive or negative
 
     rm -r $MAP.poli.cm $MAP.polm.cm $MAP.pa.cm
-    impol poli=$MAP.poli.cm polm=$MAP.polm.cm pa=$MAP.pa.cm sigma=$QUNOISE,$INOISE \
+    impol poli=$MAP.poli.cm polm=$MAP.polm.cm pa=$MAP.pa.cm sigma=$QU_RMS,$I_RMS \
       in=$MAP.Q.cm,$MAP.U.cm,$MAP.I.cm sncut=3,2
         # ... derive pol intensity and PA maps from Stokes parameters     
 
     cgdisp in=$MAP.I.cm,$MAP.poli.cm,$MAP.pa.cm type=contour,amp,angle \
       region=$REGION options=full labtyp=hms,dms vecfac=1.2,4,4 beamtyp=b,l,4 \
-      lines=1,1,10 cols1=1 slev=a,$INOISE \
+      lines=1,1,10 cols1=1 slev=a,$I_RMS \
       levs1=-6,-5,-4,-3,3,4,5,6,8,10,15,20,25,30,35,40,45,50,55 \
-      device=\xs
-        # plot polarization vectors on total intensity map
+      device=/xs
+        # ... plot polarization vectors on total intensity map
 
   # ------------------------------------------------------------------------------------- #
   # cleanup
