@@ -18,7 +18,7 @@
 
 # =========== begin user-supplied parameters ============ #
 
-setenv MIRFLUXTAB /fringe2/plambeck/pol/FluxSource.cat
+setenv MIRFLUXTAB /fringe2/plambeck/pol/tadpol/FluxSource.cat
   # ... my own private version of FluxSource.cat
 
 set RAW1 = c0888I.22D_230DR21OH.1.miriad
