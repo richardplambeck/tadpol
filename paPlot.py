@@ -8,7 +8,7 @@ import numpy
 import subprocess
 import shlex
 import string
-
+import os
 
 # --- input I, Q, U, sigmas; return polm, pa, sigmas --- #
 # note that sigmaI, sigmaQ, sigmaU are uncertainties of the mean
@@ -55,6 +55,39 @@ def getStokes( infile, selectString, lineString ) :
     [dummy, V, rmsV, ncorrs] = parseLine( lines[nlines-3] )
     [pa, poli, sigmaPa, sigmaPoli] = paCalc(I, Q, U, rmsI, rmsQ, rmsU) 
   return [ I, rmsI, pa, sigmaPa, poli, sigmaPoli, V, rmsV ]
+
+# --- specialized routine to measure beam polarizations in 24jun2012 Saturn dataset --- #
+def offsetPAs() :
+  offsets = [ [ '3C279',   '0.,0.'  ],      \
+             [ '3C279O1', '-36.26,-.02' ], \
+             [ '3C279O2', '-18.36,-.02' ], \
+             [ '3C279O3', '-0.45,-9.02' ], \
+             [ '3C279O4', '-0.45,8.98'  ], \
+             [ '3C279O5', '17.46,-.02'  ], \
+             [ '3C279O6', '35.36,-.02'  ] ]
+  fout = open("beampol.dat", "a")
+  fout.write("\n    name       offset      I    rmsI      PA  rmsPA    M/I      V/I\n")
+  fout.close()
+  for offset in offsets: 
+    print offset[0]
+    os.system("selfcal vis=lsb.cal select='source(%s)' offset=%s interval=0.1 refant=8" % (offset[0],offset[1]))
+    os.system("selfcal vis=usb.cal select='source(%s)' offset=%s interval=0.1 refant=8" % (offset[0],offset[1]))
+    p= subprocess.Popen( ( shlex.split("uvflux vis=lsb.cal,usb.cal select='source(%s)' line=chan,1,1,96 offset=%s stokes=I,Q,U,V" \
+       % (offset[0],offset[1]) ) ), \
+       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    I = rmsI = pa = sigmaPa = poli = sigmaPoli = V = rmsV = 0.	# in case we get error
+    nlines = len(lines)
+    if nlines >= 10 :
+      [src, I, rmsI, ncorrs] = parseLine( lines[nlines-6] )
+      [dummy, Q, rmsQ, ncorrs] = parseLine( lines[nlines-5] )
+      [dummy, U, rmsU, ncorrs] = parseLine( lines[nlines-4] )
+      [dummy, V, rmsV, ncorrs] = parseLine( lines[nlines-3] )
+      [pa, poli, sigmaPa, sigmaPoli] = paCalc(I, Q, U, rmsI, rmsQ, rmsU) 
+    fout = open("beampol.dat", "a")
+    fout.write("%8s %12s    %5.2f  %4.2f  %7.2f  %4.2f   %5.3f   %6.3f\n" % ( offset[0],offset[1], I, rmsI, pa, sigmaPa, poli/I, V/I ) )
+    fout.close()
 
 # --- this is the main routine that generates the table --- #
 #  blocks of data are selected by source and time; extra is a string with any additional criteria
@@ -193,4 +226,46 @@ def doit() :
   makeTable( visFile='wide.usb', srcName='1733-130', extra='-ant(12)', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1733.usb' ) 
   makeTable( visFile='wide.lsb', srcName='3C286', extra='-ant(12)', deltaMinutes=3., nreps=5, lineString='chan,1,1,4', outFile='3C286.lsb' ) 
   makeTable( visFile='wide.usb', srcName='3C286', extra='-ant(12)', deltaMinutes=3., nreps=5, lineString='chan,1,1,4', outFile='3C286.usb' ) 
+
+# --- generates wip commands to draw horiz bars for each corr window on a frequency plot --- #
+def spectraPlot( infile, outfile ) :
+  nchan = []
+  fstart = []
+  finterval = []
+  p= subprocess.Popen( ( shlex.split('uvlist vis=%s options=spectra' % infile ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  result = p.communicate()[0]
+  lines = result.split("\n")
+  for line in lines :
+    a = line.split()
+    if line.startswith("number of channels") :
+      for n in range (4, len(a)) :
+        nchan.append( int(a[n]) )
+    if line.startswith("starting frequency") :
+      for n in range (3, len(a)) :
+        fstart.append( float(a[n]) )
+    if line.startswith("frequency interval") :
+      for n in range (3, len(a)) :
+        finterval.append( float(a[n]) )
+  fout = open( outfile, "w" )
+  fout.write("mtext t -2 .05 0 %s\n" % infile )
+  for n in range(0, len(nchan)) :
+    if nchan[n] > 0 : 
+      fstop = (nchan[n]-1)*finterval[n] + fstart[n]
+      fwidth = abs( fstop - fstart[n] ) 
+      print "%3d  %7.3f  %7.3f" % (nchan[n], fstart[n], fstop)
+      if (fwidth < .4) :
+        fout.write("color 2\n")
+      fout.write("move %7.3f 0.\n" % fstart[n] )
+      fout.write("lwidth 12\n")
+      fout.write("draw %7.3f 0.\n" %  fstop )
+      fout.write("lwidth 1\n")
+      fout.write("move %7.3f 0.002\n" % ( (fstart[n] + fstop)/2. ) )
+      fout.write("putlabel 0.5 %d\n" % (n+1) )
+      if (fwidth < .4) :
+        fout.write("color 1\n")
+  fout.close() 
+    
+
+  
 
