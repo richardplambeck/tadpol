@@ -8,7 +8,7 @@ import numpy
 import subprocess
 import shlex
 import string
-import os
+
 
 # --- input I, Q, U, sigmas; return polm, pa, sigmas --- #
 # note that sigmaI, sigmaQ, sigmaU are uncertainties of the mean
@@ -55,39 +55,6 @@ def getStokes( infile, selectString, lineString ) :
     [dummy, V, rmsV, ncorrs] = parseLine( lines[nlines-3] )
     [pa, poli, sigmaPa, sigmaPoli] = paCalc(I, Q, U, rmsI, rmsQ, rmsU) 
   return [ I, rmsI, pa, sigmaPa, poli, sigmaPoli, V, rmsV ]
-
-# --- specialized routine to measure beam polarizations in 24jun2012 Saturn dataset --- #
-def offsetPAs() :
-  offsets = [ [ '3C279',   '0.,0.'  ],      \
-             [ '3C279O1', '-36.26,-.02' ], \
-             [ '3C279O2', '-18.36,-.02' ], \
-             [ '3C279O3', '-0.45,-9.02' ], \
-             [ '3C279O4', '-0.45,8.98'  ], \
-             [ '3C279O5', '17.46,-.02'  ], \
-             [ '3C279O6', '35.36,-.02'  ] ]
-  fout = open("beampol.dat", "a")
-  fout.write("\n    name       offset      I    rmsI      PA  rmsPA    M/I      V/I\n")
-  fout.close()
-  for offset in offsets: 
-    print offset[0]
-    os.system("selfcal vis=lsb.cal select='source(%s)' offset=%s interval=0.1 refant=8" % (offset[0],offset[1]))
-    os.system("selfcal vis=usb.cal select='source(%s)' offset=%s interval=0.1 refant=8" % (offset[0],offset[1]))
-    p= subprocess.Popen( ( shlex.split("uvflux vis=lsb.cal,usb.cal select='source(%s)' line=chan,1,1,96 offset=%s stokes=I,Q,U,V" \
-       % (offset[0],offset[1]) ) ), \
-       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-    result = p.communicate()[0]
-    lines = result.split("\n")
-    I = rmsI = pa = sigmaPa = poli = sigmaPoli = V = rmsV = 0.	# in case we get error
-    nlines = len(lines)
-    if nlines >= 10 :
-      [src, I, rmsI, ncorrs] = parseLine( lines[nlines-6] )
-      [dummy, Q, rmsQ, ncorrs] = parseLine( lines[nlines-5] )
-      [dummy, U, rmsU, ncorrs] = parseLine( lines[nlines-4] )
-      [dummy, V, rmsV, ncorrs] = parseLine( lines[nlines-3] )
-      [pa, poli, sigmaPa, sigmaPoli] = paCalc(I, Q, U, rmsI, rmsQ, rmsU) 
-    fout = open("beampol.dat", "a")
-    fout.write("%8s %12s    %5.2f  %4.2f  %7.2f  %4.2f   %5.3f   %6.3f\n" % ( offset[0],offset[1], I, rmsI, pa, sigmaPa, poli/I, V/I ) )
-    fout.close()
 
 # --- this is the main routine that generates the table --- #
 #  blocks of data are selected by source and time; extra is a string with any additional criteria
@@ -141,13 +108,11 @@ def getUTPAHA( visFile, selectString ) :
       sumPA = sumPA + float(a[16])
   return [sumUT/float(navg), sumPA/float(navg), sumHA/float(navg)]
 
-def test1() :
-  getPAHA( 'bllac.lsb', 'source(BLLAC),time(12MAY07:09:42:14.5,12MAY07:09:43:15.5),ant(1)(2)' )
-
 # generate table of selectStrings from indexFile; each contains source and time range
 #   e.g., 'source(BLLAC),time(12MAY07:09:42:14.5,12MAY07:09:43:15.5)'
 # unfortunately uvindex.log contains only the starting time of each observation, not 
 #   the total duration; so, this routine generates nreps selectStrings
+
 def parseIndex( uvindexOutput, srcName, deltaMinutes, nreps ) :
   selectList = []
   timeList = []
@@ -211,6 +176,120 @@ def trange( startTimeString, nincr, deltaMinutes ) :
   t3 = "%s:%0.2d:%0.2d:%03.1f" % (d1,h3,m3,s3)
   return [t2,t3]
 
+# make list of time ranges for a given source
+# each time range contains up to ngroup integrations, but can contain up to 10% less if that
+#   avoids a big time gap; this is designed to avoid weird groupings that happen because
+#   of system temp measurements
+# note: using select=time(t1,t2), a record is selected only if t >= t1 and t < t2;
+#    thus, always add 1 sec to time of last record to make sure it will be selected
+
+def makeSelectList( visFile, srcName, ngroup ) :
+  date1 = ""
+  selectList = []
+  scanList = []
+  scanTime = []
+  tgapmax = 2.	# 2 minutes is max allowed time gap
+
+  # --- create list of scan times for this source --- #
+  p= subprocess.Popen( ( shlex.split('uvlist vis=%s options=variables select=source(%s) recnum=0' % ( visFile, srcName ) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  uvlistOutput = p.communicate()[0]
+  lines = uvlistOutput.split("\n")
+
+  # --- create lists of scans --- #
+  for line in lines: 
+    a = line.split()
+    if line.startswith("Header variables at") :
+  
+    # figure out the decimal minutes for this scan
+      scanList.append(a[3])
+      [date,strhr,strmin,strsec] = a[3].split(":")
+      hr = int(strhr)
+      min = int(strmin)
+      sec = int(strsec)
+      decMinutes = 60.*hr + min + sec/60.
+
+    # if date hasn't been filled in, this is the very first scan
+      if date1 == "" :
+        date1 = date
+
+    # if date has increased by 1 day, add 1440 minutes
+      if (date != date1) :
+        decMinutes = decMinutes + 1440.
+      scanTime.append(decMinutes)
+
+  # --- now parse the list --- #
+  nscans = 0
+  for n in range(0,len(scanList)) :
+
+  # save time as t1 if this is the first scan in a group
+    if nscans == 0 :
+      t1 = scanList[n]
+
+  # compute time gap before next scan
+    if (n < len(scanList)-1) :
+      tgapnext = scanTime[n+1] - scanTime[n]
+        
+  # this is the last scan in a group if:
+  #   ... quota is filled
+  #   ... or this is the very last scan
+  #   ... or quota is nearly filled and this scan is followed by big time gap
+    nscans = nscans + 1
+    print "%s  %3d" % (scanList[n], nscans)
+    if (nscans >= ngroup) or (n == len(scanList)-1) \
+        or (tgapnext > tgapmax) and (float(nscans)/ngroup > 0.9) :
+      [date,strhr,strmin,strsec] = scanList[n].split(":")
+      hr = int(strhr)
+      min = int(strmin)
+      sec = int(strsec) + 1
+      if sec >= 60 :
+        sec = sec - 60
+        min = min + 1
+      if min >= 60 :
+        min = min - 60
+        hr = hr + 1
+      if (hr > 23) :
+        print "### WARNING: WRAPPED THROUGH NEXT DAY###"
+      t2 = "%s:%0.2d:%0.2d:%0.2d" % (date,hr,min,sec+1)
+      oneString = "source(%s),time(%s,%s)" % (srcName,t1,t2)
+      selectList.append( oneString ) 
+      print oneString
+      print " "
+      nscans = 0
+  return selectList
+
+# read standard PA files for lsb, usb, compute pa(usb)-pa(lsb) and uncertainty
+
+def computeRM( lsbfile, usbfile, rmfile ) :
+  selectString = []
+  lsbPA = []
+  lsbSigma = []
+  fin = open( lsbfile, "r" )
+  for line in fin :
+    a = line.split()
+    if (not line.startswith("#")) and (len(a) == 12) :
+      selectString.append( a[11] )
+      lsbPA.append( float(a[7]) )
+      lsbSigma.append( float(a[8]) )
+  fin.close()    
+  fin = open( usbfile, "r" )
+  fout = open( rmfile, "w" )
+  for line in fin :
+    a = line.split()
+    if (not line.startswith("#")) and (len(a) == 12) :
+      for n in range (0, len(selectString) ) :
+        if selectString[n] == a[11] :
+          usbPA = float(a[7])
+          usbSigma = float(a[8])
+          dif = usbPA - lsbPA[n]
+          sigma = math.sqrt(usbSigma*usbSigma + lsbSigma[n]*lsbSigma[n])
+          print "%8s  %6s  %6s  %7.1f  %7.1f  %7.1f  %5.1f" % \
+            (a[0],a[1],a[2],lsbPA[n],usbPA,dif,sigma)
+          fout.write("%8s  %6s  %6s  %7.1f  %7.1f  %7.1f %5.1f\n" % \
+            (a[0],a[1],a[2],lsbPA[n],usbPA,dif,sigma))
+  fin.close()    
+  fout.close()
+
 def savethese() :
   makeTable( visFile='wide.lsb', srcName='SGRA', extra='-ant(12),uvrange(20,1000)', deltaMinutes=1., nreps=12, lineString='chan,1,1,4', outFile='sgra.1min.lsb' ) 
   makeTable( visFile='wide.usb', srcName='SGRA', extra='-ant(12),uvrange(20,1000)', deltaMinutes=1., nreps=12, lineString='chan,1,1,4', outFile='sgra.1min.usb' ) 
@@ -219,53 +298,19 @@ def savethese() :
   makeTable( visFile='wide.lsb', srcName='SGRA', extra='-ant(12),uvrange(20,1000)', deltaMinutes=4, nreps=3, lineString='chan,1,1,4', outFile='sgra.4min.lsb' ) 
   makeTable( visFile='wide.usb', srcName='SGRA', extra='-ant(12),uvrange(20,1000)', deltaMinutes=4, nreps=3, lineString='chan,1,1,4', outFile='sgra.4min.usb' ) 
 
+  makeTable( visFile='wide.lsb', srcName='1924-292', extra='', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1924.lsb' ) 
+  makeTable( visFile='wide.usb', srcName='1924-292', extra='', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1924.usb' ) 
+  makeTable( visFile='wide.lsb', srcName='1733-130', extra='', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1733.lsb' ) 
+  makeTable( visFile='wide.usb', srcName='1733-130', extra='', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1733.usb' ) 
+  makeTable( visFile='wide.lsb', srcName='3C286', extra='', deltaMinutes=3., nreps=5, lineString='chan,1,1,4', outFile='3C286.lsb' ) 
+  makeTable( visFile='wide.usb', srcName='3C286', extra='', deltaMinutes=3., nreps=5, lineString='chan,1,1,4', outFile='3C286.usb' ) 
+  makeTable( visFile='wide.lsb', srcName='SGRA', extra='uvrange(20,1000)', deltaMinutes=3, nreps=4, lineString='chan,1,1,4', outFile='sgra.lsb' ) 
+  makeTable( visFile='wide.usb', srcName='SGRA', extra='uvrange(20,1000)', deltaMinutes=3, nreps=4, lineString='chan,1,1,4', outFile='sgra.usb' ) 
+  makeTable( visFile='wide.lsb', srcName='3C279', extra='', deltaMinutes=1, nreps=10, lineString='chan,1,1,4', outFile='3c279.lsb' ) 
+  makeTable( visFile='wide.usb', srcName='3C279', extra='', deltaMinutes=1, nreps=10, lineString='chan,1,1,4', outFile='3c279.usb' ) 
+  makeTable( visFile='wide.lsb', srcName='1733-130', extra='', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1733.lsb' ) 
+  makeTable( visFile='wide.usb', srcName='1733-130', extra='', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1733.usb' ) 
+  makeTable( visFile='wide.lsb', srcName='SGRA', extra='uvrange(20,1000)', deltaMinutes=6, nreps=2, lineString='chan,1,1,4', outFile='sgra.lsb' ) 
 def doit() :
-  makeTable( visFile='wide.lsb', srcName='1924-292', extra='-ant(12)', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1924.lsb' ) 
-  makeTable( visFile='wide.usb', srcName='1924-292', extra='-ant(12)', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1924.usb' ) 
-  makeTable( visFile='wide.lsb', srcName='1733-130', extra='-ant(12)', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1733.lsb' ) 
-  makeTable( visFile='wide.usb', srcName='1733-130', extra='-ant(12)', deltaMinutes=3., nreps=1, lineString='chan,1,1,4', outFile='1733.usb' ) 
-  makeTable( visFile='wide.lsb', srcName='3C286', extra='-ant(12)', deltaMinutes=3., nreps=5, lineString='chan,1,1,4', outFile='3C286.lsb' ) 
-  makeTable( visFile='wide.usb', srcName='3C286', extra='-ant(12)', deltaMinutes=3., nreps=5, lineString='chan,1,1,4', outFile='3C286.usb' ) 
-
-# --- generates wip commands to draw horiz bars for each corr window on a frequency plot --- #
-def spectraPlot( infile, outfile ) :
-  nchan = []
-  fstart = []
-  finterval = []
-  p= subprocess.Popen( ( shlex.split('uvlist vis=%s options=spectra' % infile ) ), \
-     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  result = p.communicate()[0]
-  lines = result.split("\n")
-  for line in lines :
-    a = line.split()
-    if line.startswith("number of channels") :
-      for n in range (4, len(a)) :
-        nchan.append( int(a[n]) )
-    if line.startswith("starting frequency") :
-      for n in range (3, len(a)) :
-        fstart.append( float(a[n]) )
-    if line.startswith("frequency interval") :
-      for n in range (3, len(a)) :
-        finterval.append( float(a[n]) )
-  fout = open( outfile, "w" )
-  fout.write("mtext t -2 .05 0 %s\n" % infile )
-  for n in range(0, len(nchan)) :
-    if nchan[n] > 0 : 
-      fstop = (nchan[n]-1)*finterval[n] + fstart[n]
-      fwidth = abs( fstop - fstart[n] ) 
-      print "%3d  %7.3f  %7.3f" % (nchan[n], fstart[n], fstop)
-      if (fwidth < .4) :
-        fout.write("color 2\n")
-      fout.write("move %7.3f 0.\n" % fstart[n] )
-      fout.write("lwidth 12\n")
-      fout.write("draw %7.3f 0.\n" %  fstop )
-      fout.write("lwidth 1\n")
-      fout.write("move %7.3f 0.002\n" % ( (fstart[n] + fstop)/2. ) )
-      fout.write("putlabel 0.5 %d\n" % (n+1) )
-      if (fwidth < .4) :
-        fout.write("color 1\n")
-  fout.close() 
-    
-
-  
+  makeTable( visFile='wide.usb', srcName='SGRA', extra='uvrange(20,1000)', deltaMinutes=6, nreps=2, lineString='chan,1,1,4', outFile='sgra.usb' ) 
 
