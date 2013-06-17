@@ -663,14 +663,14 @@ def cmpSlow() :
     fout.write("%8.2f  %10.3f  %10.3f  %10.3f\n" % ( fGHz, phiX, phiY, phdif ) )
   fout.close()
 
-# custom for short slowwave pol
-def extractHFSS( infile, outfile ) :
+# extracts differential phase shift through RETARDER section, and reflection coefficients,
+#   from HFSS csv files
+def extractHFSS( HFSSphs, HFSSmag, outfile ) :
   phsY = []		
   phsX = []
   freq = []
-  #fin = open( "../slowwave/ShortSlowWavePolarizer_phase.csv", "r" )
-  #fin = open( "../slowwave/SW5_phase.csv", "r" )
-  fin = open( infile, "r" )
+  fin = open( HFSSphs, "r" )
+  print HFSSphs
   for line in fin:
     if line.startswith('"Freq') :
       a = line.split('","')
@@ -684,14 +684,38 @@ def extractHFSS( infile, outfile ) :
         freq.append( float( a[0] ) )
         phsY.append( float( a[Ycol] ) )
         phsX.append( float( a[Xcol] ) )
-        print a[0], a[Ycol], a[Xcol], float(a[Ycol])-float(a[Xcol])
+        # print a[0], a[Ycol], a[Xcol], float(a[Ycol])-float(a[Xcol])
   fin.close()
-  #fout = open( "../slowwave/SW5.dat", "w" )
+
+  S11Y = []
+  S11X = []
+  fin = open( HFSSmag, "r" )
+  print HFSSmag
+  m = 0
+  for line in fin:
+    if line.startswith('"Freq') :
+      a = line.split('","')
+      for n in range (0, len(a)) :
+        if a[n] == "dB(S(1:1,1:1)) []" : Ycol = n
+        if a[n] == "dB(S(1:2,1:2)) []" : Xcol = n
+      print " Ycol = %d, Xcol = %d" % (Ycol,Xcol)
+    else :
+      a = line.split(',')
+      if len(a[1]) > 0 :       # avoids lines at end > 120 GHz with no data
+        if float( a[0] ) != freq[m] :
+          print "error - freq mismatch; %s, %.3f" % ( a[0],freq[m] )
+        m = m + 1
+        S11Y.append( float( a[Ycol] ) )
+        S11X.append( float( a[Xcol] ) )
+      #print a[0], a[Ycol], a[Xcol]
+  fin.close()
+
   fout = open( outfile, "w" )
   for m in range(0, len(freq)) :
     phdif = phsX[m]-phsY[m]
     if phdif < 0. : phdif = phdif + 360.
-    fout.write( "%8.2f  %11.7f  %11.7f  %11.7f\n" % (freq[m],phsY[m],phsX[m],phdif) )
+    fout.write( "%8.2f  %11.7f  %11.7f  %11.7f  %10.3f  %10.3f\n" % \
+      (freq[m],phsY[m],phsX[m],phdif,S11Y[m],S11X[m]) )
   fout.close()
   
 # for slow wave leakage calculations, read ret90 and ret180 phase shifts from table
@@ -700,42 +724,51 @@ def extractHFSS( infile, outfile ) :
 # ang90 = angle of 90 degree retarder section
 
 def computeSWLeak( ang180a, ang180b, ang90, outfile ) :
-  ntrials = 1
-  freq = arange(70.,121.,1.)
-  ret90 = zeros( [len(freq)], dtype=float )
-  ret180 = zeros( [len(freq)], dtype=float )
-  leakage = zeros( [len(freq),ntrials], dtype=float )    # create array to hold leakages
-  effic = zeros( [len(freq),ntrials], dtype=float )      # create array to hold correlation efficiencies
-  fin = open( "../slowwave/SlowSummary.dat", "r" )
-  n = 0
+  ntrials = 5
+  freq = []
+  ret90 = []
+  ret180 = []
+  offset= [-2.,-1.5,-1.,-0.5,0.,0.5,1.,1.5,2.]
+
+  fin = open( "SW3+6.dat", "r" )
   for line in fin :
     if not line.startswith("#") :
       a = line.split()
-      if fabs( float( a[0] ) - freq[n] ) < .001 :
-        ret90[n] = float( a[4] )
-        ret180[n] = float( a[5] )
-        print n, freq[n], ret90[n], ret180[n]
-        n = n + 1 
+      freq.append( float(a[0]) )
+      #ret90.append( float(a[9]) )
+      ret180.append( float(a[3]) )
+      ret90.append( ret180[ len(ret180)-1 ]/2. )
+      print freq[len(freq)-1], ret90[len(ret90)-1], ret180[(len(ret180)-1)]
   fin.close()
 
+  leakage = zeros( [len(freq),ntrials], dtype=float )    # create array to hold leakages
+  effic = zeros( [len(freq),ntrials], dtype=float )      # create array to hold correlation efficiencies
   ofile1 = open( outfile, "w" )
+  
+
   m = 0                                                # m is the frequency index
   for fGHz in freq :
     ofile1.write("%6.1f" % fGHz)
-    v1 = Y 
-    if ang180a != 0. :
-      v2 = Jrot( v1, ang180a )            # rotate into reference frame of the retarder
-      v3 = Jdelay( v2, ret180[m] )        # apply phase shift
-      v1 = Jrot( v3, -1.*ang180a )        # rotate back to original frame 
-    if ang180b != 0. :
-      v2 = Jrot( v1, ang180b )            # rotate into reference frame of the retarder
-      v3 = Jdelay( v2, ret180[m] )        # apply phase shift
-      v1 = Jrot( v3, -1.*ang180b )        # rotate back to original frame 
-    if ang90 != 0. :
-      v2 = Jrot( v1, ang90 )            # rotate into reference frame of the retarder
-      v3 = Jdelay( v2, ret90[m] )        # apply phase shift
-      v1 = Jrot( v3, -1.*ang90 )        # rotate back to original frame 
-    leakage[m] = abs(dot(v1, R)) 		          # amplitude of single complex number; note R = L* 
-    ofile1.write(" %6.4f\n" % leakage[m])
+    for off in offset:
+      v1 = Y 
+      if ang180a != 0. :
+        v2 = Jrot( v1, ang180a )            # rotate into reference frame of the retarder
+        v3 = Jdelay( v2, ret180[m] )        # apply phase shift
+        v1 = Jrot( v3, -1.*ang180a )        # rotate back to original frame 
+      if ang180b != 0. :
+        v2 = Jrot( v1, ang180b )            # rotate into reference frame of the retarder
+        v3 = Jdelay( v2, ret180[m] )        # apply phase shift
+        v1 = Jrot( v3, -1.*ang180b )        # rotate back to original frame 
+      if ang90 != 0. :
+        v2 = Jrot( v1, ang90+off )            # rotate into reference frame of the retarder
+        v3 = Jdelay( v2, ret90[m] )        # apply phase shift
+        v1 = Jrot( v3, -1.*(ang90+off) )        # rotate back to original frame 
+      leakage = abs(dot(v1, R)) 		          # amplitude of single complex number; note R = L* 
+      ofile1.write(" %6.4f" % leakage)
+    ofile1.write("\n")
     m = m + 1
   ofile1.close()
+
+def doit() :
+  extractHFSS( "SW3phase.csv", "SW3mag.csv", "SW3.dat" )
+  extractHFSS( "SW6_phase.csv", "SW6_mag.csv", "SW6.dat" )

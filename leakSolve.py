@@ -1,6 +1,7 @@
 # leakSolve.py 
 # 27jun2012 - begin adapting from paPlot.py
-#
+# 05may2013 - deleted unused routines paCalc, parseLine, getStokes; as far as I can 
+#   see, this code has nothing in common with paPlot.py
 
 import math
 import time
@@ -10,141 +11,109 @@ import shlex
 import string
 
 
-# --- input I, Q, U, sigmas; return polm, pa, sigmas --- #
-# note that sigmaI, sigmaQ, sigmaU are uncertainties of the mean
-def paCalc(I, Q, U, sigmaI, sigmaQ, sigmaU) :
-  pa = (180./math.pi) * 0.5 * math.atan2(U,Q)
-  poli = math.sqrt(U*U + Q*Q)
-  dpolisq = (Q*Q*sigmaQ*sigmaQ + U*U*sigmaU*sigmaU)/(Q*Q + U*U)
-  sigmaPoli = math.sqrt(dpolisq)
-  dpasq = (0.25/pow(Q*Q+U*U,2.))
-  dpasq = dpasq * (Q*Q*sigmaU*sigmaU + U*U*sigmaQ*sigmaQ) 
-  sigmaPa = (180./math.pi) * math.sqrt(dpasq)
-  return [pa, poli, sigmaPa, sigmaPoli]
-  
-# --- extracts Stokes amplitude and rms from one line of uvflux output --- #
-def parseLine( line ) :
-  print " "
-  print line
-  a = line.split()
-  if (len(a) == 9) :
-    src = a[0]
-    stokes = float(a[3])
-    ncorrs = int(a[8])
-    rms = float(a[5])/math.sqrt(ncorrs)
-  else :
-    src = ' '
-    stokes = float(a[2])
-    ncorrs = int(a[7])
-    rms = float(a[4])/math.sqrt(ncorrs)
-  return [ src, stokes, rms, ncorrs ]
-     
-# --- runs uvflux on selected data, returns I, POLI, PA, and error estimates --- #
-def getStokes( infile, selectString, lineString ) :
-  p= subprocess.Popen( ( shlex.split('uvflux vis=%s select=%s line=%s stokes=I,Q,U,V' \
-     % (infile, selectString, lineString) ) ), \
-     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  result = p.communicate()[0]
-  lines = result.split("\n")
-  I = rmsI = pa = sigmaPa = poli = sigmaPoli = V = rmsV = 0.	# in case we get error
-  nlines = len(lines)
-  if nlines >= 10 :
-    [src, I, rmsI, ncorrs] = parseLine( lines[nlines-6] )
-    [dummy, Q, rmsQ, ncorrs] = parseLine( lines[nlines-5] )
-    [dummy, U, rmsU, ncorrs] = parseLine( lines[nlines-4] )
-    [dummy, V, rmsV, ncorrs] = parseLine( lines[nlines-3] )
-    [pa, poli, sigmaPa, sigmaPoli] = paCalc(I, Q, U, rmsI, rmsQ, rmsU) 
-  return [ I, rmsI, pa, sigmaPa, poli, sigmaPoli, V, rmsV ]
+# dictionary files control operation
+# .. fileName = visibility file containing leakage data
+# .. selectStr = select string for gpcal - source, time, etc
+# .. optionStr = option string for gpcal - with or without qusolve
+# .. flux = I or I,Q,U
+# .. refant
+# .. lkname = output file name - code adds antenna number to the end!
 
+vis1 = { "fileName"   : "wide.pb",
+         "selectStr"  : "source(3c279),-ant(7)",
+         "optionStr"  : "circular,noxy,nopass,qusolve",
+         "avgchan"      :2,
+         "flux"       : "10.",
+         "refant"     : 8, 
+         "lkname"     : "lk.3c279b." }
 
-def runGpcal( visFile='', \
-              selectString='', \
-              lineString='', \
-              fluxString='', \
-              refant=1, \
-              interval=0.5, \
-              optionString='circular,qusolve,noxy,nopass') :
-  DR = numpy.zeros( 15, dtype=complex)
-  DL = numpy.zeros( 15, dtype=complex)
-  if fluxString == "" :
-    fluxString = "1."
-  p= subprocess.Popen( ( shlex.split('gpcal vis=%s select=%s line=%s flux=%s refant=%d interval=%0.1f options=%s' % \
-     (visFile, selectString, lineString, fluxString, refant, interval, optionString ) ) ), \
-     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  gpcalOutput = p.communicate()[0]
-  lines = gpcalOutput.split("\n")
-  for line in lines :
-    a = line.split()
-    if "Percent Q:" in line :
-      percentQ = float(a[2])
-    if "Percent U:" in line :
-      percentU = float(a[2])
-    if "Dx,Dy" in line :
-      print line
-      ant = int(line[4:6])
-      if ant < 16 :
-        DR[ant-1] = float(line[16:22]) + 1.j * float(line[23:29])
-        DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
-  return [percentQ,percentU,DR,DL]
-       
-def delHd( visFile ) :
-  p= subprocess.Popen( ( shlex.split('delhd in=%s/leakage' % (visFile) ) ), \
+vis2 = { "fileName"   : "wide.pb",
+         "selectStr"  : "source(3c279),-ant(7)",
+         "optionStr"  : "circular,noxy,nopass,qusolve",
+         "avgchan"      :47,
+         "flux"       : "10.",
+         "refant"     : 8, 
+         "lkname"     : "lk.3c279c." }
+
+vis3 = { "fileName"   : "wide.av",
+         "selectStr"  : "source(3c279),-ant(7)",
+         "optionStr"  : "circular,noxy,nopass,qusolve",
+         "avgchan"      :1,
+         "flux"       : "10.",
+         "refant"     : 8, 
+         "lkname"     : "lk.3c279d." }
+
+# --- delete existing leakage file ---
+def delHd( fileName ) :
+  p= subprocess.Popen( ( shlex.split('delhd in=%s/leakage' % ( fileName ) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
   
-def makeFtable( visFile ) :
+# --- generate vis dictionary items "chfreq", "chwidth" - list of fstart,fstop for every correlator channel
+def makeFtable( vis ) :
   nstart = []
   nchan = []
   fstart = []
   fstep = []
   chfreq = []
   chwidth = []
-  p= subprocess.Popen( ( shlex.split('uvlist options=spectra vis=%s' % visFile ) ), \
+  p= subprocess.Popen( ( shlex.split('uvlist options=spectra vis=%s' % vis["fileName"] ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   uvlistOutput = p.communicate()[0]
   lines = uvlistOutput.split("\n")
   for line in lines :
-    #print line
     a = line.split()
     if "starting channel" in line :
-      for n in range( 3, len(a) ) :
-        nstart.append( int(a[n]) ) 
+      for n in range( 3, len(a) ) : nstart.append( int(a[n]) ) 
     if "number of channels" in line :
-      for n in range( 4, len(a) ) :
-        nchan.append( int(a[n]) )
+      for n in range( 4, len(a) ) : nchan.append( int(a[n]) )
     if "starting frequency" in line :
-      for n in range( 3, len(a) ) :
-        fstart.append( float(a[n]) ) 
+      for n in range( 3, len(a) ) : fstart.append( float(a[n]) ) 
     if "frequency interval" in line :
-      for n in range( 3, len(a) ) :
-        fstep.append( float(a[n]) )
-  #print "# ========================================================================= #"
-  #print nstart, nchan, fstart, fstep      
-  #print "# ========================================================================= #"
+      for n in range( 3, len(a) ) : fstep.append( float(a[n]) )
   for n in range(0, len(nstart) ) :
     if nchan[n] > 0 :
       for i in range( 0, nchan[n] ) :
          chfreq.append(fstart[n] + i*fstep[n])
          chwidth.append(fstep[n])
-  #for ichn in range(0, len(chfreq) ) :
-  #  print ichn+1, chfreq[ichn], chwidth[ichn]
-  return [chfreq,chwidth]
+  vis["nstart"] = nstart
+  vis["nchan"] = nchan
+  vis["chfreq"] = chfreq
+  vis["chwidth"] = chwidth
 
-def addLeak( visFile, ch1, nchan ) :
-  [chfreq,chwidth] = makeFtable( visFile )
-  lineString = "chan,1,%d,%d" % (ch1,nchan)
-  ch2 = ch1 + nchan - 1
-  fstart = chfreq[ch1-1] - 0.5*chwidth[ch1-1]
-  fstop = chfreq[ch2-1] + 0.5*chwidth[ch2-1]
+# --- run gpcal on particular channel range, return src Q, U, and C1-C15 Dx,Dy complex leakages
+def runGpcal( vis, lineString='', interval=5 ) :
+  DR = numpy.zeros( 15, dtype=complex)
+  DL = numpy.zeros( 15, dtype=complex)
+  percentQ = 0.
+  percentU = 0.
+  p= subprocess.Popen( ( shlex.split('gpcal vis=%s select=%s line=%s flux=%s refant=%d interval=%0.1f options=%s' % \
+     (vis["fileName"], vis["selectStr"], lineString, vis["flux"], vis["refant"], interval, vis["optionStr"] ) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  gpcalOutput = p.communicate()[0]
+  lines = gpcalOutput.split("\n")
+  for line in lines :
+    print line
+    a = line.split()
+    if "Percent Q:" in line :
+      percentQ = float(a[2])
+    if "Percent U:" in line :
+      percentU = float(a[2])
+    if "Dx,Dy" in line :
+      ant = int(line[4:6])
+      if ant < 16 :
+        DR[ant-1] = float(line[16:22]) + 1.j * float(line[23:29])
+        DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
+  return [percentQ,percentU,DR,DL]
+
+def addLeak( vis, ch1 ) :
+  lineString = "chan,1,%d,%d" % ( ch1, vis["avgchan"] )
+  ch2 = ch1 + vis["avgchan"] - 1
+  fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
+  fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
   print "%s   %8.3f %8.3f" % (lineString, fstart, fstop)
-  [percentQ,percentU,DR,DL] = runGpcal( visFile=visFile, \
-              selectString='', \
-              lineString=lineString, \
-              fluxString='', \
-              refant=1, \
-              interval=5, \
-              optionString='circular,qusolve,noxy,nopass') 
+  [percentQ,percentU,DR,DL] = runGpcal( vis, lineString=lineString )
   for nant in range(0,15) :
-    filename = "leak" + "%d" % (nant+1)
+    filename = vis["lkname"] + "%d" % (nant+1)
     fout = open( filename, "a" )
     fout.write("%8.3f %8.3f %8.3f %6.1f %8.3f %6.1f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f    %s\n" % \
        ( fstart, fstop, numpy.abs(DR[nant]), numpy.angle(DR[nant],deg=True), \
@@ -152,15 +121,98 @@ def addLeak( visFile, ch1, nchan ) :
        DR[nant].imag, DL[nant].real, DL[nant].imag, percentQ, percentU, lineString) )
     fout.close()
 
+def addLk( vis, ch1 ) :
+  lineString = "chan,1,%d,%d" % ( ch1, vis["avgchan"] )
+  ch2 = ch1 + vis["avgchan"] - 1
+  fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
+  fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
+  print "%s   %8.3f %8.3f" % (lineString, fstart, fstop)
+  [percentQ,percentU,DR,DL] = runGpcal( vis, lineString=lineString )
+  filename = vis["LkFile"]
+  fout = open( filename, "a" )
+  for nant in range(0,15) :
+    fout.write("%3d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f    %s\n" % \
+       ( nant+1, fstart, fstop, DR[nant].real, DR[nant].imag, DL[nant].real, \
+       DL[nant].imag, percentQ, percentU, lineString) )
+  fout.close()
 
-def makeTable( visFile, nchan ) :
-  for nwin in range (0,8) :
-    n1 = 24*nwin + 1
-    while (n1+nchan-1) < 24*(nwin+1)+1 :
-      delHd( visFile )
-      addLeak( visFile, n1, nchan )
-      n1 = n1 + nchan
+def makeTable( vis ) :
+  for nant in range(0,15) :
+    filename = vis["lkname"] + "%d" % (nant+1)
+    fout = open( filename, "w" )    # wipes out previous file!
+    fout.write("# input data: %s\n" % vis["fileName"] )
+    fout.write("# selectStr : %s\n" % vis["selectStr"] )
+    fout.write("# optionStr : %s\n" % vis["optionStr"] )
+    fout.write("# flux      : %s\n" % vis["flux"] )
+    fout.write("# refant    : %d\n" % vis["refant"] )
+    fout.write("# avgchan   : %d\n" % vis["avgchan"] )
+    fout.close()
+  makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
+  for nstart,nchan in zip( vis["nstart"],vis["nchan"] ) :
+    if nchan > 0 :
+      for n1 in range( nstart, nstart+nchan-vis["avgchan"]+1, vis["avgchan"] ) :
+        print n1, n1+vis["avgchan"] - 1
+        addLeak( vis, n1 )
   
+def makeLk( vis ) :
+  filename = vis["LkFile"]
+  fout = open( filename, "w" )    # wipes out previous file!
+  fout.write("# input data: %s\n" % vis["fileName"] )
+  fout.write("# legend    : %s\n" % vis["legend"] )
+  fout.write("# selectStr : %s\n" % vis["selectStr"] )
+  fout.write("# optionStr : %s\n" % vis["optionStr"] )
+  fout.write("# flux      : %s\n" % vis["flux"] )
+  fout.write("# refant    : %d\n" % vis["refant"] )
+  fout.write("# avgchan   : %d\n" % vis["avgchan"] )
+  fout.close()
+  makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
+  for nstart,nchan in zip( vis["nstart"],vis["nchan"] ) :
+    if nchan > 0 :
+      for n1 in range( nstart, nstart+nchan-vis["avgchan"]+1, vis["avgchan"] ) :
+        print n1, n1+vis["avgchan"] - 1
+        addLk( vis, n1 )
+
+# copies Lk specified by lineStr from LkFile to outfile
+def restoreLk( LkFile, lineStr, outfile ) :
+  delHd( outfile )
+  failed = True
+  try:
+    fin = open( LkFile, "r" )
+  except :
+    print "couldn't locate file %s" % LkFile
+    return
+  lk = numpy.zeros( 60 )
+  for line in fin :
+    if not line.startswith("#") :
+      a = line.split()
+      if len(a) > 9 :
+        if a[9] == lineStr :
+          failed = False
+          fstart = float(a[1])
+          fstop = float(a[2])
+          nant = int(a[0])
+          lk[4*nant-4] = float(a[3])
+          lk[4*nant-3] = float(a[4])
+          lk[4*nant-2] = float(a[5])
+          lk[4*nant-1] = float(a[6])
+  if failed :
+    print "FAILED: could not find %s in file %s" % (lineStr,LkFile)
+  else :
+    leakStr = ""
+    for n in range(0,60) :
+      if n == 0 :
+        leakStr = "%.3f" % lk[0]
+      else :
+        leakStr = leakStr + ",%.3f" % (lk[n])
+    print "leakStr=%s" % leakStr 
+    p= subprocess.Popen( ( shlex.split('/o/plambeck/1mmDualPol/Calibration/writeleak vis=%s leak=%s' % \
+     ( outfile, leakStr ) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+    result = p.communicate()[0]
+    print result 
+ 
+  
+# ======================== start semi-obsolete wip routiones ========================= #
+
 def makeWip( infile, outfile, ncolumn, hist=False, dots=False ) :
   prevx = 0.
   ncol = ncolumn - 1
@@ -173,9 +225,7 @@ def makeWip( infile, outfile, ncolumn, hist=False, dots=False ) :
       f2 = float(a[1])
       fmean = 0.5*(f1+f2)
       fwidth = abs(f2-f1)
-
-    # plot smooth curve
-      if not hist :
+      if not hist :          # smooth curve
         if abs(prevx - fmean) < (1.1*fwidth) :
           fout.write("draw %8.3f %s\n" % (fmean,a[ncol]) )
         else :
@@ -183,9 +233,7 @@ def makeWip( infile, outfile, ncolumn, hist=False, dots=False ) :
         if dots :
           fout.write("dot\n")  
         prevx = fmean
-
-    # plot histogram
-      else :
+      else :                 # histogram
         if (abs(prevx-float(a[0])) < 0.1*fwidth)  and connect :
           fout.write("draw %s %s\n" % (a[0],a[ncol]) )
         else :
@@ -200,7 +248,7 @@ def addLine( outfile, linetext ) :
   fout.write("%s\n" % linetext)
   fout.close()
   
-def doit() :
+def save() :
   for nant in range(1,16) :
     infile = "leak%d" % nant
     outfile = "DxAmp%d.wip" % nant
@@ -216,6 +264,10 @@ def doit() :
     addLine( outfile, "color 2")
     makeWip( infile, outfile, 5)
 
+# ======================== start semi-obsolete wip routiones ========================= #
+  
+def doit() :
+  makeTable( vis3 ) 
     
 
   
