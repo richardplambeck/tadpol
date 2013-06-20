@@ -60,6 +60,52 @@ def makeStrList( LkFile ) :
   fin.close()
   return strList
 
+# an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and uncertainties vs freq
+#   for a particular source over a particular time range
+# the SS object may include a fit to the polarized flux, PA (at some ref freq) and rotation measure
+
+class SS :
+  
+  def __init__(self, vis, LkFile) :
+    'generate SS object from visibility data using leakages from LkFile'
+    self.LkFile = LkFile
+    frqlist = []
+    Stokes = []									# effectively, a temporary work area
+    strList = makeStrList( LkFile )				# make list of available channel ranges in LkFile
+    leakSolve.makeFtable( vis )					# fill in the chfreq and chwidth items in vis dictionary
+    for lineStr in strList :
+      [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, vis["fileName"] )
+      a = lineStr.split(",")   # "chan,1,49,8"
+      ch1 = int(a[2])
+      ch2 = ch1 + int(a[3]) - 1
+      fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
+      fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
+      print "  Leak %7.3f - %7.3f" % (fstartLeak, fstopLeak)
+      print "  Data %7.3f - %7.3f" % (fstart, fstop)
+      result = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
+      if numpy.isnan(result[0]) or numpy.isnan(result[2]) or numpy.isnan(result[4]) :
+        print "skipping data with nan"
+      else :
+        frqlist.append( 0.5*(fstart + fstop) )
+        Stokes.append( result )
+
+    self.f1 = numpy.array(frqlist)
+    self.f2 = numpy.array(frqlist)
+    self.I = numpy.array(Stokes).transpose()[0]
+    self.rmsI = numpy.array(Stokes).transpose()[1]
+    self.Q = numpy.array(Stokes).transpose()[2]
+    self.rmsQ = numpy.array(Stokes).transpose()[3]
+    self.U = numpy.array(Stokes).transpose()[4]
+    self.rmsU = numpy.array(Stokes).transpose()[5]
+    self.V = numpy.array(Stokes).transpose()[6]
+    self.rmsV = numpy.array(Stokes).transpose()[7]
+
+  def list( self ) :
+    print "   f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV"
+    for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
+        self.rmsQ, self.U, self.rmsU, self.V, self.rmsV ) : 
+      print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e" \
+         % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV) 
 
 # Generate table of I,Q,U,V vs channel range in file vis["fileName"], using leakages from file LkFile
 def makeIQUspectrum( vis, outfile, LkFile ) :
