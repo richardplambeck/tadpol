@@ -10,9 +10,10 @@ RMin = 5.e5
 QUnoise = 0.02
 
 freqlist = numpy.array([210., 211., 212, 213., 227., 228., 229., 230.])
+freqlist = numpy.array([ 220.57, 219.07, 223.82, 223.27, 232.08, 233.57, 228.82, 229.369] )
 
 # Create the data
-x = (.30*.30)/(freqlist*freqlist) - (.30*.30)/(220.*220.) 
+x = (.30*.30)/(freqlist*freqlist) - (.30*.30)/(226.*226.) 
   # lambdasq array, units m^2
 PAin = PA0in + RMin *  x 
    # noiseless PA array
@@ -29,6 +30,11 @@ Q = P0in * numpy.cos(2.*PAin) + qr
 U = P0in * numpy.sin(2.*PAin) + ur
 Pol = Q + 1j*U
 
+# --- now put in some real data ---
+
+Q = numpy.array( [.0953, .0935, .106, .0938, .0869, .08834, .07027, .09538] )
+U = numpy.array( [-.1177, -.1342, -.1321, -.1308,-.1305,-.1489,-.1456,-.1379] )
+Pol = Q + 1j*U
 ydata = numpy.concatenate( (Q,U) )
 xdata = numpy.concatenate( (x,x) )
 
@@ -54,9 +60,15 @@ popt,pcov = scipy.optimize.curve_fit( func, xdata, ydata, p0=[0.,0.,0.], sigma=N
 if popt[0] < 0. :
   popt[0] = -1. * popt[0]
   popt[1] = popt[1] + math.pi/2.
-print "p0 = %.3f (%.3f)" % (popt[0], math.sqrt(pcov[0][0]))
-print "pa0 = %.2f (%.2f)" % (popt[1] * 180./math.pi, math.sqrt(pcov[1][1])*180./math.pi)
-print "RM = %.3e (%.3e)" % (popt[2], math.sqrt(pcov[2][2]))
+print popt, pcov
+try :
+  print "p0 = %.3f (%.3f)" % (popt[0], math.sqrt(abs(pcov[0][0])))
+  print "pa0 = %.2f (%.2f)" % (popt[1] * 180./math.pi, math.sqrt(pcov[1][1])*180./math.pi)
+  print "RM = %.3e (%.3e)" % (popt[2], math.sqrt(pcov[2][2]))
+except :
+  print "p0 = %.3f" % (popt[0])
+  print "pa0 = %.2f" % (popt[1] * 180./math.pi)
+  print "infinite covariance matrix"
 
 
 def plotfit( freqlist, freq0, Q, U, p0, pa0, rm ) :
@@ -79,4 +91,4 @@ def plotfit( freqlist, freq0, Q, U, p0, pa0, rm ) :
   fig.plot( fx, Ufit, 'b-' )
   pylab.show()
 
-plotfit( freqlist, 220., Q, U, P0in, PA0in, RMin)
+plotfit( freqlist, 226., Q, U, popt[0], popt[1], popt[2])
