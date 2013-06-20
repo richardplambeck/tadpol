@@ -87,8 +87,11 @@ def makeIQUspectrum( vis, outfile, LkFile ) :
     fout.write("%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e\n" \
          % (fstart,fstop,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV) )
     fout.close()
-    frqlist.append( 0.5*(fstart + fstop) )
-    Stokes.append( [I, rmsI, Q, rmsQ, U, rmsU] )
+    if numpy.isnan(I) or numpy.isnan(Q) or numpy.isnan(U) :
+      print "skipping data with nan"
+    else :
+      frqlist.append( 0.5*(fstart + fstop) )
+      Stokes.append( [I, rmsI, Q, rmsQ, U, rmsU] )
 
   frq = numpy.array(frqlist)
   freq0 = 226.
@@ -195,12 +198,4 @@ def RMsearch( infile, outfile ) :
     fout.write( "%.3e  %11.4e\n" % ( RM, P ) )
   fout.close()
    
-def test() :
-  frq =  numpy.array([ 220.57, 219.07, 223.82, 223.27, 232.08, 233.57, 228.82, 229.369] )
-  freq0 = 226.
-  Qa = numpy.array( [.0953, .0935, .106, .0938, .0869, .08834, .07027, .09538] )
-  Ua = numpy.array( [-.1177, -.1342, -.1321, -.1308,-.1305,-.1489,-.1456,-.1379] )
-  rmsQa = rmsUa = numpy.array( [0.,0.,0.,0.,0.,0.,0.,0.] )
-  [p0, p0rms, pa0, pa0rms, rm, rmrms] = fitPARM( frq, freq0, Qa, Ua, rmsQa, rmsUa )
-  plotfit( frq, freq0, Qa, Ua, p0, math.pi*pa0/180., rm )
 
