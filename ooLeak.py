@@ -9,6 +9,52 @@ import numpy
 import pylab
 import sys
 
+# a Lk object is a set of leakage solutions for up to 15 antennas, typically
+#   derived by gpcal from an observation of a particular source
+# Lk objects may be stored or read from Lk files
+# generally the Lk object will contain at least 8 leakage solutions, one for each
+#   correlator window; it can, however, contain many more
+# each leakage solution in the Lk object is defined by a channel range and
+#   a frequency range 
+# nothing prevents a leak object from containing multiple frequency resolutions,
+#   or even duplicate frequency bands
+
+class Lk:
+  
+  def __init__(self, file ) :
+    self.file = file
+    self.color = color
+    self.f1 = []
+    self.f2 = []
+    self.DR = []
+    self.DL = [] 
+
+  def load( self, file ) :
+    'load leakages from a file'
+    self.file = file
+    try :
+      fin = open( self.file, "r" )
+    except :
+      print "... can't open file %s" % self.file
+    else :
+      print "... reading data from file %s" % self.file
+      lastf2 = 0.
+      for line in fin :
+        if line.startswith("#") :
+          self.info.append( line )
+        else if len(line) > 1 :
+          a = line.split()
+          ant = int(a[0].strip("C"))
+          if ant == 1 :
+            self.f1.append(float(a[1]))
+            self.f2.append(float(a[2]))
+          self.DR.append(float(a[3]) + 1j * float(a[4]))
+          self.DL.append(float(a[5]) + 1j * float(a[6]))
+      fin.close()
+      self.DR = numpy.resize( dr, [
+     
+  
+
 # a 'Leak' object contains the leakage solution for 1 antenna on 1 night
 # ideally, this solution has a particular freq resolution, although nothing
 #   prevents several freq resolutions, or even duplicate frequency bands,
