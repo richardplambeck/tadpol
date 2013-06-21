@@ -67,17 +67,25 @@ def makeStrList( LkFile ) :
 class SS :
   
   def __init__(self) :
-    self.src = "blah"
+    self.p0 = 0 
+    self.p0rms = 0.
+    self.pa0 = 0.
+    self.pa0rms = 0.
+    self.RM = 0. 
+    self.RMrms = 0.
+    self.freq0 = 0.
 
   def make( self, vis, LkFile) :
     'generate SS object from visibility data using leakages from LkFile'
     self.LkFile = LkFile
+    self.visFile = vis["fileName"]
+    self.selectStr = vis["selectStr"]
     frq1 = []
     frq2 = []
     Stokes = []									# effectively, a temporary work area
-    strList = makeStrList( LkFile )				# make list of available channel ranges in LkFile
+    self.strList = makeStrList( LkFile )	    # make list of available channel ranges in LkFile
     leakSolve.makeFtable( vis )					# fill in the chfreq and chwidth items in vis dictionary
-    for lineStr in strList :
+    for lineStr in self.strList :
       [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, vis["fileName"] )
       a = lineStr.split(",")   # "chan,1,49,8"
       ch1 = int(a[2])
@@ -104,13 +112,24 @@ class SS :
     self.rmsU = numpy.array(Stokes).transpose()[5]
     self.V = numpy.array(Stokes).transpose()[6]
     self.rmsV = numpy.array(Stokes).transpose()[7]
+    self.UT, self.parang, self.HA = paPlot.getUTPAHA( self.visFile, self.selectStr )
 
   def list( self ) :
+    print "# visFile     : %s" % self.visFile
+    print "# LkFile      : %s" % self.LkFile
+    print "# selectStr   : %s" % self.selectStr
+    print "# avg UT      : %.3f hrs" % self.UT
+    print "# avg HA      : %.3f hrs" % self.HA
+    print "# avg parang  : %.3f deg" % self.parang
+    print "# p0          : %.4f  ( %.4f ) Jy" % (self.p0, self.p0rms)
+    print "# PAfit       : %.2f  ( %.2f ) deg" % (self.pa0,self.pa0rms)    
+    print "$ RMfit       : %.2e  ( %.2e ) rad/m^2" % (self.RM, self.RMrms)
+    print "# PAfreq0     : %.3e GHz" % self.freq0
     print "   f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV"
-    for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
-        self.rmsQ, self.U, self.rmsU, self.V, self.rmsV ) : 
-      print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e" \
-         % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV) 
+    for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
+        self.rmsQ, self.U, self.rmsU, self.V, self.rmsV, self.strList ) : 
+      print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s" \
+         % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) 
 
   def func( self, x, p0, pa0, rm ) :
     xhalf = x[0 : len(x)/2]
@@ -130,6 +149,13 @@ class SS :
       popt[1] = popt[1] + math.pi/2.
     p0,pa0,rm = popt
     pa0 = pa0 * 180./math.pi
+    # compute chisq and scale covariances to get 'true' error estimates - see scipy thread
+    #     by Christoph Deil; makes errors unreasonably small, so I am dropping it
+    #  chi = y - self.func( x, p0, pa0, rm)/sigma
+    #  chisq = (chi**2).sum()
+    #  print "chisq = %.2e" % chisq
+    #  dof = len(x) - len(popt)
+    #  pcov = pcov/(chisq/dof)
     try :
       p0rms = math.sqrt(pcov[0][0])
       pa0rms = math.sqrt(pcov[1][1]) * 180./math.pi
