@@ -11,7 +11,7 @@ import string
 import leakSolve
 import paPlot
 import scipy.optimize
-import pylab
+import matplotlib.pyplot as pyplot
 
      
 # Extract Stokes (I,Q,U, or V) amplitude and rms from one line of uvflux output 
@@ -45,7 +45,7 @@ def getStokes2( infile, selectString, lineString ) :
     [dummy, Q, rmsQ, ncorrs] = parseLine( lines[nlines-5] )
     [dummy, U, rmsU, ncorrs] = parseLine( lines[nlines-4] )
     [dummy, V, rmsV, ncorrs] = parseLine( lines[nlines-3] )
-  print "\n%7.4f %5.4f  %6.4f %5.4f  %6.4f %5.4f  %6.4f %5.4f" % (I, rmsI, Q, rmsQ, U, rmsU, V, rmsV) 
+  #print "\n%7.4f %5.4f  %6.4f %5.4f  %6.4f %5.4f  %6.4f %5.4f" % (I, rmsI, Q, rmsQ, U, rmsU, V, rmsV) 
   return [ I, rmsI, Q, rmsQ, U, rmsU, V, rmsV ]
 
 # makes list of lineStrings in LkFile
@@ -72,7 +72,8 @@ class SS :
   def make( self, vis, LkFile) :
     'generate SS object from visibility data using leakages from LkFile'
     self.LkFile = LkFile
-    frqlist = []
+    frq1 = []
+    frq2 = []
     Stokes = []									# effectively, a temporary work area
     strList = makeStrList( LkFile )				# make list of available channel ranges in LkFile
     leakSolve.makeFtable( vis )					# fill in the chfreq and chwidth items in vis dictionary
@@ -89,11 +90,12 @@ class SS :
       if numpy.isnan(result[0]) or numpy.isnan(result[2]) or numpy.isnan(result[4]) :
         print "skipping data with nan"
       else :
-        frqlist.append( 0.5*(fstart + fstop) )
+        frq1.append( fstart )
+        frq2.append( fstop )
         Stokes.append( result )
 
-    self.f1 = numpy.array(frqlist)
-    self.f2 = numpy.array(frqlist)
+    self.f1 = numpy.array(frq1)
+    self.f2 = numpy.array(frq2)
     self.I = numpy.array(Stokes).transpose()[0]
     self.rmsI = numpy.array(Stokes).transpose()[1]
     self.Q = numpy.array(Stokes).transpose()[2]
@@ -143,6 +145,44 @@ class SS :
     self.pa0rms = pa0rms
     self.RM = rm
     self.RMrms = rmrms
+    self.freq0 = freq0
+
+  def plot( self ) :
+    pyplot.clf()
+    pyplot.ion()
+    fig = pyplot.subplot(1,1,1)
+    fmin = numpy.concatenate( (self.f1,self.f2) ).min()
+    fmax = numpy.concatenate( (self.f1,self.f2) ).max()
+    fmin = fmin - 0.1 * (fmax - fmin)
+    fmax = fmax + 0.1 * (fmax - fmin)
+    Ymax = abs(1.2 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
+    freq = 0.5 * (self.f1 + self.f2)
+    dfreq = 0.5 * (self.f1 - self.f2)
+    fig.axis( [fmin, fmax, -1.*Ymax, Ymax] )
+    fig.grid( True )
+    fig.errorbar( freq, self.Q, xerr=dfreq, yerr=self.rmsQ, fmt='ro')
+    fig.errorbar( freq, self.U, xerr=dfreq, yerr=self.rmsU, fmt='bo')
+    fx = numpy.arange(fmin,fmax,.1)
+    xp = (.30*.30)/(fx*fx) - (.30*.30)/(self.freq0 * self.freq0)
+    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, math.pi*self.pa0/180., self.RM)
+    Qfit = data[0:len(data)/2]
+    Ufit = data[len(data)/2 :]
+    fig.plot( fx, Qfit, 'r-' )
+    fig.plot( fx, Ufit, 'b-' )
+    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, \
+        math.pi*(self.pa0)/180., (self.RM - self.RMrms) )
+    Qfit = data[0:len(data)/2]
+    Ufit = data[len(data)/2 :]
+    fig.plot( fx, Qfit, 'r--' )
+    fig.plot( fx, Ufit, 'b--' )
+    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, \
+        math.pi*(self.pa0)/180., (self.RM + self.RMrms) )
+    Qfit = data[0:len(data)/2]
+    Ufit = data[len(data)/2 :]
+    fig.plot( fx, Qfit, 'r--' )
+    fig.plot( fx, Ufit, 'b--' )
+    pyplot.show()
+
 
 
 # Generate table of I,Q,U,V vs channel range in file vis["fileName"], using leakages from file LkFile
@@ -165,7 +205,7 @@ def makeIQUspectrum( vis, outfile, LkFile ) :
     fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
     fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
     print "  Leak %7.3f - %7.3f" % (fstartLeak, fstopLeak)
-    print "  Data %7.3f - %7.3f" % (fstart, fstop)
+    print "  Data %7.3f - %7.3f\n" % (fstart, fstop)
     [ I, rmsI, Q, rmsQ, U, rmsU, V, rmsV ] = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
     fout = open( outfile, "a" )
     fout.write("%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e\n" \
@@ -223,9 +263,9 @@ def fitPARM( freq, freq0, Q, U, rmsQ, rmsU ) :
   return [p0, p0rms, pa0, pa0rms, rm, rmrms]
 
 def plotfit( freqlist, freq0, Q, U, p0, pa0, rm ) :
-  pylab.clf()
-  pylab.ion()
-  fig = pylab.subplot(1,1,1)
+  pyplot.clf()
+  pyplot.ion()
+  fig = pyplot.subplot(1,1,1)
   frange = freqlist.max() - freqlist.min()
   fmin = freqlist.min() - .05 * frange
   fmax = freqlist.max() + .05 * frange
@@ -241,7 +281,7 @@ def plotfit( freqlist, freq0, Q, U, p0, pa0, rm ) :
   Ufit = data[len(data)/2 :]
   fig.plot( fx, Qfit, 'r-' )
   fig.plot( fx, Ufit, 'b-' )
-  pylab.show()
+  pyplot.show()
 
   
 def RMsearch( infile, outfile ) :
