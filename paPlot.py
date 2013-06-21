@@ -10,8 +10,7 @@ import shlex
 import string
 
 
-# compute pa, poli, and uncertainties from I,Q,U,sigmaI,sigmaQ,sigmaU
-# note that sigmaI, sigmaQ, sigmaU are uncertainties of the mean
+# Compute [PA,poli,sigmaPA,sigmaPoli] from [I,Q,U,sigmaI,sigmaQ,sigmaU]
 def paCalc(I, Q, U, sigmaI, sigmaQ, sigmaU) :
   pa = (180./math.pi) * 0.5 * math.atan2(U,Q)
   poli = math.sqrt(U*U + Q*Q)
@@ -22,7 +21,7 @@ def paCalc(I, Q, U, sigmaI, sigmaQ, sigmaU) :
   sigmaPa = (180./math.pi) * math.sqrt(dpasq)
   return [pa, poli, sigmaPa, sigmaPoli]
   
-# extract Stokes amplitude and rms from one line of uvflux output #
+# Extract Stokes (I,Q,U, or V) amplitude and rms from one line of uvflux output 
 def parseLine( line ) :
   print line
   a = line.split()
@@ -38,7 +37,7 @@ def parseLine( line ) :
     rms = float(a[4])/math.sqrt(ncorrs)
   return [ src, stokes, rms, ncorrs ]
      
-# run uvflux on selected data, return I, POLI, PA, and error estimates #
+# Run uvflux on selected data, return I, POLI, PA, and error estimates #
 def getStokes( infile, selectString, lineString ) :
   p= subprocess.Popen( ( shlex.split('uvflux vis=%s select=%s line=%s stokes=I,Q,U,V' \
      % (infile, selectString, lineString) ) ), \
