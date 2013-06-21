@@ -233,6 +233,25 @@ class SS :
     fig.plot( fx, Ufit, 'b--' )
     pyplot.show()
 
+# generate table of SS objects
+def makeTable( visFile, LkFile, srcName, extra, nint, outfile ) :
+  selectList = paPlot.makeSelectList( visFile, srcName, nint )
+  n = -1
+  for selectString in selectList :
+    if len( extra ) > 0 :
+      selectString = selectString + "," + extra
+    print " "
+    print selectString
+    n = n + 1
+    ss = SS()
+  # Must create vis dictionary for ss.make
+    vis = { "fileName" : visFile, \
+            "selectStr" : selectString }
+    ss.make( vis, LkFile )
+    ss.fitPARM( 226. )
+    ss.plot()
+    ss.dump( outfile )
+                                                                                                                  
 def RMsearch( infile, outfile ) :
   RMmin = -5.e9
   RMmax = 5.e9
