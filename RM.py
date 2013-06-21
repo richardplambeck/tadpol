@@ -66,7 +66,10 @@ def makeStrList( LkFile ) :
 
 class SS :
   
-  def __init__(self, vis, LkFile) :
+  def __init__(self) :
+    self.src = "blah"
+
+  def make( self, vis, LkFile) :
     'generate SS object from visibility data using leakages from LkFile'
     self.LkFile = LkFile
     frqlist = []
@@ -106,6 +109,41 @@ class SS :
         self.rmsQ, self.U, self.rmsU, self.V, self.rmsV ) : 
       print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e" \
          % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV) 
+
+  def func( self, x, p0, pa0, rm ) :
+    xhalf = x[0 : len(x)/2]
+    qmodel = p0 * numpy.cos(2 * (pa0 + rm*xhalf))
+    umodel = p0 * numpy.sin(2 * (pa0 + rm*xhalf))
+    return numpy.concatenate( (qmodel,umodel) )
+
+  def fitPARM( self, freq0 ) :
+    freq = 0.5 * (self.f1 + self.f2)
+    lambdasq = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
+    x = numpy.concatenate( (lambdasq,lambdasq) )
+    y = numpy.concatenate( (self.Q,self.U) )
+    sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
+    popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[0.,0.,0.], sigma=sigma  )
+    if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
+      popt[0] = -1. * popt[0]
+      popt[1] = popt[1] + math.pi/2.
+    p0,pa0,rm = popt
+    pa0 = pa0 * 180./math.pi
+    try :
+      p0rms = math.sqrt(pcov[0][0])
+      pa0rms = math.sqrt(pcov[1][1]) * 180./math.pi
+      rmrms = math.sqrt(pcov[2][2]) 
+    except :
+      p0rms = pa0rms = rmrms = 0.
+    print "p0 = %.3f (%.3f)" % (p0, p0rms)
+    print "pa0 = %.2f (%.2f)" % (pa0, pa0rms)
+    print "RM = %.3e (%.3e)" % (rm, rmrms)
+    self.p0 = p0
+    self.p0rms = p0rms
+    self.pa0 = pa0
+    self.pa0rms = pa0rms
+    self.RM = rm
+    self.RMrms = rmrms
+
 
 # Generate table of I,Q,U,V vs channel range in file vis["fileName"], using leakages from file LkFile
 def makeIQUspectrum( vis, outfile, LkFile ) :
@@ -159,12 +197,6 @@ def makeIQUspectrum( vis, outfile, LkFile ) :
 # ... p0 is polarized intensity in Jy; a real number
 # ... pa0 is the position angle at the reference wavelength x=0, in radians; real number
 # ... rm is the rotation measure in radians/m^2; real number
-
-def func( x, p0, pa0, rm ) :
-  xhalf = x[0 : len(x)/2]
-  qmodel = p0 * numpy.cos(2 * (pa0 + rm*xhalf))
-  umodel = p0 * numpy.sin(2 * (pa0 + rm*xhalf))
-  return numpy.concatenate( (qmodel,umodel) )
   
 
 # least squares fit of Q,U vs freq to get PA and RM
