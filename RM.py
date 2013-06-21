@@ -131,6 +131,30 @@ class SS :
       print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s" \
          % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) 
 
+  def dump( self, outfile ) :
+    fout = open( outfile, "a" )
+    fout.write( "# visFile     : %s\n" % self.visFile )
+    fout.write( "# LkFile      : %s\n" % self.LkFile )
+    fout.write( "# selectStr   : %s\n" % self.selectStr )
+    fout.write( "# avg UT      : %.3f hrs\n" % self.UT )
+    fout.write( "# avg HA      : %.3f hrs\n" % self.HA )
+    fout.write( "# avg parang  : %.3f deg\n" % self.parang )
+    fout.write( "# p0          : %.4f  ( %.4f ) Jy\n" % (self.p0, self.p0rms) )
+    fout.write( "# PAfit       : %.2f  ( %.2f ) deg\n" % (self.pa0,self.pa0rms) )    
+    fout.write( "# RMfit       : %.2e  ( %.2e ) rad/m^2\n" % (self.RM, self.RMrms) )
+    fout.write( "# PAfreq0     : %.3e GHz\n" % self.freq0 )
+    fout.write( "#  f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV\n")
+    for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
+        self.rmsQ, self.U, self.rmsU, self.V, self.rmsV, self.strList ) : 
+      fout.write( "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s\n" \
+         % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) )
+    fout.close()
+
+  # model Stokes Q, U as a function of 1/lambda^2
+  # ... x = c^2/freq^2 - c^2/freq0^2, in m^2; each x given twice, once for Q, once for U
+  # ... p0 is polarized intensity in Jy; a real number
+  # ... pa0 is the position angle at the reference wavelength x=0, in radians; real number
+  # ... rm is the rotation measure in radians/m^2; real number
   def func( self, x, p0, pa0, rm ) :
     xhalf = x[0 : len(x)/2]
     qmodel = p0 * numpy.cos(2 * (pa0 + rm*xhalf))
@@ -209,107 +233,6 @@ class SS :
     fig.plot( fx, Ufit, 'b--' )
     pyplot.show()
 
-
-
-# Generate table of I,Q,U,V vs channel range in file vis["fileName"], using leakages from file LkFile
-def makeIQUspectrum( vis, outfile, LkFile ) :
-  frqlist = []
-  Stokes = []
-  strList = makeStrList( LkFile )				# make list of available channel ranges in LkFile
-  leakSolve.makeFtable( vis )					# fill in the chfreq and chwidth items in vis dictionary
-
-  fout = open( outfile, "a" )
-  fout.write("# Lkfile: %s   VisFile: %s,  selectStr: %s\n" % (LkFile, vis["fileName"], vis["selectStr"]) )
-  fout.write("#  f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV\n" )
-  fout.close()
-
-  for lineStr in strList :
-    [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, vis["fileName"] )
-    a = lineStr.split(",")   # "chan,1,49,8"
-    ch1 = int(a[2])
-    ch2 = ch1 + int(a[3]) - 1
-    fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
-    fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
-    print "  Leak %7.3f - %7.3f" % (fstartLeak, fstopLeak)
-    print "  Data %7.3f - %7.3f\n" % (fstart, fstop)
-    [ I, rmsI, Q, rmsQ, U, rmsU, V, rmsV ] = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
-    fout = open( outfile, "a" )
-    fout.write("%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e\n" \
-         % (fstart,fstop,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV) )
-    fout.close()
-    if numpy.isnan(I) or numpy.isnan(Q) or numpy.isnan(U) :
-      print "skipping data with nan"
-    else :
-      frqlist.append( 0.5*(fstart + fstop) )
-      Stokes.append( [I, rmsI, Q, rmsQ, U, rmsU] )
-
-  frq = numpy.array(frqlist)
-  freq0 = 226.
-  Ia = numpy.array(Stokes).transpose()[0]
-  Iavg = numpy.average( Ia )      # could be weighted
-  Qa = numpy.array(Stokes).transpose()[2]
-  rmsQa = numpy.array(Stokes).transpose()[3]
-  Ua = numpy.array(Stokes).transpose()[4]
-  rmsUa = numpy.array(Stokes).transpose()[5]
-  [p0, p0rms, pa0, pa0rms, rm, rmrms] = fitPARM( frq, freq0, Qa, Ua, rmsQa, rmsUa )
-  fout = open( outfile, "a" )
-  fout.write("# results: poli = %.3f (%.3f), PA = %.2f (%.2f),  RM = %.3e (%.3e)\n" \
-       % (p0, p0rms, pa0, pa0rms, rm, rmrms) )
-  fout.close()
-  plotfit( frq, freq0, Qa, Ua, p0, math.pi*pa0/180., rm )
-  
-# model Stokes Q, U as a function of 1/lambda^2
-# ... x = c^2/freq^2 - c^2/freq0^2, in m^2; each x given twice, once for Q, once for U
-# ... p0 is polarized intensity in Jy; a real number
-# ... pa0 is the position angle at the reference wavelength x=0, in radians; real number
-# ... rm is the rotation measure in radians/m^2; real number
-  
-
-# least squares fit of Q,U vs freq to get PA and RM
-def fitPARM( freq, freq0, Q, U, rmsQ, rmsU ) :
-  xhalf = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)   # lambdasq - lambdasq0, m^2
-  x = numpy.concatenate( (xhalf,xhalf) )
-  y = numpy.concatenate( (Q,U) )
-  sigma = numpy.concatenate( (rmsQ,rmsU) )
-  popt,pcov = scipy.optimize.curve_fit( func, x, y, p0=[0.,0.,0.], sigma=sigma  )
-  if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
-    popt[0] = -1. * popt[0]
-    popt[1] = popt[1] + math.pi/2.
-  p0,pa0,rm = popt
-  pa0 = pa0 * 180./math.pi
-  try :
-    p0rms = math.sqrt(pcov[0][0])
-    pa0rms = math.sqrt(pcov[1][1]) * 180./math.pi
-    rmrms = math.sqrt(pcov[2][2]) 
-  except :
-    p0rms = pa0rms = rmrms = 0.
-  print "p0 = %.3f (%.3f)" % (p0, p0rms)
-  print "pa0 = %.2f (%.2f)" % (pa0, pa0rms)
-  print "RM = %.3e (%.3e)" % (rm, rmrms)
-  return [p0, p0rms, pa0, pa0rms, rm, rmrms]
-
-def plotfit( freqlist, freq0, Q, U, p0, pa0, rm ) :
-  pyplot.clf()
-  pyplot.ion()
-  fig = pyplot.subplot(1,1,1)
-  frange = freqlist.max() - freqlist.min()
-  fmin = freqlist.min() - .05 * frange
-  fmax = freqlist.max() + .05 * frange
-  Ymax = abs(1.05 * numpy.concatenate( (Q,U,-1.*Q,-1*U) ).max())
-  fig.axis( [fmin, fmax, -1.*Ymax, Ymax] )
-  fig.grid( True )
-  fig.plot( freqlist, Q, 'ro')
-  fig.plot( freqlist, U, 'bo')
-  fx = numpy.arange(fmin,fmax,.1)
-  xp = (.30*.30)/(fx*fx) - (.30*.30)/(freq0*freq0)
-  data = func( numpy.concatenate( (xp,xp) ), p0, pa0, rm)
-  Qfit = data[0:len(data)/2]
-  Ufit = data[len(data)/2 :]
-  fig.plot( fx, Qfit, 'r-' )
-  fig.plot( fx, Ufit, 'b-' )
-  pyplot.show()
-
-  
 def RMsearch( infile, outfile ) :
   RMmin = -5.e9
   RMmax = 5.e9
