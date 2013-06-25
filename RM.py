@@ -92,9 +92,9 @@ class SS :
       ch2 = ch1 + int(a[3]) - 1
       fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
       fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
-      if (abs(fstartLeak - fstart) > .0001) or (abs(fstopLeak - fstop) > .0001) :
-        print "    Leak %7.3f - %7.3f" % (fstartLeak, fstopLeak)
-        print "    Data %7.3f - %7.3f" % (fstart, fstop)
+      if (abs(fstartLeak - fstart) > .0005) or (abs(fstopLeak - fstop) > .0005) :
+        print "    Leak %10.3f - %10.3f" % (fstartLeak, fstopLeak)
+        print "    Data %10.3f - %10.3f" % (fstart, fstop)
       result = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
       if numpy.isnan(result[0]) or numpy.isnan(result[2]) or numpy.isnan(result[4]) :
         print "skipping data with nan"
@@ -132,11 +132,11 @@ class SS :
       print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s" \
          % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) 
 
-  def reload( self, infile ) :
-    fin = open( infile, "r" )
-    for line in fin :
-      a = line.split()
-      if line.startswith("#") and a(2) == "UT" :  self.UT = float(a[4])
+  #def readOne( self, fin )
+  #  for line in fin :
+  #    a = line.split()
+  #    if line.startswith("#") and a(2) == "UT" :  self.UT = float(a[4])
+      
 
   def dump( self, outfile ) :
     fout = open( outfile, "a" )
@@ -156,6 +156,30 @@ class SS :
       fout.write( "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s\n" \
          % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) )
     fout.close()
+
+  def dump2( self, outfile ) :
+    outStr = "# visFile     : %s\n" % self.visFile 
+    outStr = outStr + "# LkFile      : %s\n" % self.LkFile 
+    outStr = outStr + "# selectStr   : %s\n" % self.selectStr 
+    outStr = outStr + "# avg UT      : %.3f hrs\n" % self.UT 
+    outStr = outStr + "# avg HA      : %.3f hrs\n" % self.HA 
+    outStr = outStr + "# avg parang  : %.3f deg\n" % self.parang 
+    outStr = outStr + "# p0          : %.4f  ( %.4f ) Jy\n" % (self.p0, self.p0rms) 
+    outStr = outStr + "# PAfit       : %.2f  ( %.2f ) deg\n" % (self.pa0,self.pa0rms)     
+    outStr = outStr + "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2\n" % (self.RM/1.e5, self.RMrms/1.e5) 
+    outStr = outStr + "# PAfreq0     : %.3f GHz\n" % self.freq0 
+    outStr = outStr + \
+      "#  f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV\n"
+    for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
+        self.rmsQ, self.U, self.rmsU, self.V, self.rmsV, self.strList ) : 
+      outStr = outStr + "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s\n" \
+         % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) 
+    if outfile == None :
+      print outStr
+    else :
+      fout = open( outfile, "a" )
+      fout.write( "%s" % outStr )
+      fout.close()
 
   # model Stokes Q, U as a function of 1/lambda^2
   # ... x = c^2/freq^2 - c^2/freq0^2, in m^2; each x given twice, once for Q, once for U
@@ -242,16 +266,14 @@ class SS :
     pyplot.draw()                 # plots and continues...
 
 # generate table of SS objects
-def makeTable( visFile, LkFile, srcName, extra, nint, outfile ) :
-  selectList = paPlot.makeSelectList( visFile, srcName, nint )
+def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile ) :
+  selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
   nlist = len(selectList)
-  n = -1
-  for selectString in selectList :
+  for n, selectString in enumerate(selectList) :
     if len( extra ) > 0 :
       selectString = selectString + "," + extra
     print " "
-    print "%d/%d  %s" % (n,nlist,selectString)
-    n = n + 1
+    print "  %d/%d  %s" % (n+1,nlist,selectString)
     ss = SS()
   # Must create vis dictionary for ss.make
     vis = { "fileName" : visFile, \
