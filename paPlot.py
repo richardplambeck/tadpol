@@ -67,7 +67,7 @@ def makeTable( visFile='wide.av', \
                lineString='chan,1,1,8', \
                outFile='table.dat' ) :
 
-  selectList = makeSelectList( visFile, srcName, nint )
+  selectList = makeSelectList( visFile, srcName, nint, 2 )
   fout = open(outFile, 'a')
   fout.write("#\n# ------ visFile = %s, lineString = %s ------ #\n" % (visFile,lineString))
   fout.write("#  dechr   parang     HA        S    sigma     poli  sigma     PA  sigma      V    sigma   selectString\n")
@@ -149,12 +149,11 @@ def getUTPAHA( visFile, selectString ) :
 # note: using select=time(t1,t2), a record is selected only if t >= t1 and t < t2;
 #    thus, always add 1 sec to time of last record to make sure it will be selected
 
-def makeSelectList( visFile, srcName, nint ) :
+def makeSelectList( visFile, srcName, nint, maxGapMinutes ) :
   date1 = ""
   selectList = []
   scanList = []	    # string, e.g. '13MAR22:02:11:10.0'
   scanTime = []     # decimal minutes since 0 UT on date1
-  tgapmax = 2.	    # 2 minutes is max allowed time gap
 
   # Create list of scan times for this source
   p= subprocess.Popen( ( shlex.split('uvindex vis=%s interval=0.01' %  visFile  ) ), \
@@ -189,7 +188,7 @@ def makeSelectList( visFile, srcName, nint ) :
     #   ... quota is filled
     #   ... or this is the very last scan
     #   ... or quota is nearly filled and this scan is followed by big time gap
-    if (nscans >= nint) or (n == len(scanList)-1) or (tgapnext > tgapmax) :
+    if (nscans >= nint) or (n == len(scanList)-1) or (tgapnext > maxGapMinutes) :
       [date,strhr,strmin,strsec] = scanList[n].split(":")
       hr = int(strhr)
       min = int(strmin)
