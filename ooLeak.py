@@ -42,7 +42,7 @@ class Lk:
       for line in fin :
         if line.startswith("#") :
           self.info.append( line )
-        else if len(line) > 1 :
+        elif len(line) > 1 :
           a = line.split()
           ant = int(a[0].strip("C"))
           if ant == 1 :
@@ -51,8 +51,6 @@ class Lk:
           self.DR.append(float(a[3]) + 1j * float(a[4]))
           self.DL.append(float(a[5]) + 1j * float(a[6]))
       fin.close()
-      self.DR = numpy.resize( dr, [
-     
   
 
 # a 'Leak' object contains the leakage solution for 1 antenna on 1 night
@@ -82,7 +80,14 @@ class Leak:
       lastf2 = 0.
       for line in fin :
         a = line.split()
-        if (not line.startswith("#")) and (len(a) > 10) :
+        if (len(a) > 9) and (line.startswith("C")) :				# new style Lk table, includes all antennas
+          ant = int( a[0].strip("C") )
+          if ant == self.ant :
+            self.f1.append(float(a[1]))
+            self.f2.append(float(a[2]))
+            self.DR.append(float(a[3]) + 1j * float(a[4]))
+            self.DL.append(float(a[5]) + 1j * float(a[6]))
+        if (not line.startswith("#")) and (len(a) > 10) :       # old style lk table, one antenna only
           self.f1.append(float(a[0]))
           self.f2.append(float(a[1]))
           self.DR.append(float(a[6]) + 1j * float(a[7]))
@@ -255,7 +260,10 @@ class Plot:
         a = line.split()
         if len(a) > 0 :
           for nant in range(1,16) :
-            filename = a[0] + str(nant)
+            if a[0][-1] == "*" :            # old style lk files, one per antenna
+              filename = a[0][0:-1] + str(nant)
+            else :                          # new style Lk file, all antennas in 1 file
+              filename = a[0]
             Plot.addLeak(self, filename, nant, a[1], color[ncolor] )
           ncolor = ncolor + 1
           if (ncolor > (len(color)-1) ) : ncolor = 0
@@ -313,5 +321,6 @@ class Plot:
       pylab.title("C%d DR" % ant)
       for Leak in self.LeakList :
         if Leak.ant == ant :
+          print "plotting antenna %d" % ant
           Leak.panel( pAnt, "amp", "DR", f1, f2, 0., amax )
-          pylab.draw()
+    pylab.draw()
