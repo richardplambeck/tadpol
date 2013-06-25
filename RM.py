@@ -16,7 +16,7 @@ import matplotlib.pyplot as pyplot
      
 # Extract Stokes (I,Q,U, or V) amplitude and rms from one line of uvflux output 
 def parseLine( line ) :
-  print line
+  #print line
   a = line.split()
   if (len(a) == 9) :
     src = a[0]
@@ -92,8 +92,9 @@ class SS :
       ch2 = ch1 + int(a[3]) - 1
       fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
       fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
-      print "  Leak %7.3f - %7.3f" % (fstartLeak, fstopLeak)
-      print "  Data %7.3f - %7.3f" % (fstart, fstop)
+      if (abs(fstartLeak - fstart) > .0001) or (abs(fstopLeak - fstop) > .0001) :
+        print "    Leak %7.3f - %7.3f" % (fstartLeak, fstopLeak)
+        print "    Data %7.3f - %7.3f" % (fstart, fstop)
       result = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
       if numpy.isnan(result[0]) or numpy.isnan(result[2]) or numpy.isnan(result[4]) :
         print "skipping data with nan"
@@ -123,13 +124,19 @@ class SS :
     print "# avg parang  : %.3f deg" % self.parang
     print "# p0          : %.4f  ( %.4f ) Jy" % (self.p0, self.p0rms)
     print "# PAfit       : %.2f  ( %.2f ) deg" % (self.pa0,self.pa0rms)    
-    print "$ RMfit       : %.2e  ( %.2e ) rad/m^2" % (self.RM, self.RMrms)
     print "# PAfreq0     : %.3e GHz" % self.freq0
+    print "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2" % (self.RM/1.e5, self.RMrms/1.e5)
     print "   f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV"
     for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
         self.rmsQ, self.U, self.rmsU, self.V, self.rmsV, self.strList ) : 
       print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s" \
          % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) 
+
+  def reload( self, infile ) :
+    fin = open( infile, "r" )
+    for line in fin :
+      a = line.split()
+      if line.startswith("#") and a(2) == "UT" :  self.UT = float(a[4])
 
   def dump( self, outfile ) :
     fout = open( outfile, "a" )
@@ -141,7 +148,7 @@ class SS :
     fout.write( "# avg parang  : %.3f deg\n" % self.parang )
     fout.write( "# p0          : %.4f  ( %.4f ) Jy\n" % (self.p0, self.p0rms) )
     fout.write( "# PAfit       : %.2f  ( %.2f ) deg\n" % (self.pa0,self.pa0rms) )    
-    fout.write( "# RMfit       : %.2e  ( %.2e ) rad/m^2\n" % (self.RM, self.RMrms) )
+    fout.write( "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2\n" % (self.RM/1.e5, self.RMrms/1.e5) )
     fout.write( "# PAfreq0     : %.3e GHz\n" % self.freq0 )
     fout.write( "#  f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV\n")
     for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
@@ -231,17 +238,19 @@ class SS :
     Ufit = data[len(data)/2 :]
     fig.plot( fx, Qfit, 'r--' )
     fig.plot( fx, Ufit, 'b--' )
-    pyplot.show()
+    pyplot.title( self.selectStr, size=8 )  
+    pyplot.draw()                 # plots and continues...
 
 # generate table of SS objects
 def makeTable( visFile, LkFile, srcName, extra, nint, outfile ) :
   selectList = paPlot.makeSelectList( visFile, srcName, nint )
+  nlist = len(selectList)
   n = -1
   for selectString in selectList :
     if len( extra ) > 0 :
       selectString = selectString + "," + extra
     print " "
-    print selectString
+    print "%d/%d  %s" % (n,nlist,selectString)
     n = n + 1
     ss = SS()
   # Must create vis dictionary for ss.make
