@@ -145,13 +145,15 @@ def makeLk( vis ) :
   makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
   for nstart,nchan in zip( vis["nstart"],vis["nchan"] ) :
     if nchan > 0 :
-      for n1 in range( nstart, nstart+nchan-vis["avgchan"]+1, vis["avgchan"] ) :
+      nextra = nchan - (nchan/vis["avgchan"])*vis["avgchan"]
+      for n1 in range( nstart + nextra/2, nstart+nchan-vis["avgchan"]+1, vis["avgchan"] ) :
         #print n1, n1+vis["avgchan"] - 1
         delHd( vis["fileName"] ) 
         addLk( vis, n1 )
 
 # copies Lk specified by lineStr from LkFile to outfile
 def restoreLk( LkFile, lineStr, outfile ) :
+  print "   restoreLk: copy leakages for lineStr = %s from %s to %s" % (lineStr, LkFile, outfile)
   delHd( outfile )
   failed = True
   try:
@@ -168,7 +170,7 @@ def restoreLk( LkFile, lineStr, outfile ) :
           failed = False
           fstart = float(a[1])
           fstop = float(a[2])
-          nant = int(a[0])
+          nant = int(a[0].lstrip("C"))    # e.g., "C01" -> 1
           lk[4*nant-4] = float(a[3])
           lk[4*nant-3] = float(a[4])
           lk[4*nant-2] = float(a[5])
@@ -182,9 +184,9 @@ def restoreLk( LkFile, lineStr, outfile ) :
         leakStr = "%.3f" % lk[0]
       else :
         leakStr = leakStr + ",%.3f" % (lk[n])
-    print "leakStr=%s" % leakStr 
-    p= subprocess.Popen( ( shlex.split('/o/plambeck/1mmDualPol/Calibration/writeleak vis=%s leak=%s' % \
+    #print "leakStr=%s" % leakStr 
+    p= subprocess.Popen( ( shlex.split('/fringe2/plambeck/pol/tadpol/writeleak vis=%s leak=%s' % \
      ( outfile, leakStr ) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
     result = p.communicate()[0]
-    print result 
-
+    if (len(result) > 1) : print result 
+  return [fstart,fstop]
