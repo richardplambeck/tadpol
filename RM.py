@@ -285,22 +285,23 @@ def readAll(  infile, ssList ) :
   ss = SS()
   for line in fin :
     a = line.split()
+
     if line == "# ----------------------------\n" :
-      if ss.visFile != None :
-        ss.f1 = numpy.array(f1)
-        ss.f2 = numpy.array(f2)
-        ss.I = numpy.array(I)
-        ss.rmsI = numpy.array(rmsI)
-        ss.Q = numpy.array(Q)
-        ss.rmsQ = numpy.array(rmsQ)
-        ss.U = numpy.array(U)
-        ss.rmsU = numpy.array(rmsU)
-        ss.V = numpy.array(V)
-        ss.rmsV = numpy.array(rmsV)
-        ss.dump( None )
-        ssList.append(ss)
+      ss.f1 = numpy.array(f1)
+      ss.f2 = numpy.array(f2)
+      ss.I = numpy.array(I)
+      ss.rmsI = numpy.array(rmsI)
+      ss.Q = numpy.array(Q)
+      ss.rmsQ = numpy.array(rmsQ)
+      ss.U = numpy.array(U)
+      ss.rmsU = numpy.array(rmsU)
+      ss.V = numpy.array(V)
+      ss.rmsV = numpy.array(rmsV)
+      ss.dump( None )
+      ssList.append(ss)
       ss = SS()
       f1 = f2 = I = rmsI = Q = rmsQ = U = rmsU = V = rmsV = []
+
     if line.startswith("# visFile") : ss.visFile = a[3]
     if line.startswith("# LkFile") : ss.LkFile = a[3]
     if line.startswith("# selectStr") : ss.selectStr = a[3]
@@ -318,11 +319,13 @@ def readAll(  infile, ssList ) :
       ss.RMrms = float( a[5] ) * 1.e5
     if line.startswith("# PAfreq0") : ss.freq0 = float( a[3] )
     if not line.startswith("#") :
-      print line
+      print "a = ", a
       f1.append( float( a[0] ) )
       f2.append( float( a[1] ) )
-      I.append( float( a[2] ) )
-      print I
+      print "I = ", I
+      print "a[2] = ", a[2]
+      I.append( float(a[2]) )
+      print "new I =", I
       rmsI.append( float( a[3] ) )
       Q.append( float( a[4] ) )
       rmsQ.append( float( a[5] ) )
