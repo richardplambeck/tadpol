@@ -69,6 +69,16 @@ class SS :
   def __init__(self) :
     self.visFile = None
     self.strList = []
+    self.f1 = numpy.zeros( 1 )
+    self.f2 = numpy.zeros( 1 )
+    self.I = numpy.zeros( 1 )
+    self.rmsI = numpy.zeros( 1 )
+    self.Q = numpy.zeros( 1 )
+    self.rmsQ = numpy.zeros( 1 )
+    self.U = numpy.zeros( 1 )
+    self.rmsU = numpy.zeros( 1 )
+    self.V = numpy.zeros( 1 )
+    self.rmsV = numpy.zeros( 1 )
     self.p0 = 0 
     self.p0rms = 0.
     self.pa0 = 0.
@@ -281,12 +291,12 @@ def RMsearch( infile, outfile ) :
 # read in series of SSs from input file
 def readAll(  infile, ssList ) :
   fin = open( infile, "r" )
-  f1 = f2 = I = rmsI = Q = rmsQ = U = rmsU = V = rmsV = []
   ss = SS()
+  f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
+
   for line in fin :
     a = line.split()
-
-    if line == "# ----------------------------\n" :
+    if line == "# ----------------------------\n" :     # this delimits end of each SS list
       ss.f1 = numpy.array(f1)
       ss.f2 = numpy.array(f2)
       ss.I = numpy.array(I)
@@ -297,35 +307,30 @@ def readAll(  infile, ssList ) :
       ss.rmsU = numpy.array(rmsU)
       ss.V = numpy.array(V)
       ss.rmsV = numpy.array(rmsV)
-      ss.dump( None )
-      ssList.append(ss)
-      ss = SS()
-      f1 = f2 = I = rmsI = Q = rmsQ = U = rmsU = V = rmsV = []
-
-    if line.startswith("# visFile") : ss.visFile = a[3]
-    if line.startswith("# LkFile") : ss.LkFile = a[3]
-    if line.startswith("# selectStr") : ss.selectStr = a[3]
-    if line.startswith("# avg UT") : ss.UT = float( a[4] )
-    if line.startswith("# avg HA") : ss.HA = float( a[4] )
-    if line.startswith("# avg parang") : ss.parang = float( a[4] )
-    if line.startswith("# p0") : 
+      ss.dump( "Junk" )
+      ssList.append(ss)       # add completed SS object to the list
+      ss = SS()               # initialize a new SS object
+      f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
+    elif line.startswith("# visFile") : ss.visFile = a[3]
+    elif line.startswith("# LkFile") : ss.LkFile = a[3]
+    elif line.startswith("# selectStr") : ss.selectStr = a[3]
+    elif line.startswith("# avg UT") : ss.UT = float( a[4] )
+    elif line.startswith("# avg HA") : ss.HA = float( a[4] )
+    elif line.startswith("# avg parang") : ss.parang = float( a[4] )
+    elif line.startswith("# p0") : 
       ss.p0 = float( a[3] )
       ss.p0rms = float( a[5] )
-    if line.startswith("# PAfit") : 
+    elif line.startswith("# PAfit") : 
       ss.pa0 = float( a[3] )
       ss.pa0rms = float( a[5] )
-    if line.startswith("# RMfit") : 
+    elif line.startswith("# RMfit") : 
       ss.RM = float( a[3] ) * 1.e5
       ss.RMrms = float( a[5] ) * 1.e5
-    if line.startswith("# PAfreq0") : ss.freq0 = float( a[3] )
-    if not line.startswith("#") :
-      print "a = ", a
+    elif line.startswith("# PAfreq0") : ss.freq0 = float( a[3] )
+    elif not line.startswith("#") :
       f1.append( float( a[0] ) )
       f2.append( float( a[1] ) )
-      print "I = ", I
-      print "a[2] = ", a[2]
       I.append( float(a[2]) )
-      print "new I =", I
       rmsI.append( float( a[3] ) )
       Q.append( float( a[4] ) )
       rmsQ.append( float( a[5] ) )
