@@ -67,6 +67,8 @@ def makeStrList( LkFile ) :
 class SS :
   
   def __init__(self) :
+    self.visFile = None
+    self.strList = []
     self.p0 = 0 
     self.p0rms = 0.
     self.pa0 = 0.
@@ -115,49 +117,8 @@ class SS :
     self.rmsV = numpy.array(Stokes).transpose()[7]
     self.UT, self.parang, self.HA = paPlot.getUTPAHA( self.visFile, self.selectStr )
 
-  def list( self ) :
-    print "# visFile     : %s" % self.visFile
-    print "# LkFile      : %s" % self.LkFile
-    print "# selectStr   : %s" % self.selectStr
-    print "# avg UT      : %.3f hrs" % self.UT
-    print "# avg HA      : %.3f hrs" % self.HA
-    print "# avg parang  : %.3f deg" % self.parang
-    print "# p0          : %.4f  ( %.4f ) Jy" % (self.p0, self.p0rms)
-    print "# PAfit       : %.2f  ( %.2f ) deg" % (self.pa0,self.pa0rms)    
-    print "# PAfreq0     : %.3e GHz" % self.freq0
-    print "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2" % (self.RM/1.e5, self.RMrms/1.e5)
-    print "   f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV"
-    for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
-        self.rmsQ, self.U, self.rmsU, self.V, self.rmsV, self.strList ) : 
-      print "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s" \
-         % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) 
-
-  #def readOne( self, fin )
-  #  for line in fin :
-  #    a = line.split()
-  #    if line.startswith("#") and a(2) == "UT" :  self.UT = float(a[4])
-      
-
+  # writes to file; if outfile=None, prints to screen
   def dump( self, outfile ) :
-    fout = open( outfile, "a" )
-    fout.write( "# visFile     : %s\n" % self.visFile )
-    fout.write( "# LkFile      : %s\n" % self.LkFile )
-    fout.write( "# selectStr   : %s\n" % self.selectStr )
-    fout.write( "# avg UT      : %.3f hrs\n" % self.UT )
-    fout.write( "# avg HA      : %.3f hrs\n" % self.HA )
-    fout.write( "# avg parang  : %.3f deg\n" % self.parang )
-    fout.write( "# p0          : %.4f  ( %.4f ) Jy\n" % (self.p0, self.p0rms) )
-    fout.write( "# PAfit       : %.2f  ( %.2f ) deg\n" % (self.pa0,self.pa0rms) )    
-    fout.write( "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2\n" % (self.RM/1.e5, self.RMrms/1.e5) )
-    fout.write( "# PAfreq0     : %.3e GHz\n" % self.freq0 )
-    fout.write( "#  f1       f2           I        rmsI           Q        rmsQ           U        rmsU           V        rmsV\n")
-    for f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr in zip( self.f1, self.f2, self.I, self.rmsI, self.Q, \
-        self.rmsQ, self.U, self.rmsU, self.V, self.rmsV, self.strList ) : 
-      fout.write( "%8.3f %8.3f   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s\n" \
-         % (f1,f2,I,rmsI,Q,rmsQ,U,rmsU,V,rmsV,selectStr) )
-    fout.close()
-
-  def dump2( self, outfile ) :
     outStr = "# visFile     : %s\n" % self.visFile 
     outStr = outStr + "# LkFile      : %s\n" % self.LkFile 
     outStr = outStr + "# selectStr   : %s\n" % self.selectStr 
@@ -179,6 +140,7 @@ class SS :
     else :
       fout = open( outfile, "a" )
       fout.write( "%s" % outStr )
+      fout.write( "# ----------------------------\n" )       # this delimiter needed by readAll
       fout.close()
 
   # model Stokes Q, U as a function of 1/lambda^2
@@ -316,3 +278,56 @@ def RMsearch( infile, outfile ) :
   fout.close()
    
 
+# read in series of SSs from input file
+def readAll(  infile, ssList ) :
+  fin = open( infile, "r" )
+  f1 = f2 = I = rmsI = Q = rmsQ = U = rmsU = V = rmsV = []
+  ss = SS()
+  for line in fin :
+    a = line.split()
+    if line == "# ----------------------------\n" :
+      if ss.visFile != None :
+        ss.f1 = numpy.array(f1)
+        ss.f2 = numpy.array(f2)
+        ss.I = numpy.array(I)
+        ss.rmsI = numpy.array(rmsI)
+        ss.Q = numpy.array(Q)
+        ss.rmsQ = numpy.array(rmsQ)
+        ss.U = numpy.array(U)
+        ss.rmsU = numpy.array(rmsU)
+        ss.V = numpy.array(V)
+        ss.rmsV = numpy.array(rmsV)
+        ss.dump( None )
+        ssList.append(ss)
+      ss = SS()
+      f1 = f2 = I = rmsI = Q = rmsQ = U = rmsU = V = rmsV = []
+    if line.startswith("# visFile") : ss.visFile = a[3]
+    if line.startswith("# LkFile") : ss.LkFile = a[3]
+    if line.startswith("# selectStr") : ss.selectStr = a[3]
+    if line.startswith("# avg UT") : ss.UT = float( a[4] )
+    if line.startswith("# avg HA") : ss.HA = float( a[4] )
+    if line.startswith("# avg parang") : ss.parang = float( a[4] )
+    if line.startswith("# p0") : 
+      ss.p0 = float( a[3] )
+      ss.p0rms = float( a[5] )
+    if line.startswith("# PAfit") : 
+      ss.pa0 = float( a[3] )
+      ss.pa0rms = float( a[5] )
+    if line.startswith("# RMfit") : 
+      ss.RM = float( a[3] ) * 1.e5
+      ss.RMrms = float( a[5] ) * 1.e5
+    if line.startswith("# PAfreq0") : ss.freq0 = float( a[3] )
+    if not line.startswith("#") :
+      print line
+      f1.append( float( a[0] ) )
+      f2.append( float( a[1] ) )
+      I.append( float( a[2] ) )
+      print I
+      rmsI.append( float( a[3] ) )
+      Q.append( float( a[4] ) )
+      rmsQ.append( float( a[5] ) )
+      U.append( float( a[6] ) )
+      rmsU.append( float( a[7] ) )
+      V.append( float( a[8] ) )
+      rmsV.append( float( a[9] ) )
+      ss.strList.append( a[10] ) 
