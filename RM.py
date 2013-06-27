@@ -307,7 +307,6 @@ def readAll(  infile, ssList ) :
       ss.rmsU = numpy.array(rmsU)
       ss.V = numpy.array(V)
       ss.rmsV = numpy.array(rmsV)
-      ss.dump( "Junk" )
       ssList.append(ss)       # add completed SS object to the list
       ss = SS()               # initialize a new SS object
       f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
@@ -339,3 +338,34 @@ def readAll(  infile, ssList ) :
       V.append( float( a[8] ) )
       rmsV.append( float( a[9] ) )
       ss.strList.append( a[10] ) 
+
+# read in one or more PARM files, write summary file for wip
+def plotPA( paList, outfile ) :
+  fin = open( paList, "r" )
+  for line in fin :
+    if not line.startswith("#") :
+      ssList = []
+      a = line.split()
+      infile = a[0]
+      fout = open( outfile, "a" )
+      fout.write("#\n")
+      fout.write("# %s\n" % infile)
+      fout.write("#  dechr   parang     HA        S    sigma     poli  sigma     PA  sigma      RM    sigma   selectString\n")
+      fout.close()
+      readAll( infile, ssList )
+      for ss in ssList : 
+        Iavg = numpy.average(ss.I, weights=ss.rmsI )
+        Istd = numpy.std(ss.I, ddof=1)
+        fout = open(outfile, 'a')
+        fout.write("%8.3f %8.2f %8.3f %8.3f %6.3f %8.3f %6.3f %7.1f %5.1f %8.3f %6.3f   %s\n" % \
+          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, ss.selectStr) )
+        fout.close()
+  fin.close()
+        
+
+       
+    
+      
+    
+    
+
