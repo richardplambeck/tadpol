@@ -12,6 +12,7 @@ import leakSolve
 import paPlot
 import scipy.optimize
 import matplotlib.pyplot as pyplot
+from matplotlib.backends.backend_pdf import PdfPages
 
      
 # Extract Stokes (I,Q,U, or V) amplitude and rms from one line of uvflux output 
@@ -237,6 +238,38 @@ class SS :
     pyplot.title( self.selectStr, size=8 )  
     pyplot.draw()                 # plots and continues...
 
+  def plot2( self, fig, Ymax ) :
+    fmin = numpy.concatenate( (self.f1,self.f2) ).min()
+    fmax = numpy.concatenate( (self.f1,self.f2) ).max()
+    fmin = fmin - 0.1 * (fmax - fmin)
+    fmax = fmax + 0.1 * (fmax - fmin)
+    freq = 0.5 * (self.f1 + self.f2)
+    dfreq = 0.5 * (self.f1 - self.f2)
+    fig.axis( [fmin, fmax, -1.*Ymax, Ymax] )
+    fig.grid( True )
+    fig.errorbar( freq, self.Q, xerr=dfreq, yerr=self.rmsQ, fmt='ro')
+    fig.errorbar( freq, self.U, xerr=dfreq, yerr=self.rmsU, fmt='bo')
+    fx = numpy.arange(fmin,fmax,.1)
+    xp = (.30*.30)/(fx*fx) - (.30*.30)/(self.freq0 * self.freq0)
+    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, math.pi*self.pa0/180., self.RM)
+    Qfit = data[0:len(data)/2]
+    Ufit = data[len(data)/2 :]
+    fig.plot( fx, Qfit, 'r-' )
+    fig.plot( fx, Ufit, 'b-' )
+    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, \
+        math.pi*(self.pa0)/180., (self.RM - self.RMrms) )
+    Qfit = data[0:len(data)/2]
+    Ufit = data[len(data)/2 :]
+    fig.plot( fx, Qfit, 'r--' )
+    fig.plot( fx, Ufit, 'b--' )
+    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, \
+        math.pi*(self.pa0)/180., (self.RM + self.RMrms) )
+    Qfit = data[0:len(data)/2]
+    Ufit = data[len(data)/2 :]
+    fig.plot( fx, Qfit, 'r--' )
+    fig.plot( fx, Ufit, 'b--' )
+    pyplot.title( self.selectStr, size=8 )  
+
 # generate table of SS objects
 def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile ) :
   selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
@@ -362,7 +395,28 @@ def plotPA( paList, outfile ) :
         fout.close()
   fin.close()
         
+def replot( paFile, Ymax, nrow=4, ncol=2 ) :
+  ssList = []
+  readAll( paFile, ssList )
+  pyplot.ioff()
+  pp = PdfPages( 'multipage.pdf' )
+  nplot = 1
+  for ss in ssList :
+    if nplot > 8 : 
+      pyplot.savefig( pp, format='pdf' )
+      #pyplot.show()
+      nplot = 1
+      pyplot.clf()
+    fig = pyplot.subplot( nrow, ncol, nplot )
+    ss.plot2( fig, Ymax )
+    nplot = nplot + 1
+  #pyplot.show()
+  pyplot.savefig( pp, format='pdf' )
+  pp.close()
+  
 
+        
+  
        
     
       
