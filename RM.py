@@ -61,6 +61,18 @@ def makeStrList( LkFile ) :
   fin.close()
   return strList
 
+# time average selected data from visFile into 'sstmp', with options=nopol
+# this saves time in creating a multichannel SS object because input file
+#    is re-read for every LkFile channel interval
+def avgtoSStmp( visFile, selectStr ) :
+  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol' \
+     % (visFile, selectStr) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  result = p.communicate()[0]
+  print result
+
 # an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and uncertainties vs freq
 #   for a particular source over a particular time range
 # the SS object may include a fit to the polarized flux, PA (at some ref freq) and rotation measure
@@ -88,18 +100,21 @@ class SS :
     self.RMrms = 0.
     self.freq0 = 0.
 
-  def make( self, vis, LkFile) :
-    'generate SS object from visibility data using leakages from LkFile'
+  def make( self, visFile, selectStr, LkFile) :
+    'generate multichannel SS object from visibility data using leakages from LkFile'
+    self.visFile = visFile        
+    self.selectStr = selectStr
     self.LkFile = LkFile
-    self.visFile = vis["fileName"]
-    self.selectStr = vis["selectStr"]
+    print "creating temporary file sstmp"
+    avgtoSStmp( visFile, selectStr ) 
+    vis = { "fileName" : "sstmp", "selectStr" : selectStr }
     frq1 = []
     frq2 = []
     Stokes = []									# effectively, a temporary work area
     self.strList = makeStrList( LkFile )	    # make list of available channel ranges in LkFile
     leakSolve.makeFtable( vis )					# fill in the chfreq and chwidth items in vis dictionary
     for lineStr in self.strList :
-      [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, vis["fileName"] )
+      [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, "sstmp" )
       a = lineStr.split(",")   # "chan,1,49,8"
       ch1 = int(a[2])
       ch2 = ch1 + int(a[3]) - 1
@@ -116,6 +131,7 @@ class SS :
         frq2.append( fstop )
         Stokes.append( result )
 
+    self.visFile = visFile               # change visfile name back to originating file
     self.f1 = numpy.array(frq1)
     self.f2 = numpy.array(frq2)
     self.I = numpy.array(Stokes).transpose()[0]
@@ -271,7 +287,7 @@ class SS :
     pyplot.title( self.selectStr, size=8 )  
 
 # generate table of SS objects
-def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile ) :
+def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, plot=False ) :
   selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
   nlist = len(selectList)
   for n, selectString in enumerate(selectList) :
@@ -280,12 +296,9 @@ def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile ) :
     print " "
     print "  %d/%d  %s" % (n+1,nlist,selectString)
     ss = SS()
-  # Must create vis dictionary for ss.make
-    vis = { "fileName" : visFile, \
-            "selectStr" : selectString }
-    ss.make( vis, LkFile )
+    ss.make( visFile, selectString, LkFile )
     ss.fitPARM( 226. )
-    ss.plot()
+    if plot : ss.plot()
     ss.dump( outfile )
                                                                                                                   
 def RMsearch( infile, outfile ) :
@@ -402,7 +415,7 @@ def replot( paFile, Ymax, nrow=4, ncol=2 ) :
   pp = PdfPages( 'multipage.pdf' )
   nplot = 1
   for ss in ssList :
-    if nplot > 8 : 
+    if nplot > nrow*ncol : 
       pyplot.savefig( pp, format='pdf' )
       #pyplot.show()
       nplot = 1
