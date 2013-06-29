@@ -228,10 +228,10 @@ class SS :
     Ymax = abs(1.2 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
     freq = 0.5 * (self.f1 + self.f2)
     dfreq = 0.5 * (self.f1 - self.f2)
-    fig.axis( [fmin, fmax, -1.*Ymax, Ymax] )
+    fig.axis( [fmin, fmax, -1.*Ymax, Ymax], size=8 )
     fig.grid( True )
-    fig.errorbar( freq, self.Q, xerr=dfreq, yerr=self.rmsQ, fmt='ro')
-    fig.errorbar( freq, self.U, xerr=dfreq, yerr=self.rmsU, fmt='bo')
+    fig.errorbar( freq, self.Q, xerr=dfreq, yerr=self.rmsQ, marker='rs', markersize=3 )
+    fig.errorbar( freq, self.U, xerr=dfreq, yerr=self.rmsU, marker='bs', markersize=3 )
     fx = numpy.arange(fmin,fmax,.1)
     xp = (.30*.30)/(fx*fx) - (.30*.30)/(self.freq0 * self.freq0)
     data = self.func( numpy.concatenate( (xp,xp) ), self.p0, math.pi*self.pa0/180., self.RM)
@@ -251,20 +251,21 @@ class SS :
     Ufit = data[len(data)/2 :]
     fig.plot( fx, Qfit, 'r--' )
     fig.plot( fx, Ufit, 'b--' )
-    pyplot.title( self.selectStr, size=8 )  
+    pyplot.suptitle( self.selectStr, fontsize=8, y=.91 )  
     pyplot.draw()                 # plots and continues...
 
-  def plot2( self, fig, Ymax ) :
+  def plot2( self, fig, Ymax, labelsize=8 ) :
     fmin = numpy.concatenate( (self.f1,self.f2) ).min()
     fmax = numpy.concatenate( (self.f1,self.f2) ).max()
     fmin = fmin - 0.1 * (fmax - fmin)
     fmax = fmax + 0.1 * (fmax - fmin)
     freq = 0.5 * (self.f1 + self.f2)
     dfreq = 0.5 * (self.f1 - self.f2)
-    fig.axis( [fmin, fmax, -1.*Ymax, Ymax] )
+    fig.axis( [fmin, fmax, -1.*Ymax, Ymax], size=3 )
+    fig.tick_params(axis='both', which='major', labelsize=labelsize )
     fig.grid( True )
-    fig.errorbar( freq, self.Q, xerr=dfreq, yerr=self.rmsQ, fmt='ro')
-    fig.errorbar( freq, self.U, xerr=dfreq, yerr=self.rmsU, fmt='bo')
+    fig.errorbar( freq, self.Q, xerr=dfreq, yerr=self.rmsQ, fmt='ro', markersize=3 )
+    fig.errorbar( freq, self.U, xerr=dfreq, yerr=self.rmsU, fmt='bo', markersize=3 )
     fx = numpy.arange(fmin,fmax,.1)
     xp = (.30*.30)/(fx*fx) - (.30*.30)/(self.freq0 * self.freq0)
     data = self.func( numpy.concatenate( (xp,xp) ), self.p0, math.pi*self.pa0/180., self.RM)
@@ -284,7 +285,7 @@ class SS :
     Ufit = data[len(data)/2 :]
     fig.plot( fx, Qfit, 'r--' )
     fig.plot( fx, Ufit, 'b--' )
-    pyplot.title( self.selectStr, size=8 )  
+    pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
 
 # generate table of SS objects
 def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, plot=False ) :
@@ -408,20 +409,21 @@ def plotPA( paList, outfile ) :
         fout.close()
   fin.close()
         
-def replot( paFile, Ymax, nrow=4, ncol=2 ) :
+def replot( paFile, Ymax, nrows=4, ncols=2 ) :
   ssList = []
   readAll( paFile, ssList )
   pyplot.ioff()
   pp = PdfPages( 'multipage.pdf' )
   nplot = 1
+  pyplot.subplots_adjust( hspace=0.25 )
   for ss in ssList :
-    if nplot > nrow*ncol : 
+    if nplot > nrows*ncols : 
       pyplot.savefig( pp, format='pdf' )
       #pyplot.show()
       nplot = 1
       pyplot.clf()
-    fig = pyplot.subplot( nrow, ncol, nplot )
-    ss.plot2( fig, Ymax )
+    fig = pyplot.subplot( nrows, ncols, nplot )
+    ss.plot2( fig, Ymax, labelsize=10./ncols )
     nplot = nplot + 1
   #pyplot.show()
   pyplot.savefig( pp, format='pdf' )
