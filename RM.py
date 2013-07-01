@@ -264,6 +264,8 @@ class SS :
     Ufit = data[len(data)/2 :]
     fig.plot( fx, Qfit, 'r--' )
     fig.plot( fx, Ufit, 'b--' )
+    fig.text( .01, .92, "RM %.2e (%.2e) rad/m2" % (self.RM ,self.RMrms), transform=fig.transAxes, \
+      horizontalalignment='left', verticalalignment='bottom', fontsize=10 )
     pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
 
 # generate table of SS objects
