@@ -236,6 +236,8 @@ class SS :
     fmax = numpy.concatenate( (self.f1,self.f2) ).max()
     fmin = fmin - 0.1 * (fmax - fmin)
     fmax = fmax + 0.1 * (fmax - fmin)
+    if Ymax == 0. :
+      Ymax = abs(1.2 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
     freq = 0.5 * (self.f1 + self.f2)
     dfreq = 0.5 * (self.f1 - self.f2)
     fig.axis( [fmin, fmax, -1.*Ymax, Ymax], size=3 )
@@ -390,23 +392,28 @@ def plotPA( paList, outfile ) :
         fout.close()
   fin.close()
         
-def replot( paFile, Ymax, nrows=4, ncols=2 ) :
-  ssList = []
-  readAll( paFile, ssList )
+def replot( paList, Ymax, nrows=4, ncols=2 ) :
   pyplot.ioff()
+  pyplot.clf()
   pp = PdfPages( 'multipage.pdf' )
+  fin = open( paList, "r" )
   nplot = 1
-  pyplot.subplots_adjust( hspace=0.25 )
-  for ss in ssList :
-    if nplot > nrows*ncols : 
-      pyplot.savefig( pp, format='pdf' )
-      #pyplot.show()
-      nplot = 1
-      pyplot.clf()
-    fig = pyplot.subplot( nrows, ncols, nplot )
-    ss.plot2( fig, Ymax, labelsize=10./ncols )
-    nplot = nplot + 1
-  #pyplot.show()
+  for line in fin :
+    if not line.startswith("#") :
+      ssList = []
+      a = line.split()
+      paFile = a[0]
+      readAll( paFile, ssList )
+      pyplot.subplots_adjust( hspace=0.25 )
+      for ss in ssList :
+        print "plotting file %s, string %s" % (paFile, ss.selectStr)
+        if nplot > nrows*ncols : 
+           pyplot.savefig( pp, format='pdf' )
+           nplot = 1
+           pyplot.clf()
+        fig = pyplot.subplot( nrows, ncols, nplot )
+        ss.plot2( fig, Ymax, labelsize=10./ncols )
+        nplot = nplot + 1
   pyplot.savefig( pp, format='pdf' )
   pp.close()
   
