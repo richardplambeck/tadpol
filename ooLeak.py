@@ -8,6 +8,9 @@ import cmath
 import numpy
 import pylab
 import sys
+import matplotlib.pyplot as pyplot
+from matplotlib.backends.backend_pdf import PdfPages
+
 
 # a Lk object is a set of leakage solutions for up to 15 antennas, typically
 #   derived by gpcal from an observation of a particular source
@@ -324,3 +327,26 @@ class Plot:
           print "plotting antenna %d" % ant
           Leak.panel( pAnt, "amp", "DR", f1, f2, 0., amax )
     pylab.draw()
+
+  def ampAll(self, f1=0., f2=0., type="amp", amax=.25) :
+    pyplot.ioff()
+    pp = PdfPages( 'multipage.pdf' )
+    [f1, f2] = Plot.xlimits( self, 8, f1, f2 )   # assume limits are the same for all
+    ymin = 0.
+    ymax = amax
+    for ant in range(1,16) :
+      pyplot.clf()
+      pL = pyplot.subplot(2,1,1)    # DL in upper panel
+      for Leak in self.LeakList :
+        if Leak.ant == ant :
+          print "plotting DL amp for antenna %d" % ant
+          Leak.panel(pL, type, "DL", f1, f2, ymin, ymax )
+          pyplot.title("C%d DL" % ant)
+      pR = pyplot.subplot(2,1,2)    # DR in lower panel
+      for Leak in self.LeakList :
+        if Leak.ant == ant :
+          print "plotting DR amp for antenna %d" % ant
+          Leak.panel(pR, type, "DR", f1, f2, ymin, ymax )
+          pyplot.title("C%d DR" % ant)
+      pyplot.savefig( pp, format='pdf' )
+    pp.close()
