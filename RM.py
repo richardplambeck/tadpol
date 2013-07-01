@@ -67,6 +67,7 @@ def makeStrList( LkFile ) :
 def avgtoSStmp( visFile, selectStr ) :
   p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  time.sleep(1)
   p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol' \
      % (visFile, selectStr) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
@@ -187,7 +188,12 @@ class SS :
     x = numpy.concatenate( (lambdasq,lambdasq) )
     y = numpy.concatenate( (self.Q,self.U) )
     sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
-    popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[0.,0.,0.], sigma=sigma  )
+    Qavg = numpy.average( self.Q )
+    Uavg = numpy.average( self.U )
+    p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
+    pa0 = 0.5 * math.atan(Uavg/Qavg)
+    print "start with p0 = %.3f, pa0 = %.2f" % (p0, pa0 * 180./math.pi)
+    popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
     if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
       popt[0] = -1. * popt[0]
       popt[1] = popt[1] + math.pi/2.
@@ -220,41 +226,12 @@ class SS :
   def plot( self ) :
     pyplot.clf()
     pyplot.ion()
-    fig = pyplot.subplot(1,1,1)
-    fmin = numpy.concatenate( (self.f1,self.f2) ).min()
-    fmax = numpy.concatenate( (self.f1,self.f2) ).max()
-    fmin = fmin - 0.1 * (fmax - fmin)
-    fmax = fmax + 0.1 * (fmax - fmin)
     Ymax = abs(1.2 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
-    freq = 0.5 * (self.f1 + self.f2)
-    dfreq = 0.5 * (self.f1 - self.f2)
-    fig.axis( [fmin, fmax, -1.*Ymax, Ymax], size=8 )
-    fig.grid( True )
-    fig.errorbar( freq, self.Q, xerr=dfreq, yerr=self.rmsQ, marker='rs', markersize=3 )
-    fig.errorbar( freq, self.U, xerr=dfreq, yerr=self.rmsU, marker='bs', markersize=3 )
-    fx = numpy.arange(fmin,fmax,.1)
-    xp = (.30*.30)/(fx*fx) - (.30*.30)/(self.freq0 * self.freq0)
-    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, math.pi*self.pa0/180., self.RM)
-    Qfit = data[0:len(data)/2]
-    Ufit = data[len(data)/2 :]
-    fig.plot( fx, Qfit, 'r-' )
-    fig.plot( fx, Ufit, 'b-' )
-    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, \
-        math.pi*(self.pa0)/180., (self.RM - self.RMrms) )
-    Qfit = data[0:len(data)/2]
-    Ufit = data[len(data)/2 :]
-    fig.plot( fx, Qfit, 'r--' )
-    fig.plot( fx, Ufit, 'b--' )
-    data = self.func( numpy.concatenate( (xp,xp) ), self.p0, \
-        math.pi*(self.pa0)/180., (self.RM + self.RMrms) )
-    Qfit = data[0:len(data)/2]
-    Ufit = data[len(data)/2 :]
-    fig.plot( fx, Qfit, 'r--' )
-    fig.plot( fx, Ufit, 'b--' )
-    pyplot.suptitle( self.selectStr, fontsize=8, y=.91 )  
+    fig = pyplot.subplot(1,1,1)
+    self.plot2( fig, Ymax, labelsize=12 ) 
     pyplot.draw()                 # plots and continues...
 
-  def plot2( self, fig, Ymax, labelsize=8 ) :
+  def plot2( self, fig, Ymax, labelsize ) :
     fmin = numpy.concatenate( (self.f1,self.f2) ).min()
     fmax = numpy.concatenate( (self.f1,self.f2) ).max()
     fmin = fmin - 0.1 * (fmax - fmin)
@@ -389,23 +366,27 @@ def readAll(  infile, ssList ) :
 # read in one or more PARM files, write summary file for wip
 def plotPA( paList, outfile ) :
   fin = open( paList, "r" )
+  color = 1
   for line in fin :
     if not line.startswith("#") :
+      color = color + 1
+      if (color > 8) : color = 1
       ssList = []
       a = line.split()
       infile = a[0]
       fout = open( outfile, "a" )
       fout.write("#\n")
       fout.write("# %s\n" % infile)
-      fout.write("#  dechr   parang     HA        S    sigma     poli  sigma     PA  sigma      RM    sigma   selectString\n")
+      fout.write("#  dechr   parang     HA        S    sigma     poli  sigma     PA  sigma      RM   sigma  col   selectString\n")
       fout.close()
       readAll( infile, ssList )
       for ss in ssList : 
-        Iavg = numpy.average(ss.I, weights=ss.rmsI )
+        #Iavg = numpy.average(ss.I, weights=ss.rmsI )
+        Iavg = numpy.average(ss.I )
         Istd = numpy.std(ss.I, ddof=1)
         fout = open(outfile, 'a')
-        fout.write("%8.3f %8.2f %8.3f %8.3f %6.3f %8.3f %6.3f %7.1f %5.1f %8.3f %6.3f   %s\n" % \
-          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, ss.selectStr) )
+        fout.write("%8.3f %8.2f %8.3f %8.3f %6.3f %8.3f %6.3f %7.1f %5.1f %8.3f %6.3f  %2d   %s\n" % \
+          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, color, ss.selectStr) )
         fout.close()
   fin.close()
         
@@ -429,12 +410,3 @@ def replot( paFile, Ymax, nrows=4, ncols=2 ) :
   pyplot.savefig( pp, format='pdf' )
   pp.close()
   
-
-        
-  
-       
-    
-      
-    
-    
-
