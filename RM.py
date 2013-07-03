@@ -264,8 +264,10 @@ class SS :
     Ufit = data[len(data)/2 :]
     fig.plot( fx, Qfit, 'r--' )
     fig.plot( fx, Ufit, 'b--' )
-    fig.text( .01, .92, "RM %.2e (%.2e) rad/m2" % (self.RM ,self.RMrms), transform=fig.transAxes, \
-      horizontalalignment='left', verticalalignment='bottom', fontsize=10 )
+    textStr = "PA = %.2f (%.2f)\nRM = %.2e (%.2e)" % ( self.pa0 ,self.pa0rms, self.RM, self.RMrms)
+    props = dict(boxstyle='round', facecolor='wheat', alpha=1 )	# patch.Patch properties
+    fig.text( .5, .05, textStr, transform=fig.transAxes, horizontalalignment='center', 
+      verticalalignment='bottom', fontsize=labelsize, bbox=props )
     pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
 
 # generate table of SS objects
@@ -369,15 +371,21 @@ def readAll(  infile, ssList ) :
 
 # read in one or more PARM files, write summary file for wip
 def plotPA( paList, outfile ) :
+  srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
+	"3c279", "1337-129", "1633+382", "3c345", "NRAO530", "SgrA", "1749+096", "1921-293", \
+    "bllac", "titan" ]
+  colorList = [ 3,2,14,4,3,3,4,8,1,9,10,11,12,13,5,15,1,2]
+  nstart = 1
   fin = open( paList, "r" )
-  color = 1
   for line in fin :
-    if not line.startswith("#") :
-      color = color + 1
-      if (color > 8) : color = 1
+    a = line.split()
+    if not line.startswith("#") and len(a) > 0 :
       ssList = []
-      a = line.split()
       infile = a[0]
+      for src,col in zip (srcList,colorList) :
+        if (a[0].find(src) >= 0) or (a[0].find(src.capitalize()) >= 0) :
+          srcName = src
+          color = col
       fout = open( outfile, "a" )
       fout.write("#\n")
       fout.write("# %s\n" % infile)
@@ -392,9 +400,12 @@ def plotPA( paList, outfile ) :
         fout.write("%8.3f %8.2f %8.3f %8.3f %6.3f %8.3f %6.3f %7.1f %5.1f %8.3f %6.3f  %2d   %s\n" % \
           (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, color, ss.selectStr) )
         fout.close()
+      nstop = nstart + len(ssList) + 2
+      print "1src %d %d %d %s" % (nstart, nstop, color, srcName )
+      nstart = nstop + 1
   fin.close()
         
-def replot( paList, Ymax, nrows=4, ncols=2 ) :
+def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
   pyplot.ioff()
   pyplot.clf()
   pp = PdfPages( 'multipage.pdf' )
