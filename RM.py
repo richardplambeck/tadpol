@@ -223,6 +223,15 @@ class SS :
     self.RMrms = rmrms
     self.freq0 = freq0
 
+  def polm( self ) :
+    'compute fractional polarization and uncertainty'
+    #Iavg = numpy.average(ss.I, weights=ss.rmsI )
+    Iavg = numpy.average( self.I )
+    Istd = numpy.std( self.I, ddof=1 )/math.sqrt(len(self.I))
+    polm = self.p0/Iavg
+    polmstd = polm * math.sqrt( pow(Istd/Iavg,2.) + pow(self.p0rms/self.p0,2.) )
+    return [polm, polmstd]
+
   def plot( self ) :
     pyplot.clf()
     pyplot.ion()
@@ -237,7 +246,7 @@ class SS :
     fmin = fmin - 0.1 * (fmax - fmin)
     fmax = fmax + 0.1 * (fmax - fmin)
     if Ymax == 0. :
-      Ymax = abs(1.2 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
+      Ymax = abs(1.3 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
     freq = 0.5 * (self.f1 + self.f2)
     dfreq = 0.5 * (self.f1 - self.f2)
     fig.axis( [fmin, fmax, -1.*Ymax, Ymax], size=3 )
@@ -264,7 +273,9 @@ class SS :
     Ufit = data[len(data)/2 :]
     fig.plot( fx, Qfit, 'r--' )
     fig.plot( fx, Ufit, 'b--' )
-    textStr = "PA = %.2f (%.2f)\nRM = %.2e (%.2e)" % ( self.pa0 ,self.pa0rms, self.RM, self.RMrms)
+    polm, polmrms = self.polm()
+    textStr = "pol = %.2f (%.2f)%%\nPA = %.1f (%.1f)\nRM = %.1e (%.1e)" % \
+      ( 100.*polm, 100*polmrms, self.pa0 ,self.pa0rms, self.RM, self.RMrms)
     props = dict(boxstyle='round', facecolor='wheat', alpha=1 )	# patch.Patch properties
     fig.text( .5, .05, textStr, transform=fig.transAxes, horizontalalignment='center', 
       verticalalignment='bottom', fontsize=labelsize, bbox=props )
@@ -430,3 +441,9 @@ def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
   pyplot.savefig( pp, format='pdf' )
   pp.close()
   
+def test() :
+  ssList = []
+  readAll("3c84.c3.PA", ssList)
+  for ss in ssList :
+    polm,polmstd = ss.polm()
+    print polm,polmstd 
