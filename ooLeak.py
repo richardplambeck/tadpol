@@ -12,6 +12,12 @@ import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 
 
+# === NOTE: 04 jul 2013 ===
+# I realize that all the Lk code here is bullshit
+# currently, I create Lk FILES (not objects) with leakSolve
+# the code below does not correctly read in these files
+# the Leak and Plot objects defined in this file are OK, however
+# ==============================================================================
 # a Lk object is a set of leakage solutions for up to 15 antennas, typically
 #   derived by gpcal from an observation of a particular source
 # Lk objects may be stored or read from Lk files
@@ -26,15 +32,12 @@ class Lk:
   
   def __init__(self, file ) :
     self.file = file
-    self.color = color
+    self.color = 1
+    self.info = []
     self.f1 = []
     self.f2 = []
     self.DR = []
     self.DL = [] 
-
-  def load( self, file ) :
-    'load leakages from a file'
-    self.file = file
     try :
       fin = open( self.file, "r" )
     except :
@@ -53,7 +56,26 @@ class Lk:
             self.f2.append(float(a[2]))
           self.DR.append(float(a[3]) + 1j * float(a[4]))
           self.DL.append(float(a[5]) + 1j * float(a[6]))
+        print self.f1, self.f2, self.DR, self.DL
       fin.close()
+
+  def stripout( self, antList, fstart, fstop, outfile ) :
+    'write table of D_R and D_L for phased sum of antList over range fstart to fstop'
+    for f1,f2,DR,DL in zip ( self.f1, self.f2, self.DR, self.DL ) :
+      print f1, f2, DR, DL
+      if (( f1 >= fstart ) and (f1 <= fstop)) or ((f2 >= fstart) and (f2 <= fstop)) :
+        navg = 0
+        DRavg = 0. + 1j * 0.
+        DLavg = 0. + 1j * 0.
+        for ant in antList :
+          if (abs(self.DR[ant-1]) == 0.) and (abs(self.DL[ant-1]) == 0.) :
+            print "entry for antenna %d is zero" % ant
+          else :
+            navg = navg + 1
+            DRavg = DRavg + self.DR[ant-1] 
+            DLavg = DLavg + self.DL[ant-1]
+        if (navg > 0) :
+          print f1, f2, DRavg/navg, DLavg/navg 
   
 
 # a 'Leak' object contains the leakage solution for 1 antenna on 1 night
@@ -187,10 +209,13 @@ class Leak:
     first = True
     f2prev = 0.
     for f1,f2,ycomplex in zip( self.f1, self.f2, yc) :
+
       if (type == 'phs' ) : 
         y = numpy.angle(ycomplex, deg=True)
       else :
         y = numpy.abs(ycomplex)
+
+    # plot like histogram if these are > 240 MHz chunks
       if abs(f1-f2) > .24 :
         if first :
           p.plot( [f1,f2], [y,y] , color=self.color, \
@@ -199,18 +224,23 @@ class Leak:
         else :
           p.plot( [f1,f2], [y,y] , color=self.color, \
             linestyle='solid', linewidth=2 )
+     
       else :  
         f = (f1+f2)/2.              # mean freq
-        if ((f1 > fstart) and (f1 < fstop)) or ((f2 > fstart) and (f2 < fstop)) :
-          #pL.plot( f, y, marker='.', color=self.color )    # make dot
-          if f1 == f2prev :
-            if first :
-              p.plot( [fprev,f], [yprev,y] , color=self.color, \
-                linestyle='solid', linewidth=1, label=self.legend )
-              first = False
-            else :
-              p.plot( [fprev,f], [yprev,y] , color=self.color, \
-                linestyle='solid', linewidth=1 )
+      # plot dots for phase
+        if type == "phs" :
+          p.plot( f, y, marker='o', color=self.color, markersize=3 )    # make dot
+      # draw lines for amp
+        else :
+          if ((f1 > fstart) and (f1 < fstop)) or ((f2 > fstart) and (f2 < fstop)) :
+            if f1 == f2prev :
+              if first :
+                p.plot( [fprev,f], [yprev,y] , color=self.color, \
+                  linestyle='solid', linewidth=1, label=self.legend )
+                first = False
+              else :
+                p.plot( [fprev,f], [yprev,y] , color=self.color, \
+                  linestyle='solid', linewidth=1 )
           fprev = f
           f2prev = f2
           yprev = y
@@ -334,18 +364,21 @@ class Plot:
     [f1, f2] = Plot.xlimits( self, 8, f1, f2 )   # assume limits are the same for all
     ymin = 0.
     ymax = amax
+    if type == "phs" :
+      ymin = -180.
+      ymax = 180.
     for ant in range(1,16) :
       pyplot.clf()
       pL = pyplot.subplot(2,1,1)    # DL in upper panel
       for Leak in self.LeakList :
         if Leak.ant == ant :
-          print "plotting DL amp for antenna %d" % ant
+          print "plotting DL for antenna %d" % ant
           Leak.panel(pL, type, "DL", f1, f2, ymin, ymax )
           pyplot.title("C%d DL" % ant)
       pR = pyplot.subplot(2,1,2)    # DR in lower panel
       for Leak in self.LeakList :
         if Leak.ant == ant :
-          print "plotting DR amp for antenna %d" % ant
+          print "plotting DR for antenna %d" % ant
           Leak.panel(pR, type, "DR", f1, f2, ymin, ymax )
           pyplot.title("C%d DR" % ant)
       pyplot.savefig( pp, format='pdf' )
