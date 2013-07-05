@@ -190,3 +190,70 @@ def restoreLk( LkFile, lineStr, outfile ) :
     result = p.communicate()[0]
     if (len(result) > 1) : print result 
   return [fstart,fstop]
+
+# make table of D_R and D_L for the phased sum of ants in antList (or for single ant)
+# over the freq range f1-f2, and produce the vector avg over that freq interval
+def stripout( Lkfile, antList, fstart, fstop, outfile ) :
+  fin = open( Lkfile, "r" )
+  fout = open( outfile, "a" )
+  fout.write("# LkFile: %s\n" % Lkfile )
+  fout.write("# antList: %s\n" % str(antList) )
+  fout.write("# fstart,fstop: %.3f,%.3f\n" % (fstart,fstop) )
+  navg = 0
+  ngrandavg = 0
+  DRgrandavg = 0. + 1j * 0.
+  DLgrandavg = 0. + 1j * 0.
+  for line in fin :
+    if (len(line) > 2) and line.startswith("#") :
+      print line[0:-1]
+      fout.write( "%s" % line )
+    elif (len(line) > 2) :
+      a = line.split() 
+      ant = int( a[0].strip("C") )
+      if ant == 1 :      # new freq interval
+        if (navg > 0) :
+          DRavg = DRavg/navg
+          DLavg = DLavg/navg
+          fout.write(" %8.3f %8.3f  %8.3f %8.3f %6.3f   %8.3f %8.3f %6.3f    %s\n" % \
+            (f1, f2, abs(DRavg), DRavg.real, DRavg.imag, abs(DLavg), DLavg.real, \
+            DLavg.imag, a[9] ) )
+          DRgrandavg = DRgrandavg + DRavg
+          DLgrandavg = DLgrandavg + DLavg
+          ngrandavg = ngrandavg + 1
+          print ngrandavg, DRgrandavg, DLgrandavg
+        f1 = float(a[1])
+        f2 = float(a[2])
+        navg = 0
+        DRavg = 0. + 1j * 0.
+        DLavg = 0. + 1j * 0.
+      if (ant in antList) and ((( f1 >= fstart ) and (f1 <= fstop)) or ((f2 >= fstart) and (f2 <= fstop))) :
+        DR = float(a[3]) + 1j * float(a[4])
+        DL = float(a[5]) + 1j * float(a[6])
+        if (abs(DR) == 0.) and (abs(DL) == 0.) :
+          print "entry for antenna %d is zero" % ant
+          fout.write("  --- no solution for antenna %d ---\n" % ant )
+        else :
+          navg = navg + 1
+          DRavg = DRavg + DR
+          DLavg = DLavg + DL
+  # finish up
+  if (navg > 0) :
+    DRavg = DRavg/navg
+    DLavg = DLavg/navg
+    fout.write(" %8.3f %8.3f  %8.3f %8.3f %6.3f   %8.3f %8.3f %6.3f    %s\n" % \
+      (f1, f2, abs(DRavg), DRavg.real, DRavg.imag, abs(DLavg), DLavg.real, \
+      DLavg.imag, a[9] ) )
+    DRgrandavg = DRgrandavg + DRavg
+    DLgrandavg = DLgrandavg + DLavg
+    print ngrandavg, DRgrandavg, DLgrandavg
+    ngrandavg = ngrandavg+1
+  if ngrandavg > 0 :
+    DRavg = DRgrandavg/ngrandavg
+    DLavg = DLgrandavg/ngrandavg
+    fout.write("\n  band avg          %8.3f %8.3f %6.3f   %8.3f %8.3f %6.3f \n\n\n" % \
+      (abs(DRavg), DRavg.real, DRavg.imag, abs(DLavg), DLavg.real, \
+      DLavg.imag ) )
+  fin.close()
+  fout.close()
+
+
