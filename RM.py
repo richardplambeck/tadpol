@@ -121,9 +121,8 @@ class SS :
       ch2 = ch1 + int(a[3]) - 1
       fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
       fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
-      if (abs(fstartLeak - fstart) > .0005) or (abs(fstopLeak - fstop) > .0005) :
-        print "    Leak %10.3f - %10.3f" % (fstartLeak, fstopLeak)
-        print "    Data %10.3f - %10.3f" % (fstart, fstop)
+      if (abs(fstartLeak - fstart) > .001) or (abs(fstopLeak - fstop) > .001) :
+        print "    freq mismatch:  Leak %.3f - %.3f,  Data %.3f - %.3f"  % (fstartLeak, fstopLeak, fstart, fstop) 
       result = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
       if numpy.isnan(result[0]) or numpy.isnan(result[2]) or numpy.isnan(result[4]) :
         print "skipping data with nan"
@@ -235,7 +234,7 @@ class SS :
   def plot( self ) :
     pyplot.clf()
     pyplot.ion()
-    Ymax = abs(1.2 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
+    Ymax = abs(1.5 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
     fig = pyplot.subplot(1,1,1)
     self.plot2( fig, Ymax, labelsize=12 ) 
     pyplot.draw()                 # plots and continues...
@@ -246,7 +245,7 @@ class SS :
     fmin = fmin - 0.1 * (fmax - fmin)
     fmax = fmax + 0.1 * (fmax - fmin)
     if Ymax == 0. :
-      Ymax = abs(1.3 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
+      Ymax = abs(1.5 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
     freq = 0.5 * (self.f1 + self.f2)
     dfreq = 0.5 * (self.f1 - self.f2)
     fig.axis( [fmin, fmax, -1.*Ymax, Ymax], size=3 )
@@ -278,7 +277,7 @@ class SS :
       ( 100.*polm, 100*polmrms, self.pa0 ,self.pa0rms, self.RM, self.RMrms)
     props = dict(boxstyle='round', facecolor='wheat', alpha=1 )	# patch.Patch properties
     fig.text( .5, .05, textStr, transform=fig.transAxes, horizontalalignment='center', 
-      verticalalignment='bottom', fontsize=labelsize, bbox=props )
+      verticalalignment='bottom', fontsize=0.8*labelsize, bbox=props )
     pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
 
 # generate table of SS objects
@@ -384,8 +383,8 @@ def readAll(  infile, ssList ) :
 def plotPA( paList, outfile ) :
   srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
 	"3c279", "1337-129", "1633+382", "3c345", "NRAO530", "SgrA", "1749+096", "1921-293", \
-    "bllac", "titan" ]
-  colorList = [ 3,2,14,4,3,3,4,8,1,9,10,11,12,13,5,15,1,2]
+    "bllac", "titan", "1743-038", "3c286" ]
+  colorList = [ 3,2,14,4,3,3,4,8,1,9,10,11,12,13,5,15,1,2,3,4]
   nstart = 1
   fin = open( paList, "r" )
   for line in fin :
@@ -393,8 +392,10 @@ def plotPA( paList, outfile ) :
     if not line.startswith("#") and len(a) > 0 :
       ssList = []
       infile = a[0]
+      srcName = a[0]
+      color = 1
       for src,col in zip (srcList,colorList) :
-        if (a[0].find(src) >= 0) or (a[0].find(src.capitalize()) >= 0) :
+        if (a[0].find(src) >= 0) or (a[0].find(src.upper()) >= 0) :
           srcName = src
           color = col
       fout = open( outfile, "a" )
@@ -423,9 +424,9 @@ def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
   fin = open( paList, "r" )
   nplot = 1
   for line in fin :
-    if not line.startswith("#") :
+    a = line.split()
+    if (len(a) > 0) and (not line.startswith("#")) :
       ssList = []
-      a = line.split()
       paFile = a[0]
       readAll( paFile, ssList )
       pyplot.subplots_adjust( hspace=0.25 )
