@@ -68,7 +68,7 @@ def avgtoSStmp( visFile, selectStr ) :
   p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   time.sleep(1)
-  p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol' \
+  p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol interval=10000' \
      % (visFile, selectStr) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   result = p.communicate()[0]
