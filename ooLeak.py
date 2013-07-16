@@ -105,6 +105,8 @@ class Leak:
       lastf2 = 0.
       for line in fin :
         a = line.split()
+        if line.startswith("# legend") and self.legend=="" :
+          self.legend = a[3]
         if (len(a) > 9) and (line.startswith("C")) :				# new style Lk table, includes all antennas
           ant = int( a[0].strip("C") )
           if ant == self.ant :
@@ -297,7 +299,9 @@ class Plot:
               filename = a[0][0:-1] + str(nant)
             else :                          # new style Lk file, all antennas in 1 file
               filename = a[0]
-            Plot.addLeak(self, filename, nant, a[1], color[ncolor] )
+            legend = ""
+            if len(a) > 1 : legend = a[1]
+            Plot.addLeak(self, filename, nant, legend, color[ncolor] )
           ncolor = ncolor + 1
           if (ncolor > (len(color)-1) ) : ncolor = 0
 
