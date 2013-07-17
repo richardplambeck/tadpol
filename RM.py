@@ -93,20 +93,22 @@ class SS :
     self.rmsU = numpy.zeros( 1 )
     self.V = numpy.zeros( 1 )
     self.rmsV = numpy.zeros( 1 )
-    self.p0 = 0 
+    self.p0 = 0. 
     self.p0rms = 0.
+    self.frac = 0. 
+    self.fracrms = 0.
     self.pa0 = 0.
     self.pa0rms = 0.
     self.RM = 0. 
     self.RMrms = 0.
     self.freq0 = 0.
 
-  def make( self, visFile, selectStr, LkFile) :
+  def make( self, visFile, selectStr, LkFile, f0=226. ) :
     'generate multichannel SS object from visibility data using leakages from LkFile'
     self.visFile = visFile        
     self.selectStr = selectStr
     self.LkFile = LkFile
-    print "creating temporary file sstmp"
+    print " creating temporary file sstmp"
     avgtoSStmp( visFile, selectStr ) 
     vis = { "fileName" : "sstmp", "selectStr" : selectStr }
     frq1 = []
@@ -143,6 +145,7 @@ class SS :
     self.V = numpy.array(Stokes).transpose()[6]
     self.rmsV = numpy.array(Stokes).transpose()[7]
     self.UT, self.parang, self.HA = paPlot.getUTPAHA( self.visFile, self.selectStr )
+    self.fitPARM( f0 )                 # fits p0, PA, RM, frac
 
   # writes to file; if outfile=None, prints to screen
   def dump( self, outfile ) :
@@ -153,6 +156,7 @@ class SS :
     outStr = outStr + "# avg HA      : %.3f hrs\n" % self.HA 
     outStr = outStr + "# avg parang  : %.3f deg\n" % self.parang 
     outStr = outStr + "# p0          : %.4f  ( %.4f ) Jy\n" % (self.p0, self.p0rms) 
+    outStr = outStr + "# frac        : %.1f  ( %.1f ) percent\n" % (100.*self.frac, 100.*self.fracrms) 
     outStr = outStr + "# PAfit       : %.2f  ( %.2f ) deg\n" % (self.pa0,self.pa0rms)     
     outStr = outStr + "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2\n" % (self.RM/1.e5, self.RMrms/1.e5) 
     outStr = outStr + "# PAfreq0     : %.3f GHz\n" % self.freq0 
@@ -211,9 +215,6 @@ class SS :
       rmrms = math.sqrt(pcov[2][2]) 
     except :
       p0rms = pa0rms = rmrms = 0.
-    print "p0 = %.3f (%.3f)" % (p0, p0rms)
-    print "pa0 = %.2f (%.2f)" % (pa0, pa0rms)
-    print "RM = %.3e (%.3e)" % (rm, rmrms)
     self.p0 = p0
     self.p0rms = p0rms
     self.pa0 = pa0
@@ -221,15 +222,19 @@ class SS :
     self.RM = rm
     self.RMrms = rmrms
     self.freq0 = freq0
+    self.calcFrac()                            # fills in fractional pol
+    print "p0 = %.3f (%.3f)" % (p0, p0rms)
+    print "frac = %.2f (%.2f)" % (100.*self.frac, 100.*self.fracrms)
+    print "pa0 = %.2f (%.2f)" % (pa0, pa0rms)
+    print "RM = %.3e (%.3e)" % (rm, rmrms)
 
-  def polm( self ) :
+  def calcFrac( self ) :
     'compute fractional polarization and uncertainty'
     #Iavg = numpy.average(ss.I, weights=ss.rmsI )
     Iavg = numpy.average( self.I )
     Istd = numpy.std( self.I, ddof=1 )/math.sqrt(len(self.I))
-    polm = self.p0/Iavg
-    polmstd = polm * math.sqrt( pow(Istd/Iavg,2.) + pow(self.p0rms/self.p0,2.) )
-    return [polm, polmstd]
+    self.frac = self.p0/Iavg
+    self.fracrms = self.frac * math.sqrt( pow(Istd/Iavg,2.) + pow(self.p0rms/self.p0,2.) )
 
   def plot( self ) :
     pyplot.clf()
@@ -272,9 +277,8 @@ class SS :
     Ufit = data[len(data)/2 :]
     fig.plot( fx, Qfit, 'r--' )
     fig.plot( fx, Ufit, 'b--' )
-    polm, polmrms = self.polm()
     textStr = "pol = %.2f (%.2f)%%\nPA = %.1f (%.1f)\nRM = %.1e (%.1e)" % \
-      ( 100.*polm, 100*polmrms, self.pa0 ,self.pa0rms, self.RM, self.RMrms)
+      ( 100.*self.frac, 100*self.fracrms, self.pa0 ,self.pa0rms, self.RM, self.RMrms)
     props = dict(boxstyle='round', facecolor='wheat', alpha=1 )	# patch.Patch properties
     fig.text( .5, .05, textStr, transform=fig.transAxes, horizontalalignment='center', 
       verticalalignment='bottom', fontsize=0.8*labelsize, bbox=props )
@@ -291,7 +295,6 @@ def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, plot=Fals
     print "  %d/%d  %s" % (n+1,nlist,selectString)
     ss = SS()
     ss.make( visFile, selectString, LkFile )
-    ss.fitPARM( 226. )
     if plot : ss.plot()
     ss.dump( outfile )
                                                                                                                   
@@ -359,6 +362,9 @@ def readAll(  infile, ssList ) :
     elif line.startswith("# p0") : 
       ss.p0 = float( a[3] )
       ss.p0rms = float( a[5] )
+    elif line.startswith("# frac") : 
+      ss.frac = float( a[3] )
+      ss.fracrms = float( a[5] )
     elif line.startswith("# PAfit") : 
       ss.pa0 = float( a[3] )
       ss.pa0rms = float( a[5] )
@@ -442,9 +448,3 @@ def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
   pyplot.savefig( pp, format='pdf' )
   pp.close()
   
-def test() :
-  ssList = []
-  readAll("3c84.c3.PA", ssList)
-  for ss in ssList :
-    polm,polmstd = ss.polm()
-    print polm,polmstd 
