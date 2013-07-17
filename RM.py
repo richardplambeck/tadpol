@@ -3,6 +3,7 @@
 # bits from paPlot.py, etc
 
 import math
+import sys
 import time
 import numpy
 import subprocess
@@ -65,6 +66,7 @@ def makeStrList( LkFile ) :
 # this saves time in creating a multichannel SS object because input file
 #    is re-read for every LkFile channel interval
 def avgtoSStmp( visFile, selectStr ) :
+  'time-average from visFile to sstmp over interval specified by selectStr'
   p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   time.sleep(1)
@@ -108,19 +110,25 @@ class SS :
     self.visFile = visFile        
     self.selectStr = selectStr
     self.LkFile = LkFile
-    print " creating temporary file sstmp"
+    print "Creating temporary file sstmp"
     avgtoSStmp( visFile, selectStr ) 
     vis = { "fileName" : "sstmp", "selectStr" : selectStr }
     frq1 = []
     frq2 = []
-    Stokes = []									# effectively, a temporary work area
+    Stokes = []									# temporary work area
     self.strList = makeStrList( LkFile )	    # make list of available channel ranges in LkFile
     leakSolve.makeFtable( vis )					# fill in the chfreq and chwidth items in vis dictionary
+    if not vis["chfreq"] :						# this checks for empty list
+      print "ABORTING THIS INTERVAL: sstmp is an empty file - perhaps all data are flagged"
+      return False
     for lineStr in self.strList :
       [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, "sstmp" )
       a = lineStr.split(",")   # "chan,1,49,8"
       ch1 = int(a[2])
       ch2 = ch1 + int(a[3]) - 1
+      #print vis["chfreq"]
+      #print vis["chwidth"]      
+      #sys.stdout.flush()
       fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
       fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
       if (abs(fstartLeak - fstart) > .001) or (abs(fstopLeak - fstop) > .001) :
@@ -146,6 +154,7 @@ class SS :
     self.rmsV = numpy.array(Stokes).transpose()[7]
     self.UT, self.parang, self.HA = paPlot.getUTPAHA( self.visFile, self.selectStr )
     self.fitPARM( f0 )                 # fits p0, PA, RM, frac
+    return True
 
   # writes to file; if outfile=None, prints to screen
   def dump( self, outfile ) :
@@ -195,7 +204,7 @@ class SS :
     Uavg = numpy.average( self.U )
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
     pa0 = 0.5 * math.atan(Uavg/Qavg)
-    print "start with p0 = %.3f, pa0 = %.2f" % (p0, pa0 * 180./math.pi)
+    print "\n# initial guess: p0 = %.3f, pa0 = %.2f, RM = 0." % (p0, pa0 * 180./math.pi)
     popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
     if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
       popt[0] = -1. * popt[0]
@@ -223,10 +232,10 @@ class SS :
     self.RMrms = rmrms
     self.freq0 = freq0
     self.calcFrac()                            # fills in fractional pol
-    print "p0 = %.3f (%.3f)" % (p0, p0rms)
-    print "frac = %.2f (%.2f)" % (100.*self.frac, 100.*self.fracrms)
-    print "pa0 = %.2f (%.2f)" % (pa0, pa0rms)
-    print "RM = %.3e (%.3e)" % (rm, rmrms)
+    print "# p0 = %.3f (%.3f)" % (p0, p0rms)
+    print "# frac = %.2f (%.2f)" % (100.*self.frac, 100.*self.fracrms)
+    print "# pa0 = %.2f (%.2f)" % (pa0, pa0rms)
+    print "# RM = %.3e (%.3e)" % (rm, rmrms)
 
   def calcFrac( self ) :
     'compute fractional polarization and uncertainty'
@@ -292,11 +301,12 @@ def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, plot=Fals
     if len( extra ) > 0 :
       selectString = selectString + "," + extra
     print " "
-    print "  %d/%d  %s" % (n+1,nlist,selectString)
+    print "%d/%d  %s" % (n+1,nlist,selectString)
     ss = SS()
-    ss.make( visFile, selectString, LkFile )
-    if plot : ss.plot()
-    ss.dump( outfile )
+    if ss.make( visFile, selectString, LkFile ) :		# returns False if it fails
+      ss.dump( outfile )
+      if plot : 
+        ss.plot()
                                                                                                                   
 def RMsearch( infile, outfile ) :
   RMmin = -5.e9
