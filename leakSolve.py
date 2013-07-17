@@ -10,6 +10,7 @@ import numpy
 import subprocess
 import shlex
 import string
+import sys
 
 
 # dictionary file controls operation - generally this will be created in calling routine
@@ -20,14 +21,14 @@ import string
 # .. refant
 # .. LkName = output file name
 
-vis1 = { "fileName"   : "wide.pb",
-         "selectStr"  : "source(3c279),-ant(7)",
-         "optionStr"  : "circular,noxy,nopass,qusolve",
-         "avgchan"    : 2,
-         "interval"   : 5,
-         "flux"       : "10.",
-         "refant"     : 8, 
-         "LkName"     : "Lk.22mar2013" }
+#vis1 = { "fileName"   : "wide.pb",
+#         "selectStr"  : "source(3c279),-ant(7)",
+#         "optionStr"  : "circular,noxy,nopass,qusolve",
+#         "avgchan"    : 2,
+#         "interval"   : 5,
+#         "flux"       : "10.",
+#         "refant"     : 8, 
+#         "LkName"     : "Lk.22mar2013" }
 
 # --- delete existing leakage file ---
 def delHd( fileName ) :
@@ -36,6 +37,7 @@ def delHd( fileName ) :
   
 # --- generate vis dictionary items "chfreq", "chwidth" - list of fstart,fstop for every correlator channel
 def makeFtable( vis ) :
+  'fills in dictionary items nstart,nchan (per section) and chfreq,chwidth (per chan)'
   nstart = []
   nchan = []
   fstart = []
@@ -45,6 +47,7 @@ def makeFtable( vis ) :
   p= subprocess.Popen( ( shlex.split('uvlist options=spectra vis=%s' % vis["fileName"] ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   uvlistOutput = p.communicate()[0]
+  #print uvlistOutput
   lines = uvlistOutput.split("\n")
   for line in lines :
     a = line.split()
@@ -65,6 +68,11 @@ def makeFtable( vis ) :
   vis["nchan"] = nchan
   vis["chfreq"] = chfreq
   vis["chwidth"] = chwidth
+  #print "vis[nstart] = ", vis["nstart"]
+  #print "vis[nchan] = ", vis["nchan"]
+  #print "vis[chfreq] = ", vis["chfreq"]
+  #print "vis[chwidth] = ", vis["chwidth"]
+  #sys.stdout.flush()
 
 # --- run gpcal on specified channel range, return src Q, U, and Dx,Dy complex leakages
 def runGpcal( vis, lineString='' ) :
