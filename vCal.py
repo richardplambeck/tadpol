@@ -9,8 +9,9 @@ import numpy
 import subprocess
 import shlex
 
-# --- ants phased in 2012
-antList = [2,3,4,5,8,12,13,14]
+# --- ants phased in 2013
+antList = [2,4,5,6,8,9,13,14]
+antList = [2,3,4,5,6,8,9,14]
  
 # --- return time and gainComplex arrays as read from gplist output --- #
 def getGains( infile ) :
@@ -145,22 +146,35 @@ def scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsys, antList ) :
 # ... gain is (npts x 15) complex array
 # ... tsys is (npts x 15) real array
 def avgSEFD( t1, t2, src, t, source, gain, tsys, antList ) : 
-  print "t1,t2,src,antList = %.4f,%.4f,%s,%s" % (t1,t2,src,antList)
+  fout = open( "avgSEFD.log", "a" )
+  fout.write("\nt1,t2,src,antList = %.4f,%.4f,%s,%s\n" % (t1,t2,src,antList))
   navg = 0
   avg = 0.
   for n in range( 0, len(t) ) :
     if ( (t[n] >= t1) and (t[n] <= t2) and (src == source[n]) ) :
       s = SEFD( gain[n], tsys[n], antList )
         # ... note that gain[n] and tsys[n] are (1 x 15) arrays
-      print "%8.4f %6.3f %6.0f %9.0f" % (t[n], abs(gain[n][0]), tsys[n][0], s)
+      if len(antList) == 1 :
+        ant = antList[0]
+        fout.write("%8.4f %6.3f %6.0f %9.0f\n" % (t[n], abs(gain[n][ant-1]), tsys[n][ant-1], s) )
+      else :
+        str = "%8.4f " % t[n]
+        for ant in antList :
+          str = str + "%8.3f" % abs(gain[n][ant-1]) 
+        fout.write( "%s\n" % str )
+        str = "         "
+        for ant in antList :
+          str = str + "%8.0f" % tsys[n][ant-1] 
+        str = str + " %9.0f" % s
+        fout.write( "%s\n" % str )
       if (s > 0) :
         avg += 1./s
         navg += 1
   if (navg > 0) :
-    print "   AVG = %9.0f" % (1./(avg/navg))
+    print "t1,t2,src,antList = %.3f, %.3f, %s, %s   AVG = %9.0f" % (t1,t2,src,antList,1./(avg/navg))
     return 1./(avg/navg)
   else :
-    print "   AVG =       0"
+    print "t1,t2,src,antList = %.3f, %.3f, %s, %s   AVG = 0.0" % (t1,t2,src,antList)
     return 0.
 
 
@@ -216,13 +230,6 @@ def sourceFlux( src ) :
   return flux[src]
  
 
-# --- generate calibration tables for all 5 days --- #
-def doall() :
-  
-  cpList = [2,3,5,9,11,12,13]
-  oneday( '04apr', cpList )
-  emoneday( '04apr', cpList )
-
 # --- compare VLBI amps with CARMA amps --- #
 # ... col = 13 for lo-band, col = 14 for hi-band
 def compareAmps( VLBIfile, CARMAfile, col, fout ) :
@@ -277,7 +284,7 @@ def cumEffic( col, infile, outfile ) :
 
 
 # --- generate calibrations for one day (e.g., day='day075')--- #
-# ... cpList is list of antennas that are phased (used if summ file says 'CP')
+# ... cpList is list of antennas that are phased 
 # ... tsysL0,tsysR0 are the 'lo-band' systemps (from downconverters 5 and 6)
 # ... tsysL1,tsysR1 are the 'hi-band' systemps (from downconverters 7 and 8)
 
@@ -321,13 +328,13 @@ def oneday( day, cpList=antList ) :
   print "\ndefgains:\n",defgain
 
   # ... make table of gain vs elev for plotting
-  gainVsElev( elevarray, gain, day+".gainVsElev" )
+  gainVsElev( elevarray, gain, "gainVsElev" )
 
   # ... process the 'summ' file which lists the schedule
   fin = open( day+"/summ", "r" )
-  fout = open( day+".results", "w" )
-  fout.write("#   scan     No       src   UTstart    UTstop  el  tau  path   CL-lo    FL-lo    FL-hi    FR-lo    FR-hi   pheff\n")
-  fout.write("#                                             deg        um   SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy\n")
+  fout = open( "results", "w" )
+  fout.write("#   scan        src   UTstart    UTstop  el  tau  path   CL-lo    CR-lo   FL-lo    FL-hi    FR-lo    FR-hi   pheff\n")
+  fout.write("#                                       deg        um   SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy\n")
   fout.write("#\n")
   for line in fin :
 
@@ -338,10 +345,10 @@ def oneday( day, cpList=antList ) :
       utStart = a[1]
       utStop = a[2]
       
-      scanname = a[9]
-      scanNo = a[10][0:4]
+      scanname = a[7]
+      print " "
       print scanname, src
-      fout.write(" %8s  %4s %9s  %8s  %8s " % (scanname,scanNo,src,utStart,utStop) ) 
+      fout.write(" %9s  %9s   %8s  %8s  " % (scanname,src,utStart,utStop) ) 
 
       # ... create decimal start and stop times, print tau230, rmspath
       t1 = dechrs( utStart )
@@ -352,9 +359,9 @@ def oneday( day, cpList=antList ) :
       fout.write(" %2d %5.2f %4.0f" % (elevavg,tau230avg,rmspathavg ) ) 
 
 
-      # ... print SEFD for C1 lo band only (hi not recorded)
-      print "\nC1"
-      s10 = scanSEFD( fout, t1-.1, t2+.1, src, t, source, defgain, defgain, tsysL0, [1] ) 
+      # ... print SEFD for C1 L and R lo band only (hi not recorded)
+      sL0c1 = scanSEFD( fout, t1-.1, t2+.1, src, t, source, defgain, defgain, tsysL0, [1] ) 
+      sR0c2 = scanSEFD( fout, t1-.1, t2+.1, src, t, source, defgain, defgain, tsysR0, [1] ) 
 
       # ... print SEFDs for phased array L and phased array R, lo and hi bands
       sL0 = scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsysL0, cpList ) 
@@ -432,7 +439,7 @@ def basicEffic( antList, infile, outfile ) :
     fout.write("%s  %7.4f  %6.4f\n" % (time[n], dechrs(time[n]), numpy.abs(vectorSum)/scalarSum ))
   fout.close()
 
-def doit( ) :
+def old( ) :
   basicEffic( antList, "day075/s.vis", "day075/s.phEffic" )
   cumEffic( 3, "day075/s.phEffic", "day075cum.wip" ) 
   basicEffic( antList, "day080/s.vis", "day080/s.phEffic" )
@@ -440,4 +447,7 @@ def doit( ) :
   basicEffic( antList, "day081/s.vis", "day081/s.phEffic" )
   cumEffic( 3, "day081/s.phEffic", "day081cum.wip" ) 
 
+def doit() :
+   
+  oneday( ".", cpList=antList ) 
   
