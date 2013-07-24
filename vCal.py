@@ -11,7 +11,6 @@ import shlex
 
 # --- ants phased in 2013
 antList = [2,4,5,6,8,9,13,14]
-antList = [2,3,4,5,6,8,9,14]
  
 # --- return time and gainComplex arrays as read from gplist output --- #
 def getGains( infile ) :
@@ -34,7 +33,10 @@ def getGains( infile ) :
       nant = int(a[2])
       if ( nant != 1 ) :
         print "getGains error - unexpected ant number"
-      gainComplex[ng][nant-1] = float(a[5]) + 1j * float(a[6])
+      try :
+        gainComplex[ng][nant-1] = float(a[5]) + 1j * float(a[6])
+      except :
+        gainComplex[ng][nant-1] = 0 + 1j * 0 
     elif ( len(a) > 0 ) :
       nant = int(a[1]) 
       if ( nant < 16 ) :
@@ -52,7 +54,7 @@ def getVar15( infile, t ) :
     if ( not line.startswith("#") ) :
       a = line.split()
       if ( len(a) == 6) : 
-        #print a[1], t[nline]
+        print a[1], t[nline]
         if ( (nline > len(t)) or (abs(dechrs(a[1]) - t[nline]) > .0003)) :
           print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
         else :
@@ -147,7 +149,7 @@ def scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsys, antList ) :
 # ... tsys is (npts x 15) real array
 def avgSEFD( t1, t2, src, t, source, gain, tsys, antList ) : 
   fout = open( "avgSEFD.log", "a" )
-  fout.write("\nt1,t2,src,antList = %.4f,%.4f,%s,%s\n" % (t1,t2,src,antList))
+  fout.write("\nt1,t2,src,antList = %.3f, %.3f, %s, %s\n" % (t1,t2,src,antList))
   navg = 0
   avg = 0.
   for n in range( 0, len(t) ) :
@@ -171,9 +173,11 @@ def avgSEFD( t1, t2, src, t, source, gain, tsys, antList ) :
         avg += 1./s
         navg += 1
   if (navg > 0) :
+    fout.write(" AVG = %9.0f\n" % (1./(avg/navg)) )
     print "t1,t2,src,antList = %.3f, %.3f, %s, %s   AVG = %9.0f" % (t1,t2,src,antList,1./(avg/navg))
     return 1./(avg/navg)
   else :
+    fout.write(" AVG = 0\n")
     print "t1,t2,src,antList = %.3f, %.3f, %s, %s   AVG = 0.0" % (t1,t2,src,antList)
     return 0.
 
@@ -320,7 +324,9 @@ def oneday( day, cpList=antList ) :
   # ... create absgain and default gain files for future use
   absgain = numpy.empty( (len(time),15), dtype=complex )
   defgain = numpy.empty( (len(time),15), dtype=complex )
-  jyperk = numpy.array( [1.07,1.12,1.02,1.09,1.09,1.30,1.03,1.06,1.03,1.,1.34,1.09,1.04,1.03,1.05] )
+  jyperk = numpy.array( [1.10, 1.11, 1.00, 1.17, 1.20, 1.06, 0.93, 0.98, 1.00, 0.99, 1.25, 1.03, 0.95, 0.96, 0.98] )
+    # these are the median values from gplist on 21mar
+
   for n in range (0, len(time)) : 
     for i in range (0,14) :
       absgain[n][i] = numpy.abs( gain[n][i] ) + 1j * 0.
@@ -333,8 +339,8 @@ def oneday( day, cpList=antList ) :
   # ... process the 'summ' file which lists the schedule
   fin = open( day+"/summ", "r" )
   fout = open( "results", "w" )
-  fout.write("#   scan        src   UTstart    UTstop  el  tau  path   CL-lo    CR-lo   FL-lo    FL-hi    FR-lo    FR-hi   pheff\n")
-  fout.write("#                                       deg        um   SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy\n")
+  fout.write("#   scan        src      UTstart    UTstop   el  tau  path   CL-lo    CR-lo    FL-lo    FL-hi    FR-lo    FR-hi   pheff\n")
+  fout.write("#                                           deg        um   SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy  SEFD-Jy\n")
   fout.write("#\n")
   for line in fin :
 
@@ -449,5 +455,7 @@ def old( ) :
 
 def doit() :
    
+  antList = [2,3,4,5,6,8,9,14]    # use for 21mar and 22mar
+  antList = [2,4,5,6,8,9,13,14]   # use for 23mar and beyond
   oneday( ".", cpList=antList ) 
   
