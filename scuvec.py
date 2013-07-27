@@ -140,7 +140,61 @@ def hertz() :
       [ra1,dec1,ra2,dec2] = vec(RA,DEC,polpct,PA,scale)
       fout.write("line hms dms %d no %s %s %s %s\n" % (nline,ra1,dec1,ra2,dec2) )
   f1.close()
-    
+
+# output table in form that Chat wants: ra_degr, dec_degr, pct, pct_err, PA_deg, PA_err
+def hertz2() :
+  scale = 4.   # 1% pol corresponds to 4 arcsec on map
+
+  # create dictionary of ra,dec vs src name
+  raSrc = dict()
+  decSrc = dict()
+  f1 = open("/fringe2/plambeck/pol/Hertz/table1.dat")
+  for line in f1 :
+    src = line[0:15]
+    rhr = float(line[54:56])
+    rmin = float(line[57:59])
+    rsec = float(line[60:64])
+    ddeg = float(line[65:68])
+    dmin = float(line[69:71])
+    dsec = float(line[72:74])
+    if ddeg < 0 :
+      dmin = -1. * dmin
+      dsec = -1. * dsec
+    print "%s  %3.0f %2.0f %4.2f  %3.0f %3.0f %4.1f" % (src,rhr,rmin,rsec,ddeg,dmin,dsec) 
+    raSrc[ src ] = math.pi * (rhr + rmin/60. + rsec/3600.)/12.
+    decSrc[ src ] = math.pi * (ddeg + dmin/60. + dsec/3600.)/180.
+  f1.close()
+  
+  # now read through table2, generate olay lines
+  nline = 0
+  f1 = open("/fringe2/plambeck/pol/Hertz/table2.dat")
+  fout = open("Hertz.dat", "w")
+  for line in f1:
+    src = line[0:15]
+    draArcsec = float(line[16:20])
+    ddecArcsec = float(line[21:25])
+    polpct = float(line[38:43])
+    polpcterr = float(line[43:49])
+    PA = float(line[50:55])
+    PAerr = float(line[56:62])
+    if PAerr < 15. :
+      decRadians = decSrc[ src ] + math.pi * ddecArcsec/(180.*3600.) 
+      raRadians = raSrc[ src ] + math.pi * draArcsec / (math.cos(decRadians) * 180.*3600.)
+      RA = hms(raRadians)
+      RAdeg = 180./math.pi * raRadians
+      DEC = dms(decRadians)
+      DECdeg = 180./math.pi * decRadians
+
+      PA = PA + 90.   # rotate to show B-field direction
+      print "RA =",RA 
+      print "DEC =",DEC
+      print "polpct = %.1f" % polpct
+      print "PA = %.1f\n" % PA
+      fout.write("%10.5f %10.5f  %5.2f %5.2f %8.1f %5.1f     # %15s %4.0f %4.0f %s %s\n" % 
+        (RAdeg, DECdeg, polpct, polpcterr, PA, PAerr, src, draArcsec, ddecArcsec, RA, DEC) )
+  f1.close()
+  fout.close()
+
 
 # special routine to process SHARP data from Davidsen et al table 1
 def L1527() :
@@ -231,5 +285,33 @@ def gridPlot( ) :
   fout.close()
   fout2.close()
  
-	
-
+# special routine to process MMS6 data from Matthews et al. 2005, Table1	
+def mms6():
+  ra0 = math.pi * (5. + 35./60. + 23.498/3600.)/12.
+  dec0 = math.pi * (-5.  -1./60. - 32.221/3600.)/180.
+  scale = 0.2
+  fin = open( "/fringe2/plambeck/pol/MMS6/MMS6bima.dat", "r")
+  fout = open( "MMS6.olay", "w" )
+  nline = 0
+  for line in fin:
+    a = line.split()
+    nline = nline + 1
+    draArcsec = float(a[0])
+    ddecArcsec = float(a[1]) 
+    polpct = float(a[2])
+    PA = float(a[4])
+    decRadians = dec0 + math.pi * ddecArcsec/(180.*3600.) 
+    raRadians = ra0 + math.pi * draArcsec / (math.cos(decRadians) * 180.*3600.)
+    RA = hms(raRadians)
+    DEC = dms(decRadians)
+    PA = PA + 90.   # rotate to show B-field direction
+    print "RA =",RA 
+    print "DEC =",DEC
+    print "polpct = %.1f" % polpct
+    print "PA = %.1f\n" % PA
+    #fout.write("ocircle hms dms %d no %s %s %.1f\n" % (nline,RA,DEC,radius) )
+    [ra1,dec1,ra2,dec2] = vec(RA,DEC,polpct,PA,scale)
+    fout.write("line hms dms %d no %s %s %s %s\n" % (nline,ra1,dec1,ra2,dec2) )
+  fin.close()  
+  fout.close()
+ 
