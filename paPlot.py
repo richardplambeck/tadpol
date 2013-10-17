@@ -65,9 +65,13 @@ def makeTable( visFile='wide.av', \
                nint=10000, \
                extra="", \
                lineString='chan,1,1,8', \
-               outFile='table.dat' ) :
+               outFile='table.dat', \
+               schedFile=None ) :
 
-  selectList = makeSelectList( visFile, srcName, nint, 2 )
+  if schedFile == None :
+    selectList = makeSelectList( visFile, srcName, nint, 20000 )
+  else :
+    selectList = makeSelectList2( schedFile, srcName )
   fout = open(outFile, 'a')
   fout.write("#\n# ------ visFile = %s, lineString = %s ------ #\n" % (visFile,lineString))
   fout.write("#  dechr   parang     HA        S    sigma     poli  sigma     PA  sigma      V    sigma   selectString\n")
@@ -210,6 +214,12 @@ def makeSelectList( visFile, srcName, nint, maxGapMinutes ) :
       nscans = 0
   return selectList
 
+def deltaFcalc( RM, fGHz ) :
+  c = 3.e8
+  dphidnu = -2.*RM*c*c/pow(fGHz*1.e9,3)   # radians per Hertz
+  dphiDegreesPerGHz = dphidnu * 180./math.pi * 1.e9
+  print "PA changes by 10 degrees in %.3f GHz" % (10./dphiDegreesPerGHz )
+
 def RMcalc( fGHzLsb, PAlsb, fGHzUsb, PAusb ) :
   lambda_lsb_meters = 0.30/fGHzLsb
   lambda_usb_meters = 0.30/fGHzUsb
@@ -258,3 +268,16 @@ def doit() :
   makeTable( visFile='wide.cal', srcName='SgrA', nint=3, extra="uvrange(20,1000)", lineString='chan,1,1,8', outFile='SgrA.30sec.2')
   makeTable( visFile='wide.cal', srcName='1743-038', nint=3, extra="uvrange(20,1000)", lineString='chan,1,1,8', outFile='1743-038.30sec.2' ) 
 
+# this makes list of vlbi scan times
+def makeSelectList2( schedFile, srcName ) :
+  selectList = []
+  fin = open( schedFile, "r" )
+  for line in fin :
+    if "vlb" in line :
+      a = line.split() 
+      if a[0] == srcName :
+        print line
+        oneString = "source(%s),time(%s,%s)" % (srcName,a[1],a[2])
+        selectList.append( oneString ) 
+  fin.close()
+  return selectList
