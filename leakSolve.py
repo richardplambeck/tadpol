@@ -12,6 +12,8 @@ import shlex
 import string
 import sys
 
+# this is a collection of routines (not objects!) that solve for or restore leakages;
+#    leakages are written to or read from a disk file
 
 # dictionary file controls operation - generally this will be created in calling routine
 # .. fileName = visibility file used to obtain leakage solution
@@ -29,6 +31,9 @@ import sys
 #         "flux"       : "10.",
 #         "refant"     : 8, 
 #         "LkName"     : "Lk.22mar2013" }
+
+# note: each correlator section will have a leakage; it is not possible to average across
+#    correlator sections
 
 # --- delete existing leakage file ---
 def delHd( fileName ) :
@@ -99,9 +104,9 @@ def runGpcal( vis, lineString='' ) :
         DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
   return [ percentQ, percentU, DR, DL ]
 
-def addLk( vis, ch1 ) :
-  lineString = "chan,1,%d,%d" % ( ch1, vis["avgchan"] )
-  ch2 = ch1 + vis["avgchan"] - 1
+def addLk( vis, ch1, avgchan ) :
+  lineString = "chan,1,%d,%d" % ( ch1, avgchan )
+  ch2 = ch1 + avgchan - 1
   fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
   fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
   print ""
@@ -153,11 +158,14 @@ def makeLk( vis ) :
   makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
   for nstart,nchan in zip( vis["nstart"],vis["nchan"] ) :
     if nchan > 0 :
-      nextra = nchan - (nchan/vis["avgchan"])*vis["avgchan"]
-      for n1 in range( nstart + nextra/2, nstart+nchan-vis["avgchan"]+1, vis["avgchan"] ) :
-        #print n1, n1+vis["avgchan"] - 1
+      avgchan = vis["avgchan"]
+      if (avgchan > nchan) or (avgchan <= 0) :
+        avgchan = nchan
+      nextra = nchan - (nchan/avgchan)*avgchan
+      for n1 in range( nstart + nextra/2, nstart+nchan-avgchan+1, avgchan ) :
+        print n1, n1+avgchan - 1
         delHd( vis["fileName"] ) 
-        addLk( vis, n1 )
+        addLk( vis, n1, avgchan )
 
 # copies Lk specified by lineStr from LkFile to outfile
 def restoreLk( LkFile, lineStr, outfile ) :
