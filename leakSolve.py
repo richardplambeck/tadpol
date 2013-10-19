@@ -3,6 +3,7 @@
 # 05may2013 - deleted unused routines paCalc, parseLine, getStokes; as far as I can 
 #   see, this code has nothing in common with paPlot.py
 # 16jun2013 - delete code making separate leak files for each antenna - put all leakages into one Lk file
+# 18oct2013 - add avgchan=0 option to average all channels in each window (this will be the default)
 
 import math
 import time
@@ -14,26 +15,27 @@ import sys
 
 # this is a collection of routines (not objects!) that solve for or restore leakages;
 #    leakages are written to or read from a disk file
-
+# 
+# note that each correlator section will have a leakage; it is not possible to
+#    average across the whole LSB or USB, or across all bands
+#
+# begin with a fully calibrated data set; it may include many sources, but only
+#    a single source should be specified in selectStr
+#
 # dictionary file controls operation - generally this will be created in calling routine
-# .. fileName = visibility file used to obtain leakage solution
-# .. selectStr = select string for gpcal - source, time, antenna, etc 
-# .. optionStr = option string for gpcal - with or without qusolve
-# .. flux = I or I,Q,U
-# .. refant
-# .. LkName = output file name
-
-#vis1 = { "fileName"   : "wide.pb",
-#         "selectStr"  : "source(3c279),-ant(7)",
-#         "optionStr"  : "circular,noxy,nopass,qusolve",
-#         "avgchan"    : 2,
-#         "interval"   : 5,
-#         "flux"       : "10.",
-#         "refant"     : 8, 
-#         "LkName"     : "Lk.22mar2013" }
-
-# note: each correlator section will have a leakage; it is not possible to average across
-#    correlator sections
+# vis1 = { "fileName"   : "wide.cal",                    (no default)
+#          "selectStr"  : "source(3c279),-ant(7)",       (no default)
+#          "LkName"     : "Lk.22mar2013",                (no default)
+#          "avgchan"    : 5,                             (default = 0 -> avg across corr section)
+#          "interval"   : 5,                            
+#          "refant"     : 8,                           
+#          "optionStr"  : "circular,noxy,nopass,qusolve",
+#          "flux"       : "10.",
+#          "legend"     : "vlbi/22mar2013/3c279"          
+#
+# leakSolve.makeLk( vis )                                       - generates Lkfile (erase previous)
+# leakSolve.restoreLk( LkFile, lineStr, outfile )               - restores leakage solution to outfile 
+# leakSolve.stripout( Lkfile, antList, fstart, fstop, outfile ) - phased leakage sum for vlbi
 
 # --- delete existing leakage file ---
 def delHd( fileName ) :
@@ -104,6 +106,7 @@ def runGpcal( vis, lineString='' ) :
         DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
   return [ percentQ, percentU, DR, DL ]
 
+# solve for leakages for a particular channel range, append to Lkfile
 def addLk( vis, ch1, avgchan ) :
   lineString = "chan,1,%d,%d" % ( ch1, avgchan )
   ch2 = ch1 + avgchan - 1
@@ -154,6 +157,7 @@ def makeLk( vis ) :
   fout.write("# flux       : %s\n" % vis["flux"] )
   fout.write("# refant     : %d\n" % vis["refant"] )
   fout.write("# avgchan    : %d\n" % vis["avgchan"] )
+  fout.write("# interval   : %.2f\n" % vis["interval"] )
   fout.close()
   makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
   for nstart,nchan in zip( vis["nstart"],vis["nchan"] ) :
