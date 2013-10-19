@@ -38,6 +38,7 @@ def getStokes2( infile, selectString, lineString ) :
      % (infile, selectString, lineString) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   result = p.communicate()[0]
+  print result
   lines = result.split("\n")
   I = rmsI = pa = sigmaPa = poli = sigmaPoli = V = rmsV = 0.	# in case we get error
   Q = rmsQ = U = rmsU = V = rmsV = 0.
@@ -141,6 +142,8 @@ class SS :
         frq2.append( fstop )
         Stokes.append( result )
 
+    #print "Stokes = ",numpy.array(Stokes)
+    #print "Stokes.transpose = ",numpy.array(Stokes).transpose()
     self.visFile = visFile               # change visfile name back to originating file
     self.f1 = numpy.array(frq1)
     self.f2 = numpy.array(frq2)
@@ -165,7 +168,7 @@ class SS :
     outStr = outStr + "# avg HA      : %.3f hrs\n" % self.HA 
     outStr = outStr + "# avg parang  : %.3f deg\n" % self.parang 
     outStr = outStr + "# p0          : %.4f  ( %.4f ) Jy\n" % (self.p0, self.p0rms) 
-    outStr = outStr + "# frac        : %.1f  ( %.1f ) percent\n" % (100.*self.frac, 100.*self.fracrms) 
+    outStr = outStr + "# frac        : %.3f  ( %.3f ) \n" % (self.frac, self.fracrms) 
     outStr = outStr + "# PAfit       : %.2f  ( %.2f ) deg\n" % (self.pa0,self.pa0rms)     
     outStr = outStr + "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2\n" % (self.RM/1.e5, self.RMrms/1.e5) 
     outStr = outStr + "# PAfreq0     : %.3f GHz\n" % self.freq0 
@@ -202,10 +205,12 @@ class SS :
     sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
     Qavg = numpy.average( self.Q )
     Uavg = numpy.average( self.U )
+    print "\n# Qavg,Uvg = ", Qavg, Uavg
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
     pa0 = 0.5 * math.atan(Uavg/Qavg)
-    print "\n# initial guess: p0 = %.3f, pa0 = %.2f, RM = 0." % (p0, pa0 * 180./math.pi)
+    print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = 0." % (p0, pa0 * 180./math.pi)
     popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
+    print "popt = ", popt
     if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
       popt[0] = -1. * popt[0]
       popt[1] = popt[1] + math.pi/2.
@@ -232,10 +237,11 @@ class SS :
     self.RMrms = rmrms
     self.freq0 = freq0
     self.calcFrac()                            # fills in fractional pol
-    print "# p0 = %.3f (%.3f)" % (p0, p0rms)
-    print "# frac = %.2f (%.2f)" % (100.*self.frac, 100.*self.fracrms)
-    print "# pa0 = %.2f (%.2f)" % (pa0, pa0rms)
-    print "# RM = %.3e (%.3e)" % (rm, rmrms)
+    print "# p0 = %.3f (%.3f)" % (self.p0, self.p0rms)
+    print "# frac = %.3f (%.3f)" % (self.frac, self.fracrms)
+    print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
+    print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
+    print ""
 
   def calcFrac( self ) :
     'compute fractional polarization and uncertainty'
@@ -244,6 +250,7 @@ class SS :
     Istd = numpy.std( self.I, ddof=1 )/math.sqrt(len(self.I))
     self.frac = self.p0/Iavg
     self.fracrms = self.frac * math.sqrt( pow(Istd/Iavg,2.) + pow(self.p0rms/self.p0,2.) )
+    print "Iavg,Istd,frac,fracrms = %.4f, %.4f, %.4f, %.4f" % (Iavg, Istd, self.frac,self.fracrms)
 
   def plot( self ) :
     pyplot.clf()
@@ -396,7 +403,7 @@ def readAll(  infile, ssList ) :
       ss.strList.append( a[10] ) 
 
 # read in one or more PARM files, write summary file for wip
-def plotPA( paList, outfile ) :
+def summary( paList, outfile ) :
   srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
 	"3c279", "1337-129", "1633+382", "3c345", "NRAO530", "SgrA", "1749+096", "1921-293", \
     "bllac", "titan", "1743-038", "3c286" ]
@@ -417,7 +424,7 @@ def plotPA( paList, outfile ) :
       fout = open( outfile, "a" )
       fout.write("#\n")
       fout.write("# %s\n" % infile)
-      fout.write("#  dechr   parang     HA        S    sigma     poli  sigma     PA  sigma      RM   sigma  col   selectString\n")
+      fout.write("#  dechr  parang    HA        S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  col   selectString\n")
       fout.close()
       readAll( infile, ssList )
       for ss in ssList : 
@@ -425,8 +432,9 @@ def plotPA( paList, outfile ) :
         Iavg = numpy.average(ss.I )
         Istd = numpy.std(ss.I, ddof=1)
         fout = open(outfile, 'a')
-        fout.write("%8.3f %8.2f %8.3f %8.3f %6.3f %8.3f %6.3f %7.1f %5.1f %8.3f %6.3f  %2d   %s\n" % \
-          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, color, ss.selectStr) )
+        fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %2d   %s\n" % \
+          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
+          ss.frac, ss.fracrms, color, ss.selectStr) )
         fout.close()
       nstop = nstart + len(ssList) + 2
       print "1src %d %d %d %s" % (nstart, nstop, color, srcName )
