@@ -77,6 +77,20 @@ def avgtoSStmp( visFile, selectStr ) :
   result = p.communicate()[0]
   print result
 
+# copy (do not average) selected data from visFile into 'sstmp', with options=nopol
+# this saves time in creating a multichannel SS object because input file
+#    is re-read for every LkFile channel interval
+def copytoSStmp( visFile, selectStr ) :
+  'copy from visFile to sstmp over interval specified by selectStr'
+  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  time.sleep(1)
+  p= subprocess.Popen( ( shlex.split('uvcat vis=%s select=%s out=sstmp options=nopol' \
+     % (visFile, selectStr) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  result = p.communicate()[0]
+  print result
+
 # an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and uncertainties vs freq
 #   for a particular source over a particular time range
 # the SS object may include a fit to the polarized flux, PA (at some ref freq) and rotation measure
@@ -106,13 +120,18 @@ class SS :
     self.RMrms = 0.
     self.freq0 = 0.
 
-  def make( self, visFile, selectStr, LkFile, f0=226. ) :
+  def make( self, visFile, selectStr, LkFile, preavg=False, f0=226. ) :
     'generate multichannel SS object from visibility data using leakages from LkFile'
     self.visFile = visFile        
     self.selectStr = selectStr
     self.LkFile = LkFile
-    print "Creating temporary file sstmp"
-    avgtoSStmp( visFile, selectStr ) 
+    if preavg :
+      print "Preaveraging %s to create temporary file sstmp" % visFile
+      avgtoSStmp( visFile, selectStr ) 
+    else :
+      print "Copying (but not averaging) selected data to temporary file sstmp"
+      copytoSStmp( visFile, selectStr ) 
+      #vis = { "fileName" : visFile, "selectStr" : selectStr }
     vis = { "fileName" : "sstmp", "selectStr" : selectStr }
     frq1 = []
     frq2 = []
@@ -301,8 +320,14 @@ class SS :
     pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
 
 # generate table of SS objects
-def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, plot=False ) :
-  selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
+def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, schedFile=None, preavg=False, plot=False ) :
+  if schedFile :
+    print "making list according to vlbi schedFile %s" % schedFile 
+    selectList = paPlot.makeSelectList2( schedFile, srcName )
+  else :
+    print "average together up to %d integrations; no gaps > %.1f minutes" % (nint, maxgap)
+    selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
+  print "selectList = ",selectList
   nlist = len(selectList)
   for n, selectString in enumerate(selectList) :
     if len( extra ) > 0 :
@@ -310,7 +335,7 @@ def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, plot=Fals
     print " "
     print "%d/%d  %s" % (n+1,nlist,selectString)
     ss = SS()
-    if ss.make( visFile, selectString, LkFile ) :		# returns False if it fails
+    if ss.make( visFile, selectString, LkFile, preavg=preavg ) :		# returns False if it fails
       ss.dump( outfile )
       if plot : 
         ss.plot()
