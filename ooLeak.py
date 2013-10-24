@@ -20,51 +20,57 @@ class Leak:
     self.ant = antenna
     self.legend = legend
     self.color = color
+    solin = []
     self.f1 = []
     self.f2 = []
     self.DR = []
-    self.DL = [] 
+    self.DL = []
     try :
       fin = open( self.file, "r" )
     except :
       print "... can't open file %s" % self.file
     else :
       print "... reading data from file %s" % self.file
-      #print "... legend = ", self.legend
       lastf2 = 0.
       for line in fin :
         a = line.split()
         if (line.startswith("# legend")) and (len(self.legend)==0) :
           self.legend = a[3]
-          #print "... new legend = ", self.legend
-        if (len(a) > 9) and (line.startswith("C")) :				# new style Lk table, includes all antennas
+        if (len(a) > 9) and (line.startswith("C")) :		# new style Lk table, includes all antennas
           ant = int( a[0].strip("C") )
           if ant == self.ant :
-            self.f1.append(float(a[1]))
-            self.f2.append(float(a[2]))
-            self.DR.append(float(a[3]) + 1j * float(a[4]))
-            self.DL.append(float(a[5]) + 1j * float(a[6]))
+            f1 = min(float(a[1]),float(a[2]))
+            f2 = max(float(a[1]),float(a[2]))
+            DR = float(a[3]) + 1j * float(a[4])
+            DL = float(a[5]) + 1j * float(a[6])
+            solin.append( [f1,f2,DR,DL] )
         if (not line.startswith("#")) and (len(a) > 10) :       # old style lk table, one antenna only
-          self.f1.append(float(a[0]))
-          self.f2.append(float(a[1]))
-          self.DR.append(float(a[6]) + 1j * float(a[7]))
-          self.DL.append(float(a[8]) + 1j * float(a[9]))
+            f1 = min(float(a[0]),float(a[1]))
+            f2 = max(float(a[0]),float(a[1]))
+            DR = float(a[6]) + 1j * float(a[7])
+            DL = float(a[8]) + 1j * float(a[9])
+            solin.append( [f1,f2,DR,DL] )
       fin.close()
-
+    # it would be smarter to store values as self.sol = sorted..., but I am temporarily breaking
+    #   up everything into f1,f2,DR,DL for compatibility with existing routines
+      for s in sorted( solin, key = lambda(x) : x[1] ):	# store solutions in frequency order
+        self.f1.append( s[0] )
+        self.f2.append( s[1] )    
+        self.DR.append( s[2] )
+        self.DL.append( s[3] )
+      print self.f1
+      print self.f2
+      print self.DR
+      print self.DL
+   
   def list(self) :
     return [self.ant, self.file, self.legend]
 
-#  def DR(self) :
-#    return self.DR
-
-  def minmax(self) :
-    fmin = 1000.
-    fmax = 0.
-    for f1,f2 in zip( self.f1, self.f2 ) :
-      if f1 < fmin : fmin = f1
-      if f2 < fmin : fmin = f2 
-      if f1 > fmax : fmax = f1
-      if f2 > fmax : fmax = f2
+  def fminmax(self) :
+    #fmin = self.sol[0][0]
+    #fmax = self.sol[-1][1]
+    fmin = self.f1[0]
+    fmax = self.f2[-1]
     return [fmin,fmax] 
     
 
@@ -104,7 +110,7 @@ class Leak:
 #    for f1,f2,DR in zip( self.f1, self.f2, self.DR ) :
 #      amp = numpy.abs(DR)
 #      #pylab.plot(f1,amp,'bo')
-#      pylab.plot([f1,f2],[amp,amp],color=self.color,linestyle='solid',linewidth=1)
+#      pylab.plot([f1,f2],[amp,mp],color=self.color,linestyle='solid',linewidth=1)
 #    pylab.draw() 
 
 #  def setrange(self, fstart, fstop ) :
@@ -131,12 +137,14 @@ class Leak:
 #    pylab.draw()
 
   def panel(self, p, type, lk, fstart, fstop, ymin, ymax ) :
-    """one plot panel; type = amp,phs,complex"""
-    if type == "complex" :
-      p.axis( [ymin, ymax, ymin, ymax] )
-    else :
-      p.axis( [fstart, fstop, ymin, ymax] )
-    p.grid(True)
+    """add to one panel of a plot; p = plot handle; type = amp,phs,complex; lk = DR or DL"""
+
+    #if type == "complex" :
+    #  p.axis( [ymin, ymax, ymin, ymax] )
+    #else :
+    #  p.axis( [fstart, fstop, ymin, ymax] )
+    #p.grid(True)
+
     if lk == "DL" :  
       yc = self.DL
       ccolor = 'red'
@@ -148,9 +156,9 @@ class Leak:
     for f1,f2,ycomplex in zip( self.f1, self.f2, yc) :
 
       if (type == 'complex' ) :
-        x = ycomplex.real
-        y = ycomplex.imag
-        p.plot( x, y, marker='o', color=ccolor, markersize=3 )    # make dot
+          x = ycomplex.real
+          y = ycomplex.imag
+          p.plot( x, y, marker='o', color=ccolor, markersize=3 )    # make dot
 
       else :
         if (type == 'phs' ) : 
@@ -256,32 +264,29 @@ class Plot:
         n = n + 1
         print n, self.plotList[n-1], file, legend
 
-  def amp(self, antenna, f1=0., f2=0., amax=.25) :
-    [f1, f2] = Plot.xlimits( self, antenna, f1, f2 )
-    pylab.clf()
-    pylab.ion()
-    for Leak in self.LeakList :
-      Leak.ap( 'amp', antenna, f1, f2, 0., amax )
+#  def amp(self, antenna, f1=0., f2=0., amax=.25) :
+#    [f1, f2] = Plot.xlimits( self )
+#    pylab.clf()
+#    pylab.ion()
+#    for Leak in self.LeakList :
+#      Leak.ap( 'amp', antenna, f1, f2, 0., amax )
 
-  def phs(self, antenna, f1=0., f2=0.) :
-    [f1, f2] = Plot.xlimits( self, antenna, f1, f2 )
-    pylab.clf()
-    pylab.ion()
-    for Leak in self.LeakList :
-      Leak.ap( 'phs', antenna, f1, f2, -180, 180. )
+#  def phs(self, antenna, f1=0., f2=0.) :
+#    [f1, f2] = Plot.xlimits( self )
+#    pylab.clf()
+#    pylab.ion()
+#    for Leak in self.LeakList :
+#      Leak.ap( 'phs', antenna, f1, f2, -180, 180. )
 
-  def xlimits(self, antenna, f1, f2) :
-    if (f1 == 0.) :
-      f1 = 300.
-      for Leak in self.LeakList :
-        if Leak.ant == antenna :
-          [fmin,fmax] = Leak.minmax()
-          if fmin < f1 : f1 = fmin
-          if fmax > f2 : f2 = fmax
-      #print "%.3f, %.3f" % (fstart,fstop)
-      f1 = f1 - 0.05*(f2-f1) 
-      f2 = f2 + 0.05*(f2-f1) 
-      #print "%.3f, %.3f" % (fstart,fstop)
+  def xlimits(self) :
+    f1 = 300.
+    f2 = 0.
+    for Leak in self.LeakList :
+      [fmin,fmax] = Leak.fminmax()
+      if fmin < f1 : f1 = fmin
+      if fmax > f2 : f2 = fmax
+    f1 = f1 - 0.05*(f2-f1) 
+    f2 = f2 + 0.05*(f2-f1) 
     return [f1, f2] 
 
   def replot(self, fstart, fstop ) :
@@ -292,23 +297,12 @@ class Plot:
   def clear(self) :
     pylab.clf()
 
-#  def DRampAll(self, f1=0., f2=0., amax=.25) :
-#    pylab.clf()
-#    pylab.ion()
-#    [f1, f2] = Plot.xlimits( self, 1, f1, f2 )
-#    for ant in range(1,16) :
-#      pAnt = pylab.subplot(5,3,ant)   
-#      pylab.title("C%d DR" % ant)
-#      for Leak in self.LeakList :
-#        if Leak.ant == ant :
-#          print "plotting antenna %d" % ant
-#          Leak.panel( pAnt, "amp", "DR", f1, f2, 0., amax )
-#    pylab.draw()
-
   def ampAll(self, f1=0., f2=0., type="amp", amax=.25) :
     pyplot.ioff()
     pp = PdfPages( 'multipage.pdf' )
-    [f1, f2] = Plot.xlimits( self, 8, f1, f2 )   # assume limits are the same for all
+    if f1 == 0. :
+      [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
+      print f1,f2
     ymin = 0.
     ymax = amax
     if type == "phs" :
@@ -317,12 +311,16 @@ class Plot:
     for ant in range(1,16) :
       pyplot.clf()
       pL = pyplot.subplot(2,1,1)    # DL in upper panel
+      pL.axis( [f1, f2, ymin, ymax] )
+      pL.grid(True)
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
           Leak.panel(pL, type, "DL", f1, f2, ymin, ymax )
           pyplot.title("C%d DL" % ant)
       pR = pyplot.subplot(2,1,2)    # DR in lower panel
+      pR.axis( [f1, f2, ymin, ymax] )
+      pR.grid(True)
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DR for antenna %d" % ant
@@ -342,11 +340,13 @@ class Plot:
     for ant in range(1,16) :
       pyplot.clf()
       p = pyplot.subplot(1,1,1, aspect='equal')    # DL,DR in one panel
+      p.axis( [ymin, ymax, ymin, ymax] )
+      p.grid(True)
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
           Leak.panel(p, type, "DL", f1, f2, ymin, ymax )
           Leak.panel(p, type, "DR", f1, f2, ymin, ymax )
-          pyplot.title("C%d DL (red) and DR (blue)" % ant)
+      pyplot.title("C%d DL (red) and DR (blue)" % ant)
       pyplot.savefig( pp, format='pdf' )
     pp.close()
