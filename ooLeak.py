@@ -25,6 +25,7 @@ class Leak:
     self.f2 = []
     self.DR = []
     self.DL = []
+    self.avgchan = 0
     try :
       fin = open( self.file, "r" )
     except :
@@ -36,6 +37,9 @@ class Leak:
         a = line.split()
         if (line.startswith("# legend")) and (len(self.legend)==0) :
           self.legend = a[3]
+        if line.startswith("# avgchan") :
+          self.avgchan = int(a[3])
+          #print "avgchan = %d" % self.avgchan
         if (len(a) > 9) and (line.startswith("C")) :		# new style Lk table, includes all antennas
           ant = int( a[0].strip("C") )
           if ant == self.ant :
@@ -58,10 +62,10 @@ class Leak:
         self.f2.append( s[1] )    
         self.DR.append( s[2] )
         self.DL.append( s[3] )
-      print self.f1
-      print self.f2
-      print self.DR
-      print self.DL
+      #print self.f1
+      #print self.f2
+      #print self.DR
+      #print self.DL
    
   def list(self) :
     return [self.ant, self.file, self.legend]
@@ -136,14 +140,8 @@ class Leak:
 #      pylab.plot( [f1,f2], [y2,y2], color='blue',linestyle='solid',linewidth=1)
 #    pylab.draw()
 
-  def panel(self, p, type, lk, fstart, fstop, ymin, ymax ) :
+  def panel(self, p, type, lk, fstart, fstop ) :
     """add to one panel of a plot; p = plot handle; type = amp,phs,complex; lk = DR or DL"""
-
-    #if type == "complex" :
-    #  p.axis( [ymin, ymax, ymin, ymax] )
-    #else :
-    #  p.axis( [fstart, fstop, ymin, ymax] )
-    #p.grid(True)
 
     if lk == "DL" :  
       yc = self.DL
@@ -153,6 +151,8 @@ class Leak:
       ccolor = 'blue'
     first = True
     f2prev = 0.
+
+  # Go through the array freq by freq
     for f1,f2,ycomplex in zip( self.f1, self.f2, yc) :
 
       if (type == 'complex' ) :
@@ -167,7 +167,7 @@ class Leak:
           y = numpy.abs(ycomplex)
 
       # Plot like histogram if these are > 240 MHz chunks
-        if abs(f1-f2) > .24 :
+        if (abs(f1-f2) > .24) or (self.avgchan == 0) :
           if first :
             p.plot( [f1,f2], [y,y] , color=self.color, \
               linestyle='solid', linewidth=2, label=self.legend )
@@ -197,19 +197,6 @@ class Leak:
             yprev = y
 
     p.legend( loc=0, prop={'size':10} )
-    
-  def ap(self, type, antenna, fstart, fstop, ymin, ymax )  :
-    """plot amplitude or phase of DL and DR for one antenna"""
-    if self.ant != antenna :
-      return 
-    pL = pylab.subplot(2,1,1)    # DL in upper panel
-    Leak.panel(self, pL, type, "DL", fstart, fstop, ymin, ymax )
-    pylab.title("C%d DL" % antenna)
-    pR = pylab.subplot(2,1,2)    # DR in lower panel
-    Leak.panel(self, pR, type, "DR", fstart, fstop, ymin, ymax )
-    pylab.title("C%d DR" % antenna)
-    print "begin draw"
-    pylab.draw()
     
 
 # ====================================================================================#
@@ -316,7 +303,7 @@ class Plot:
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
-          Leak.panel(pL, type, "DL", f1, f2, ymin, ymax )
+          Leak.panel(pL, type, "DL", f1, f2 )
           pyplot.title("C%d DL" % ant)
       pR = pyplot.subplot(2,1,2)    # DR in lower panel
       pR.axis( [f1, f2, ymin, ymax] )
@@ -324,7 +311,7 @@ class Plot:
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DR for antenna %d" % ant
-          Leak.panel(pR, type, "DR", f1, f2, ymin, ymax )
+          Leak.panel(pR, type, "DR", f1, f2 )
           pyplot.title("C%d DR" % ant)
       pyplot.savefig( pp, format='pdf' )
     pp.close()
@@ -345,8 +332,8 @@ class Plot:
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
-          Leak.panel(p, type, "DL", f1, f2, ymin, ymax )
-          Leak.panel(p, type, "DR", f1, f2, ymin, ymax )
+          Leak.panel(p, type, "DL", f1, f2 )
+          Leak.panel(p, type, "DR", f1, f2 )
       pyplot.title("C%d DL (red) and DR (blue)" % ant)
       pyplot.savefig( pp, format='pdf' )
     pp.close()
