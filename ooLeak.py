@@ -117,10 +117,6 @@ class Leak:
 #      pylab.plot([f1,f2],[amp,mp],color=self.color,linestyle='solid',linewidth=1)
 #    pylab.draw() 
 
-#  def setrange(self, fstart, fstop ) :
-#    self.fstart = fstart
-#    self.fstop = fstop
-
 # make bar graph of re and im vs freq
 #  def riDL(self) :
 #    pylab.ion()
@@ -139,6 +135,34 @@ class Leak:
 #      pylab.plot( [f1,f2], [y1,y1], color='red',linestyle='solid',linewidth=1)
 #      pylab.plot( [f1,f2], [y2,y2], color='blue',linestyle='solid',linewidth=1)
 #    pylab.draw()
+
+  def plotComplex( self, p, fstart, fstop ) :
+    """plot DR and DL on the complex plane"""
+    first = True
+    for f1,f2,DR,DL in zip( self.f1, self.f2, self.DR, self.DL ) :
+      favg = 0.5 * (f1 + f2)
+      if (favg > fstart) and (favg < fstop) :
+        if first :     # plot dot and legend
+          p.plot( DR.real, DR.imag, marker='o', color=self.color, markersize=5, \
+             linestyle='solid', linewidth=1, label=self.legend )
+          p.plot( DL.real, DL.imag, marker='D', color=self.color, markersize=5 )
+          first = False
+        else :         
+          if f1 == f2prev :			# connect with line
+            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker='o', color=self.color, \
+             markersize=5, linestyle='solid', linewidth=1 )
+            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker='D', color=self.color, \
+             markersize=5, linestyle='dashed', linewidth=1 )
+          else :                    # don't connect with line  
+            p.plot( DR.real, DR.imag, marker='o', color=self.color, markersize=5 )
+            p.plot( DL.real, DL.imag, marker='D', color=self.color, markersize=5 )
+        xRprev = DR.real
+        yRprev = DR.imag
+        xLprev = DL.real
+        yLprev = DL.imag
+        f2prev = f2
+    p.legend( loc=0, prop={'size':10} )
+         
 
   def panel(self, p, type, lk, fstart, fstop ) :
     """add to one panel of a plot; p = plot handle; type = amp,phs,complex; lk = DR or DL"""
@@ -322,6 +346,9 @@ class Plot:
   def complexAll(self, f1=0., f2=0., type="complex", amax=.16) :
     pyplot.ioff()
     pp = PdfPages( 'multipage.pdf' )
+    if f1 == 0. :
+      [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
+      print f1,f2
     ymin = -1.*amax
     ymax = amax
     for ant in range(1,16) :
@@ -331,9 +358,10 @@ class Plot:
       p.grid(True)
       for Leak in self.LeakList :
         if Leak.ant == ant :
-          print "plotting DL for antenna %d" % ant
-          Leak.panel(p, type, "DL", f1, f2 )
-          Leak.panel(p, type, "DR", f1, f2 )
-      pyplot.title("C%d DL (red) and DR (blue)" % ant)
+          print "plotting DR and DL for antenna %d" % ant
+          Leak.plotComplex( p, f1, f2 ) 
+          #Leak.panel(p, type, "DL", f1, f2 )
+          #Leak.panel(p, type, "DR", f1, f2 )
+      pyplot.title("C%d DR (circles, solid) and DL (diamonds, dashed)" % ant)
       pyplot.savefig( pp, format='pdf' )
     pp.close()
