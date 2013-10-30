@@ -16,6 +16,7 @@ class Leak:
   'leak object with data, legend, color'
  
   def __init__(self, file, antenna, legend, color ) :
+    """read leakages from disk file, sort by frequency"""
     self.file = file
     self.ant = antenna
     self.legend = legend
@@ -53,6 +54,8 @@ class Leak:
             f2 = max(float(a[0]),float(a[1]))
             DR = float(a[6]) + 1j * float(a[7])
             DL = float(a[8]) + 1j * float(a[9])
+            chanfacts = a[12].split(",")
+            self.avgchan = int(chanfacts[3])
             solin.append( [f1,f2,DR,DL] )
       fin.close()
     # it would be smarter to store values as self.sol = sorted..., but I am temporarily breaking
@@ -143,19 +146,19 @@ class Leak:
       favg = 0.5 * (f1 + f2)
       if (favg > fstart) and (favg < fstop) :
         if first :     # plot dot and legend
-          p.plot( DR.real, DR.imag, marker='o', color=self.color, markersize=5, \
+          p.plot( DR.real, DR.imag, marker='o', color="red", markersize=5, \
              linestyle='solid', linewidth=1, label=self.legend )
-          p.plot( DL.real, DL.imag, marker='D', color=self.color, markersize=5 )
+          p.plot( DL.real, DL.imag, marker='D', color="blue", markersize=5 )
           first = False
         else :         
           if f1 == f2prev :			# connect with line
-            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker='o', color=self.color, \
+            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker='o', color="red", \
              markersize=5, linestyle='solid', linewidth=1 )
-            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker='D', color=self.color, \
+            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker='D', color="blue", \
              markersize=5, linestyle='dashed', linewidth=1 )
           else :                    # don't connect with line  
-            p.plot( DR.real, DR.imag, marker='o', color=self.color, markersize=5 )
-            p.plot( DL.real, DL.imag, marker='D', color=self.color, markersize=5 )
+            p.plot( DR.real, DR.imag, marker='o', color="red", markersize=5 )
+            p.plot( DL.real, DL.imag, marker='D', color="blue", markersize=5 )
         xRprev = DR.real
         yRprev = DR.imag
         xLprev = DL.real
@@ -169,22 +172,14 @@ class Leak:
 
     if lk == "DL" :  
       yc = self.DL
-      ccolor = 'red'
     else :
       yc = self.DR
-      ccolor = 'blue'
     first = True
     f2prev = 0.
 
   # Go through the array freq by freq
     for f1,f2,ycomplex in zip( self.f1, self.f2, yc) :
 
-      if (type == 'complex' ) :
-          x = ycomplex.real
-          y = ycomplex.imag
-          p.plot( x, y, marker='o', color=ccolor, markersize=3 )    # make dot
-
-      else :
         if (type == 'phs' ) : 
           y = numpy.angle(ycomplex, deg=True)
         else :
@@ -246,8 +241,8 @@ class Plot:
     self.LeakList.append( newLeak )
     self.plotList.append( True )
 
-  # --- load multiple Leaks to Plot object ---
   def loadAll(self, masterListFile ) :
+    """Read in multiple leakage files to Plot object"""
     color = [ "black", "red", "blue", "green", "cyan", "magenta", "yellow" ]
     fin = open( masterListFile, "r" )
     ncolor = 0
@@ -264,6 +259,7 @@ class Plot:
             legend = ""
             if len(a) > 1 : legend = a[1]
             Plot.addLeak(self, filename, nant, legend, color[ncolor] )
+              # addLeak opens disk file, reads data into Leak object
           ncolor = ncolor + 1
           if (ncolor > (len(color)-1) ) : ncolor = 0
 
@@ -310,7 +306,7 @@ class Plot:
 
   def ampAll(self, f1=0., f2=0., type="amp", amax=.25) :
     pyplot.ioff()
-    pp = PdfPages( 'multipage.pdf' )
+    pp = PdfPages( 'AmpLeaks.pdf' )
     if f1 == 0. :
       [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
       print f1,f2
@@ -345,7 +341,7 @@ class Plot:
 
   def complexAll(self, f1=0., f2=0., type="complex", amax=.16) :
     pyplot.ioff()
-    pp = PdfPages( 'multipage.pdf' )
+    pp = PdfPages( 'ComplexLeaks.pdf' )
     if f1 == 0. :
       [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
       print f1,f2
