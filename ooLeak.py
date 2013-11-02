@@ -15,12 +15,13 @@ from matplotlib.backends.backend_pdf import PdfPages
 class Leak:
   'leak object with data, legend, color'
  
-  def __init__(self, file, antenna, legend, color ) :
+  def __init__(self, file, antenna, legend, color, marker ) :
     """read leakages from disk file, sort by frequency"""
     self.file = file
     self.ant = antenna
     self.legend = legend
     self.color = color
+    self.marker = marker
     solin = []
     self.f1 = []
     self.f2 = []
@@ -142,29 +143,31 @@ class Leak:
   def plotComplex( self, p, fstart, fstop ) :
     """plot DR and DL on the complex plane"""
     first = True
+    f2prev = 0.
+    markit = self.marker
     for f1,f2,DR,DL in zip( self.f1, self.f2, self.DR, self.DL ) :
       favg = 0.5 * (f1 + f2)
-      if (favg > fstart) and (favg < fstop) :
+      if (favg > fstart) and (favg < fstop) and (numpy.abs(DR) != 0.) :
         if first :     # plot dot and legend
-          p.plot( DR.real, DR.imag, marker='o', color="red", markersize=5, \
-             linestyle='solid', linewidth=1, label=self.legend )
-          p.plot( DL.real, DL.imag, marker='D', color="blue", markersize=5 )
+          p.plot( DR.real, DR.imag, marker=markit, color="red", markersize=5, \
+             label=self.legend )
+          p.plot( DL.real, DL.imag, marker=markit, color="blue", markersize=5 )
           first = False
         else :         
           if f1 == f2prev :			# connect with line
-            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker='o', color="red", \
+            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker=markit, color="red", \
              markersize=5, linestyle='solid', linewidth=1 )
-            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker='D', color="blue", \
+            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker=markit, color="blue", \
              markersize=5, linestyle='dashed', linewidth=1 )
           else :                    # don't connect with line  
-            p.plot( DR.real, DR.imag, marker='o', color="red", markersize=5 )
-            p.plot( DL.real, DL.imag, marker='D', color="blue", markersize=5 )
+            p.plot( DR.real, DR.imag, marker=markit, color="red", markersize=5 )
+            p.plot( DL.real, DL.imag, marker=markit, color="blue", markersize=5 )
         xRprev = DR.real
         yRprev = DR.imag
         xLprev = DL.real
         yLprev = DL.imag
         f2prev = f2
-    p.legend( loc=0, prop={'size':10} )
+    p.legend( loc=0, prop={'size':5}, numpoints=1 )
          
 
   def panel(self, p, type, lk, fstart, fstop ) :
@@ -236,14 +239,15 @@ class Plot:
       Plot.loadAll(self, masterListFile=masterList )
 
   # --- add one Leak to Plot object ---
-  def addLeak(self, file, antenna, legend, color ) :
-    newLeak = Leak( file, antenna, legend, color )
+  def addLeak(self, file, antenna, legend, color, marker ) :
+    newLeak = Leak( file, antenna, legend, color, marker )
     self.LeakList.append( newLeak )
     self.plotList.append( True )
 
   def loadAll(self, masterListFile ) :
     """Read in multiple leakage files to Plot object"""
     color = [ "black", "red", "blue", "green", "cyan", "magenta", "yellow" ]
+    marker = [ "o", "D", "v", "^", "s", "h", "d" ]
     fin = open( masterListFile, "r" )
     ncolor = 0
     for line in fin :
@@ -258,7 +262,7 @@ class Plot:
               filename = a[0]
             legend = ""
             if len(a) > 1 : legend = a[1]
-            Plot.addLeak(self, filename, nant, legend, color[ncolor] )
+            Plot.addLeak(self, filename, nant, legend, color[ncolor], marker[ncolor] )
               # addLeak opens disk file, reads data into Leak object
           ncolor = ncolor + 1
           if (ncolor > (len(color)-1) ) : ncolor = 0
@@ -355,9 +359,37 @@ class Plot:
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DR and DL for antenna %d" % ant
-          Leak.plotComplex( p, f1, f2 ) 
+          Leak.plotComplex( p, f1, f2, 'o' ) 
           #Leak.panel(p, type, "DL", f1, f2 )
           #Leak.panel(p, type, "DR", f1, f2 )
       pyplot.title("C%d DR (circles, solid) and DL (diamonds, dashed)" % ant)
       pyplot.savefig( pp, format='pdf' )
+    pp.close()
+
+  def complex4All(self, f1=0., f2=0., amax=.16, nrows=2, ncols=3) :
+    pyplot.ioff()
+    pp = PdfPages( 'ComplexLeaks.pdf' )
+    scale = 10./ncols
+    if f1 == 0. :
+      [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
+      print f1,f2
+    ymin = -1.*amax
+    ymax = amax
+    npanel = 0
+    for ant in range(1,16) :
+      npanel = npanel + 1
+      if npanel > nrows * ncols :
+        npanel = 1
+        pyplot.clf()
+      p = pyplot.subplot(nrows, ncols, npanel, aspect='equal')    # DL,DR in one panel
+      p.tick_params( axis='both', which='major', labelsize=5 )
+      p.axis( [ymin, ymax, ymin, ymax] )
+      p.grid(True)
+      for Leak in self.LeakList :
+        if Leak.ant == ant :
+          print "plotting DR and DL for antenna %d" % ant
+          Leak.plotComplex( p, f1, f2 ) 
+      pyplot.title("C%d DR (red) and DL (blue)" % ant, fontdict={'fontsize': 7} )
+      if (npanel == nrows*ncols) or (ant == 15) :
+        pyplot.savefig( pp, format='pdf' )
     pp.close()
