@@ -4,6 +4,7 @@
 #   see, this code has nothing in common with paPlot.py
 # 16jun2013 - delete code making separate leak files for each antenna - put all leakages into one Lk file
 # 18oct2013 - add avgchan=0 option to average all channels in each window (this will be the default)
+# 06nov2013 - change vis["avgchan"] to be a string, allowing "DSB", "2SB", or a number
 
 import math
 import time
@@ -26,7 +27,7 @@ import sys
 # vis1 = { "fileName"   : "wide.cal",                    (no default)
 #          "selectStr"  : "source(3c279),-ant(7)",       (no default)
 #          "LkName"     : "Lk.22mar2013",                (no default)
-#          "avgchan"    : 5,                             (default = 0 -> avg across corr section)
+#          "avgchan"    : "5",                             (default = 0 -> avg across corr section)
 #          "interval"   : 5,                            
 #          "refant"     : 8,                           
 #          "optionStr"  : "circular,noxy,nopass,qusolve",
@@ -37,14 +38,13 @@ import sys
 # leakSolve.restoreLk( LkFile, lineStr, outfile )               - restores leakage solution to outfile 
 # leakSolve.stripout( Lkfile, antList, fstart, fstop, outfile ) - phased leakage sum for vlbi
 
-# --- delete existing leakage file ---
 def delHd( fileName ) :
+  """Delete existing leakage file"""
   p= subprocess.Popen( ( shlex.split('delhd in=%s/leakage' % ( fileName ) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
   
-# --- generate vis dictionary items "chfreq", "chwidth" - list of fstart,fstop for every correlator channel
 def makeFtable( vis ) :
-  'fills in dictionary items nstart,nchan (per section) and chfreq,chwidth (per chan)'
+  """Generates dictionary items "nstart", "nchan" (per window), "chfreq", "chwidth" (per chan)"""
   nstart = []
   nchan = []
   fstart = []
@@ -106,12 +106,21 @@ def runGpcal( vis, lineString='' ) :
         DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
   return [ percentQ, percentU, DR, DL ]
 
-# solve for leakages for a particular channel range, append to Lkfile
-def addLk( vis, ch1, avgchan ) :
-  lineString = "chan,1,%d,%d" % ( ch1, avgchan )
-  ch2 = ch1 + avgchan - 1
-  fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
-  fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
+def addLk( vis, ch1, navg ) :
+  """Solve for leakages for a line=chan,ch1,navg, append them to Lkfile"""
+  lineString = "chan,1,%d,%d" % ( ch1, navg )
+  ch2 = ch1 + navg - 1
+  # Find max and min freq in this chan range (may not be ch1 or ch2)
+  fstart = 1000.  # GHz
+  fstop = 0.      # GHz
+  for nch in range(ch1,ch1+navg) :
+    #print "nch = %d, freq= %.4f, width= %.4f" % ( nch, vis["chfreq"][nch-1], vis["chwidth"][nch-1] )
+    f1 = vis["chfreq"][nch-1] - 0.5*vis["chwidth"][nch-1]
+    f2 = vis["chfreq"][nch-1] + 0.5*vis["chwidth"][nch-1]
+    if f1 < fstart : fstart = f1
+    if f2 < fstart : fstart = f2
+    if f1 > fstop  : fstop = f1
+    if f2 > fstop  : fstop = f2
   print ""
   print "%s   %8.3f %8.3f" % (lineString, fstart, fstop)
   [ percentQ, percentU, DR, DL ] = runGpcal( vis, lineString=lineString )
@@ -124,8 +133,8 @@ def addLk( vis, ch1, avgchan ) :
        DL[nant].imag, percentQ, percentU, lineString) )
   fout.close()
 
-# fill in any missing vis dictionary items with defaults
 def fillDefaults( vis ) :
+  """Enter defaults for any missing dictionary items"""
   if "fileName" in vis :
     print "... fileName : ", vis["fileName"]
   else :
@@ -142,11 +151,13 @@ def fillDefaults( vis ) :
     vis[ "LkName" ] = "Lk"
   if not "refant" in vis :
     vis[ "refant" ] = 8
+  if not "avgchan" in vis :
+    vis[ "avgchan" ] = "DSB"
   if not "legend" in vis :
     vis[ "legend" ] = ""
     
-# creates Lk file using prescription given in vis dictionary
 def makeLk( vis ) :
+  """Creates new Lkfile following prescription given in vis dictionary"""
   fillDefaults( vis )
   filename = vis["LkFile"]
   fout = open( filename, "w" )    # wipes out previous file!
@@ -156,24 +167,41 @@ def makeLk( vis ) :
   fout.write("# optionStr  : %s\n" % vis["optionStr"] )
   fout.write("# flux       : %s\n" % vis["flux"] )
   fout.write("# refant     : %d\n" % vis["refant"] )
-  fout.write("# avgchan    : %d\n" % vis["avgchan"] )
+  fout.write("# avgchan    : %s\n" % vis["avgchan"] )
   fout.write("# interval   : %.2f\n" % vis["interval"] )
   fout.close()
   makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
-  for nstart,nchan in zip( vis["nstart"],vis["nchan"] ) :
-    if nchan > 0 :
-      avgchan = vis["avgchan"]
-      if (avgchan > nchan) or (avgchan <= 0) :
-        avgchan = nchan
-      nextra = nchan - (nchan/avgchan)*avgchan
-      for n1 in range( nstart + nextra/2, nstart+nchan-avgchan+1, avgchan ) :
-        print n1, n1+avgchan - 1
-        delHd( vis["fileName"] ) 
-        addLk( vis, n1, avgchan )
+  nchlist = numpy.array( vis["nchan"] )   # needed only for DSB or 2SB
+  nchtot = numpy.sum(nchlist)             # needed only for DSB or 2SB
+  if vis["avgchan"].isdigit() :
+    print "processing by correlator window" 
+    for nstart,nchan in zip( vis["nstart"],vis["nchan"] ) :
+      if nchan > 0 :      # skip corr sections with 0 chans
+        avgchan = int(vis["avgchan"])
+        if (avgchan > nchan) or (avgchan <= 0) :
+          avgchan = nchan
+        nextra = nchan - (nchan/avgchan)*avgchan  # number of leftover chans
+        for n1 in range( nstart + nextra/2, nstart+nchan-avgchan+1, avgchan ) :
+          print n1, n1+avgchan - 1
+          delHd( vis["fileName"] ) 
+          addLk( vis, n1, avgchan )
+  elif vis["avgchan"] == "DSB" :
+    print "computing DSB leakage"
+    delHd( vis["fileName"] )
+    addLk( vis, 1, nchtot )    # average all chans
+  elif vis["avgchan"] == "2SB" :
+    print "computing LSB and USB leakages"
+    delHd( vis["fileName"] )
+    addLk( vis, 1, nchtot/2 )             # LSB
+    delHd( vis["fileName"] )
+    addLk( vis, nchtot/2+1, nchtot/2 )    # USB
+  else :
+    print "ERROR - vis[avgchan] = %s is unrecognized value" % vis["avgchan"]
+   
 
-# copies Lk specified by lineStr from LkFile to outfile
 def restoreLk( LkFile, lineStr, outfile ) :
-  print "   restoreLk: copy leakages for lineStr = %s from %s to %s" % (lineStr, LkFile, outfile)
+  """Copies Lk specified by lineStr from LkFile to outfile"""
+  print "restoreLk: copy leakages for lineStr = %s from %s to %s" % (lineStr, LkFile, outfile)
   delHd( outfile )
   failed = True
   try:
@@ -276,4 +304,15 @@ def stripout( Lkfile, antList, fstart, fstop, outfile ) :
   fin.close()
   fout.close()
 
-
+# --- plot correlator setups for Miriad data files listed in visList ---
+def visualize( visList ) :
+  fin = open( visList, "r" )
+  for line in visList :
+    if not line.beginswith("#") :
+      try:
+        vis["fileName"] = line
+        makeFtable( vis )
+        print vis["chfreq"] 
+      except :
+        print "failed to process %s" % vis["fileName"]
+        
