@@ -146,12 +146,8 @@ class SS :
       a = lineStr.split(",")   # "chan,1,49,8"
       ch1 = int(a[2])
       ch2 = ch1 + int(a[3]) - 1
-      #print vis["chfreq"]
-      #print vis["chwidth"]      
-      #sys.stdout.flush()
-      fstart = vis["chfreq"][ch1-1] - 0.5*vis["chwidth"][ch1-1]
-      fstop = vis["chfreq"][ch2-1] + 0.5*vis["chwidth"][ch2-1]
-      if (abs(fstartLeak - fstart) > .001) or (abs(fstopLeak - fstop) > .001) :
+      [fstart,fstop] = leakSolve.fminfmax( vis, ch1, ch2 )
+      if (abs(fstartLeak - fstart) > .002) or (abs(fstopLeak - fstop) > .002) :
         print "    freq mismatch:  Leak %.3f - %.3f,  Data %.3f - %.3f"  % (fstartLeak, fstopLeak, fstart, fstop) 
       result = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
       if numpy.isnan(result[0]) or numpy.isnan(result[2]) or numpy.isnan(result[4]) :
@@ -224,30 +220,45 @@ class SS :
     sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
     Qavg = numpy.average( self.Q )
     Uavg = numpy.average( self.U )
-    print "\n# Qavg,Uvg = ", Qavg, Uavg
+    print "# Qavg,Uvg = ", Qavg, Uavg
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
     pa0 = 0.5 * math.atan(Uavg/Qavg)
     print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = 0." % (p0, pa0 * 180./math.pi)
-    popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
-    print "popt = ", popt
-    if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
-      popt[0] = -1. * popt[0]
-      popt[1] = popt[1] + math.pi/2.
-    p0,pa0,rm = popt
-    pa0 = pa0 * 180./math.pi
-    # compute chisq and scale covariances to get 'true' error estimates - see scipy thread
-    #     by Christoph Deil; makes errors unreasonably small, so I am dropping it
-    #  chi = y - self.func( x, p0, pa0, rm)/sigma
-    #  chisq = (chi**2).sum()
-    #  print "chisq = %.2e" % chisq
-    #  dof = len(x) - len(popt)
-    #  pcov = pcov/(chisq/dof)
-    try :
-      p0rms = math.sqrt(pcov[0][0])
-      pa0rms = math.sqrt(pcov[1][1]) * 180./math.pi
-      rmrms = math.sqrt(pcov[2][2]) 
-    except :
-      p0rms = pa0rms = rmrms = 0.
+    
+    # --- fit data if there are measurements at at least 2 freqs --- #
+    if len(self.f1) > 1 :
+      popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
+      print "popt = ", popt
+      if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
+        popt[0] = -1. * popt[0]
+        popt[1] = popt[1] + math.pi/2.
+      p0,pa0,rm = popt
+      pa0 = pa0 * 180./math.pi
+      # compute chisq and scale covariances to get 'true' error estimates - see scipy thread
+      #     by Christoph Deil; makes errors unreasonably small, so I am dropping it
+        #  chi = y - self.func( x, p0, pa0, rm)/sigma
+      #  chisq = (chi**2).sum()
+      #  print "chisq = %.2e" % chisq
+      #  dof = len(x) - len(popt)
+      #  pcov = pcov/(chisq/dof)
+      try :
+        p0rms = math.sqrt(pcov[0][0])
+        pa0rms = math.sqrt(pcov[1][1]) * 180./math.pi
+        rmrms = math.sqrt(pcov[2][2]) 
+      except :
+        p0rms = pa0rms = rmrms = 0.
+
+    # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
+    else :
+      p0rms = self.rmsI
+      pa0 = pa0 * 180./math.pi
+      pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
+        / ( pow(self.Q,2.) + pow(self.U,2.) )
+      pa0rms = pa0rms * 180./math.pi
+      rm = 0.
+      rmrms = 0.
+      freq0 = freq
+    
     self.p0 = p0
     self.p0rms = p0rms
     self.pa0 = pa0
@@ -269,7 +280,7 @@ class SS :
     Istd = numpy.std( self.I, ddof=1 )/math.sqrt(len(self.I))
     self.frac = self.p0/Iavg
     self.fracrms = self.frac * math.sqrt( pow(Istd/Iavg,2.) + pow(self.p0rms/self.p0,2.) )
-    print "Iavg,Istd,frac,fracrms = %.4f, %.4f, %.4f, %.4f" % (Iavg, Istd, self.frac,self.fracrms)
+    #print "Iavg,Istd,frac,fracrms = %.4f, %.4f, %.4f, %.4f" % (Iavg, Istd, self.frac,self.fracrms)
 
   def plot( self ) :
     pyplot.clf()
@@ -427,7 +438,7 @@ def readAll(  infile, ssList ) :
       rmsV.append( float( a[9] ) )
       ss.strList.append( a[10] ) 
 
-# read in one or more PARM files, write summary file for wip
+# read in one or more PA files, write summary file for wip
 def summary( paList, outfile ) :
   srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
 	"3c279", "1337-129", "1633+382", "3c345", "NRAO530", "SgrA", "1749+096", "1921-293", \
@@ -460,6 +471,54 @@ def summary( paList, outfile ) :
         fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %2d   %s\n" % \
           (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
           ss.frac, ss.fracrms, color, ss.selectStr) )
+        fout.close()
+      nstop = nstart + len(ssList) + 2
+      print "1src %d %d %d %s" % (nstart, nstop, color, srcName )
+      nstart = nstop + 1
+  fin.close()
+        
+
+# read in one or more PA files, write summary file with Q,U for wip
+def DSBsummary( paList, outfile ) :
+  srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
+	"3c279", "1337-129", "1633+382", "3c345", "NRAO530", "SgrA", "1749+096", "1921-293", \
+    "bllac", "titan", "1743-038", "3c286" ]
+  colorList = [ 3,2,14,4,3,3,4,8,1,9,10,11,12,13,5,15,1,2,3,4]
+  nstart = 1
+  fin = open( paList, "r" )
+  for line in fin :
+    a = line.split()
+    if not line.startswith("#") and len(a) > 0 :
+      ssList = []
+      infile = a[0]
+      srcName = a[0]
+      color = 1
+      for src,col in zip (srcList,colorList) :
+        if (a[0].find(src) >= 0) or (a[0].find(src.upper()) >= 0) :
+          srcName = src
+          color = col
+      fout = open( outfile, "a" )
+      fout.write("#\n")
+      fout.write("# %s\n" % infile)
+      fout.write("#  dechr  parang    HA        S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  col   selectString\n")
+      fout.close()
+      readAll( infile, ssList )
+      for ss in ssList : 
+        Iavg = numpy.average(ss.I )
+        Istd = numpy.average(ss.rmsI)
+        Q = numpy.average(ss.Q)
+        rmsQ = numpy.average(ss.rmsQ)
+        U = numpy.average(ss.U)
+        rmsU = numpy.average(ss.rmsU)
+        V = numpy.average(ss.V)
+        rmsV = numpy.average(ss.rmsV)
+        fout = open(outfile, 'a')
+        outStr = "%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %7.3f %5.3f %2d" % \
+          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, \
+          ss.frac, ss.fracrms, color )
+        outStr = outStr + "    %10.3e %10.3e   %10.3e %10.3e   %10.3e %10.3e   %s\n" \
+         % (Q,rmsQ,U,rmsU,V,rmsV,ss.selectStr) 
+        fout.write( "%s" % outStr )
         fout.close()
       nstop = nstart + len(ssList) + 2
       print "1src %d %d %d %s" % (nstart, nstop, color, srcName )
