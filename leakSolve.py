@@ -106,22 +106,24 @@ def runGpcal( vis, lineString='' ) :
         DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
   return [ percentQ, percentU, DR, DL ]
 
+def fminfmax( vis, ch1, ch2 ) :
+  """find min and max freqs in channel range (ch1,ch2); uses vis[chfreq] and vis[chwidth] arrays"""
+  fmin = 1000.   # GHz
+  fmax = 0.      # GHz
+  for nch in range(ch1,ch2+1) :
+    f1 = vis["chfreq"][nch-1] - 0.5*vis["chwidth"][nch-1]
+    f2 = vis["chfreq"][nch-1] + 0.5*vis["chwidth"][nch-1]
+    if f1 < fmin : fmin = f1
+    if f2 < fmin : fmin = f2
+    if f1 > fmax  : fmax = f1
+    if f2 > fmax  : fmax = f2
+  return [fmin,fmax]
+
 def addLk( vis, ch1, navg ) :
   """Solve for leakages for a line=chan,ch1,navg, append them to Lkfile"""
   lineString = "chan,1,%d,%d" % ( ch1, navg )
   ch2 = ch1 + navg - 1
-  # Find max and min freq in this chan range (may not be ch1 or ch2)
-  fstart = 1000.  # GHz
-  fstop = 0.      # GHz
-  for nch in range(ch1,ch1+navg) :
-    #print "nch = %d, freq= %.4f, width= %.4f" % ( nch, vis["chfreq"][nch-1], vis["chwidth"][nch-1] )
-    f1 = vis["chfreq"][nch-1] - 0.5*vis["chwidth"][nch-1]
-    f2 = vis["chfreq"][nch-1] + 0.5*vis["chwidth"][nch-1]
-    if f1 < fstart : fstart = f1
-    if f2 < fstart : fstart = f2
-    if f1 > fstop  : fstop = f1
-    if f2 > fstop  : fstop = f2
-  print ""
+  [fstart,fstop] = fminfmax( vis, ch1, ch2 )
   print "%s   %8.3f %8.3f" % (lineString, fstart, fstop)
   [ percentQ, percentU, DR, DL ] = runGpcal( vis, lineString=lineString )
   filename = vis["LkFile"]
