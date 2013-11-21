@@ -43,6 +43,18 @@ def delHd( fileName ) :
   p= subprocess.Popen( ( shlex.split('delhd in=%s/leakage' % ( fileName ) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
   
+# copy (do not average) selected data from visFile into 'sstmp', with options=nopol
+def copytoSStmp( visFile, selectStr ) :
+  'copy from visFile to sstmp over interval specified by selectStr'
+  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+  time.sleep(1)
+  p= subprocess.Popen( ( shlex.split('uvcat vis=%s select=%s out=sstmp options=nopol' \
+     % (visFile, selectStr) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+  result = p.communicate()[0]
+  print result
+
 def makeFtable( vis ) :
   """Generates dictionary items "nstart", "nchan" (per window), "chfreq", "chwidth" (per chan)"""
   nstart = []
@@ -158,8 +170,10 @@ def fillDefaults( vis ) :
   if not "legend" in vis :
     vis[ "legend" ] = ""
     
-def makeLk( vis ) :
+def makeLk( visin ) :
   """Creates new Lkfile following prescription given in vis dictionary"""
+  vis = visin.copy()
+	# to make sure we don't mess up entries in vis, create temporary copy
   fillDefaults( vis )
   filename = vis["LkFile"]
   fout = open( filename, "w" )    # wipes out previous file!
@@ -172,6 +186,11 @@ def makeLk( vis ) :
   fout.write("# avgchan    : %s\n" % vis["avgchan"] )
   fout.write("# interval   : %.2f\n" % vis["interval"] )
   fout.close()
+
+  copytoSStmp( vis["fileName"], vis["selectStr"] ) 
+    # copies requested data to file sstmp, applying gain correction if present 
+  vis["fileName"] = "sstmp"
+
   makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
   nchlist = numpy.array( vis["nchan"] )   # needed only for DSB or 2SB
   nchtot = numpy.sum(nchlist)             # needed only for DSB or 2SB
