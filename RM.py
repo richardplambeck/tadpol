@@ -77,21 +77,7 @@ def avgtoSStmp( visFile, selectStr ) :
   result = p.communicate()[0]
   print result
 
-# copy (do not average) selected data from visFile into 'sstmp', with options=nopol
-# this saves time in creating a multichannel SS object because input file
-#    is re-read for every LkFile channel interval
-def copytoSStmp( visFile, selectStr ) :
-  'copy from visFile to sstmp over interval specified by selectStr'
-  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
-     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  time.sleep(1)
-  p= subprocess.Popen( ( shlex.split('uvcat vis=%s select=%s out=sstmp options=nopol' \
-     % (visFile, selectStr) ) ), \
-     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  result = p.communicate()[0]
-  print result
-
-# an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and uncertainties vs freq
+# an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and their uncertainties vs freq
 #   for a particular source over a particular time range
 # the SS object may include a fit to the polarized flux, PA (at some ref freq) and rotation measure
 
@@ -126,29 +112,41 @@ class SS :
     self.selectStr = selectStr
     self.LkFile = LkFile
     if preavg :
-      print "Preaveraging %s to create temporary file sstmp" % visFile
+      print "Preaveraging to create temporary file sstmp" 
       avgtoSStmp( visFile, selectStr ) 
+        # preaveraging is not recommended because it leaves only 1 parallactic angle!
     else :
       print "Copying (but not averaging) selected data to temporary file sstmp"
-      copytoSStmp( visFile, selectStr ) 
-      #vis = { "fileName" : visFile, "selectStr" : selectStr }
+      leakSolve.copytoSStmp( visFile, selectStr ) 
+        # copying is preferred
+
+  # to take advantage of various leakSolve routines, create a (temporary) visibility dictionary
+  # note that this is NOT the same as the SS object!
     vis = { "fileName" : "sstmp", "selectStr" : selectStr }
-    frq1 = []
-    frq2 = []
-    Stokes = []									# temporary work area
-    self.strList = makeStrList( LkFile )	    # make list of available channel ranges in LkFile
+       # selectStr is superfluous since only data specified by selectStr were copied to sstmp
     leakSolve.makeFtable( vis )					# fill in the chfreq and chwidth items in vis dictionary
     if not vis["chfreq"] :						# this checks for empty list
       print "ABORTING THIS INTERVAL: sstmp is an empty file - perhaps all data are flagged"
       return False
+
+  # process data in sstmp one channel range at a time
+    self.strList = makeStrList( LkFile )	    # make list of available channel ranges in LkFile
+    frq1 = []
+    frq2 = []
+    Stokes = []									# temporary work area
     for lineStr in self.strList :
       [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, "sstmp" )
+         # ... copy leakage for one lineStr from LkFile to sstmp
+
+    # check that freq range for chans 'lineStr' is same in LkFile and in sstmp
       a = lineStr.split(",")   # "chan,1,49,8"
       ch1 = int(a[2])
       ch2 = ch1 + int(a[3]) - 1
       [fstart,fstop] = leakSolve.fminfmax( vis, ch1, ch2 )
       if (abs(fstartLeak - fstart) > .002) or (abs(fstopLeak - fstop) > .002) :
         print "    freq mismatch:  Leak %.3f - %.3f,  Data %.3f - %.3f"  % (fstartLeak, fstopLeak, fstart, fstop) 
+
+    # compute the stokes parameters for this 'lineStr'
       result = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
       if numpy.isnan(result[0]) or numpy.isnan(result[2]) or numpy.isnan(result[4]) :
         print "skipping data with nan"
@@ -159,7 +157,8 @@ class SS :
 
     #print "Stokes = ",numpy.array(Stokes)
     #print "Stokes.transpose = ",numpy.array(Stokes).transpose()
-    self.visFile = visFile               # change visfile name back to originating file
+
+  # copy data from temporary work area to SS object
     self.f1 = numpy.array(frq1)
     self.f2 = numpy.array(frq2)
     self.I = numpy.array(Stokes).transpose()[0]
@@ -213,6 +212,7 @@ class SS :
     return numpy.concatenate( (qmodel,umodel) )
 
   def fitPARM( self, freq0 ) :
+    print "entering fitPARM"
     freq = 0.5 * (self.f1 + self.f2)
     lambdasq = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
     x = numpy.concatenate( (lambdasq,lambdasq) )
@@ -222,7 +222,7 @@ class SS :
     Uavg = numpy.average( self.U )
     print "# Qavg,Uvg = ", Qavg, Uavg
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
-    pa0 = 0.5 * math.atan(Uavg/Qavg)
+    pa0 = 0.5 * math.atan2(Uavg,Qavg)
     print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = 0." % (p0, pa0 * 180./math.pi)
     
     # --- fit data if there are measurements at at least 2 freqs --- #
@@ -336,7 +336,7 @@ def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, schedFile
     print "making list according to vlbi schedFile %s" % schedFile 
     selectList = paPlot.makeSelectList2( schedFile, srcName )
   else :
-    print "average together up to %d integrations; no gaps > %.1f minutes" % (nint, maxgap)
+    print "include up to %d integrations; no gaps > %.1f minutes" % (nint, maxgap)
     selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
   print "selectList = ",selectList
   nlist = len(selectList)
