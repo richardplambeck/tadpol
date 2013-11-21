@@ -438,7 +438,7 @@ def readAll(  infile, ssList ) :
       rmsV.append( float( a[9] ) )
       ss.strList.append( a[10] ) 
 
-# read in one or more PA files, write summary file for wip
+# read in one or more PA files, write summary file for wip (this is geared toward vlbi)
 def summary( paList, outfile ) :
   srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
 	"3c279", "1337-129", "1633+382", "3c345", "NRAO530", "SgrA", "1749+096", "1921-293", \
@@ -462,6 +462,13 @@ def summary( paList, outfile ) :
       fout.write("# %s\n" % infile)
       fout.write("#  dechr  parang    HA        S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  col   selectString\n")
       fout.close()
+
+      fout = open( "QUsummary", "a" )
+      fout.write("#\n")
+      fout.write("# %s\n" % infile)
+      fout.write("#  dechr  parang    HA        S    sigma     Q   sigma      U  sigma      V  sigma    col   selectString\n")
+      fout.close()
+
       readAll( infile, ssList )
       for ss in ssList : 
         #Iavg = numpy.average(ss.I, weights=ss.rmsI )
@@ -472,6 +479,12 @@ def summary( paList, outfile ) :
           (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
           ss.frac, ss.fracrms, color, ss.selectStr) )
         fout.close()
+
+        fout = open("QUsummary", 'a')
+        fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.3f %5.3f %7.3f %5.3f  %2d   %s\n" % \
+          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.Q, ss.rmsQ, ss.U, ss.rmsU, ss.V, ss.rmsV, color, ss.selectStr) )
+        fout.close()
+
       nstop = nstart + len(ssList) + 2
       print "1src %d %d %d %s" % (nstart, nstop, color, srcName )
       nstart = nstop + 1
