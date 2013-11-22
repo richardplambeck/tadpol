@@ -563,3 +563,30 @@ def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
   pyplot.savefig( pp, format='pdf' )
   pp.close()
   
+# plot Q,U with error bars over the course of a night
+# color code the points (and arrows between them) by time?
+# paFile contains a set of stokes objects
+
+def QUtrajectory ( paFile ) :
+  pyplot.ion()
+  pyplot.clf()
+  ssList = []
+  readAll( paFile, ssList )
+  UT = []
+  Q = []
+  U = []
+  for ss in ssList : 
+     UT.append(ss.UT)
+     Q.append(numpy.average(ss.Q))
+     U.append(numpy.average(ss.U))      
+  ymax = 1.1*numpy.amax(numpy.absolute([Q,U]))
+
+  fig = pyplot.subplot(1,1,1)
+  fig.axis( [-1.*ymax, ymax, -1.*ymax, ymax], size=3 )
+  fig.tick_params(axis='both', which='major', labelsize=3 )
+  fig.grid( True )
+  fig.plot(Q,U,'ro')
+  for n in range(0,len(Q)-1) :
+    #pyplot.arrow(Q[n],U[n],Q[n+1]-Q[n],U[n+1]-U[n],length_includes_head=True, head_width=0.02*ymax)
+    pyplot.annotate( "", [Q[n],U[n]], xytext=[Q[n+1],U[n+1]], arrowprops=dict(linewidth=1) )
+  pyplot.show()
