@@ -11,6 +11,7 @@ import shlex
 import string
 import leakSolve
 import paPlot
+import pickle
 import scipy.optimize
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
@@ -347,7 +348,8 @@ def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, schedFile
     print "%d/%d  %s" % (n+1,nlist,selectString)
     ss = SS()
     if ss.make( visFile, selectString, LkFile, preavg=preavg ) :		# returns False if it fails
-      ss.dump( outfile )
+      fout = open(outfile,"ab")
+      pickle.dump( ss, fout )
       if plot : 
         ss.plot()
                                                                                                                   
@@ -383,6 +385,17 @@ def RMsearch( infile, outfile ) :
     fout.write( "%.3e  %11.4e\n" % ( RM, P ) )
   fout.close()
    
+# read in series of SSs from input pickle file, append to ssList
+def readAll2( infile, ssList ) :
+  fin = open( infile, "rb" )
+  while True :
+    try :
+      ss = pickle.load(fin)
+      ss.dump(None)
+      ssList.append(ss)
+    except (EOFError, pickle.UnpicklingError ) :
+      break
+  fin.close()
 
 # read in series of SSs from input file
 def readAll(  infile, ssList ) :
