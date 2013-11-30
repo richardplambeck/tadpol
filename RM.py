@@ -587,19 +587,28 @@ def QUtrajectory ( paFile ) :
   readAll( paFile, ssList )
   UT = []
   Q = []
+  Qerr = [] 
   U = []
+  Uerr = [] 
   for ss in ssList : 
      UT.append(ss.UT)
      Q.append(numpy.average(ss.Q))
+     #Qerr.append(numpy.average(ss.Q))
+     Qerr.append(0.02)
      U.append(numpy.average(ss.U))      
+     #Uerr.append(numpy.average(ss.U))      
+     Uerr.append(0.03)      
   ymax = 1.1*numpy.amax(numpy.absolute([Q,U]))
 
   fig = pyplot.subplot(1,1,1)
   fig.axis( [-1.*ymax, ymax, -1.*ymax, ymax], size=3 )
-  fig.tick_params(axis='both', which='major', labelsize=3 )
+  fig.tick_params(axis='both', which='major', labelsize=10 )
   fig.grid( True )
-  fig.plot(Q,U,'ro')
-  for n in range(0,len(Q)-1) :
+  fig.errorbar(Q,U,xerr=Qerr,yerr=Uerr,color="r",alpha=1, fmt=None,capsize=0, ecolor="0.2",linewidth=1,mew=0, zorder=1)
+  fig.plot(Q,U,color="blue",alpha=0.3, zorder=2)
+  fig.scatter(Q,U, s=80, c=UT, marker="o", linewidths=1, alpha=1, zorder=3, edgecolor="0.6" )
+  #pyplot.colorbar(ax=fig,ticks=[min(UT),max(UT)] )
+  #for n in range(0,len(Q)-1) :
     #pyplot.arrow(Q[n],U[n],Q[n+1]-Q[n],U[n+1]-U[n],length_includes_head=True, head_width=0.02*ymax)
-    pyplot.annotate( "", [Q[n],U[n]], xytext=[Q[n+1],U[n+1]], arrowprops=dict(linewidth=1) )
+    #pyplot.annotate( "", [Q[n],U[n]], xytext=[Q[n+1],U[n+1]], arrowprops=dict(linewidth=1) )
   pyplot.show()
