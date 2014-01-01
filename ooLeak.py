@@ -27,7 +27,7 @@ class Leak:
     self.f2 = []
     self.DR = []
     self.DL = []
-    self.avgchan = 0
+    self.avgchan = "0"
     try :
       fin = open( self.file, "r" )
     except :
@@ -40,8 +40,7 @@ class Leak:
         if (line.startswith("# legend")) and (len(self.legend)==0) :
           self.legend = a[3]
         if line.startswith("# avgchan") :
-          self.avgchan = int(a[3])
-          #print "avgchan = %d" % self.avgchan
+          self.avgchan = a[3]
         if (len(a) > 9) and (line.startswith("C")) :		# new style Lk table, includes all antennas
           ant = int( a[0].strip("C") )
           if ant == self.ant :
@@ -56,7 +55,7 @@ class Leak:
             DR = float(a[6]) + 1j * float(a[7])
             DL = float(a[8]) + 1j * float(a[9])
             chanfacts = a[12].split(",")
-            self.avgchan = int(chanfacts[3])
+            self.avgchan = chanfacts[3]
             solin.append( [f1,f2,DR,DL] )
       fin.close()
     # it would be smarter to store values as self.sol = sorted..., but I am temporarily breaking
@@ -66,108 +65,48 @@ class Leak:
         self.f2.append( s[1] )    
         self.DR.append( s[2] )
         self.DL.append( s[3] )
-      #print self.f1
-      #print self.f2
-      #print self.DR
-      #print self.DL
    
   def list(self) :
     return [self.ant, self.file, self.legend]
 
   def fminmax(self) :
-    #fmin = self.sol[0][0]
-    #fmax = self.sol[-1][1]
     fmin = self.f1[0]
     fmax = self.f2[-1]
     return [fmin,fmax] 
     
-
-#  def dumpDR(self, fstart, fstop) :
-#    if len(self.DR) <= 0 :
-#      print "empty list"
-#    else :
-#      for f1,f2,DR in zip( self.f1, self.f2, self.DR ) :
-#        if (f1 >= fstart) and (f1 <= fstop) and (f2 >=fstart) and (f2 <= fstop) :
-#          print DR
-
-#  def cDR(self, col) :
-#    pylab.ion()
-#    pylab.axis( [-.2, .2, -.2, .2] )
-#    pylab.grid(True)
-#    for DR in self.DR :
-#      x = numpy.real(DR)
-#      y = numpy.imag(DR)
-#      pylab.plot(x,y,'bo',color=col,linestyle='solid',linewidth=1)
-#    pylab.draw()
-
-#  def cDL(self, col) :
-#    x = []
-#    y = []
-#    pylab.ion()
-#    pylab.axis( [-.2, .2, -.2, .2] )
-#    pylab.grid(True)
-#    for DL in self.DL :
-#      x.append(numpy.real(DL))
-#      y.append(numpy.imag(DL))
-#    pylab.plot(x,y,color=col,linestyle='solid',linewidth=1)
-#    pylab.draw()
-
-#  def ampDR(self, col) :
-#    pylab.ion()
-#    pylab.axis( [self.fstart, self.fstop, 0.,.2] )
-#    for f1,f2,DR in zip( self.f1, self.f2, self.DR ) :
-#      amp = numpy.abs(DR)
-#      #pylab.plot(f1,amp,'bo')
-#      pylab.plot([f1,f2],[amp,mp],color=self.color,linestyle='solid',linewidth=1)
-#    pylab.draw() 
-
-# make bar graph of re and im vs freq
-#  def riDL(self) :
-#    pylab.ion()
-#    pylab.axis( [self.fstart, self.fstop, -.1, .1] )
-#    pylab.grid(True)
-#    f2prev = 0.
-#    for f1,f2,DL in zip( self.f1, self.f2, self.DL) :
-#      y1 = numpy.real(DL)
-#      y2 = numpy.imag(DL)
-#      if f1 == f2prev :
-#        pylab.plot( [f1,f1], [y1,y1prev] ,color='red',linestyle='solid',linewidth=1)
-#        pylab.plot( [f1,f1], [y2,y2prev] ,color='blue',linestyle='solid',linewidth=1)
-#      f2prev = f2
-#      y1prev = y1
-#      y2prev = y2
-#      pylab.plot( [f1,f2], [y1,y1], color='red',linestyle='solid',linewidth=1)
-#      pylab.plot( [f1,f2], [y2,y2], color='blue',linestyle='solid',linewidth=1)
-#    pylab.draw()
-
   def plotComplex( self, p, fstart, fstop ) :
     """plot DR and DL on the complex plane"""
     first = True
     f2prev = 0.
-    markit = self.marker
+    DRmark = "."
+    DLmark = "D"
     for f1,f2,DR,DL in zip( self.f1, self.f2, self.DR, self.DL ) :
+      msize = 5
+      #if (f2-f1) > 0.24 :
+      #  msize = 8
       favg = 0.5 * (f1 + f2)
       if (favg > fstart) and (favg < fstop) and (numpy.abs(DR) != 0.) :
         if first :     # plot dot and legend
-          p.plot( DR.real, DR.imag, marker=markit, color="red", markersize=5, \
+          p.plot( DR.real, DR.imag, marker=DRmark, color=self.color, markersize=msize, \
              label=self.legend )
-          p.plot( DL.real, DL.imag, marker=markit, color="blue", markersize=5 )
+          p.plot( DL.real, DL.imag, marker=DLmark, color=self.color, markersize=msize )
           first = False
         else :         
-          if f1 == f2prev :			# connect with line
-            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker=markit, color="red", \
-             markersize=5, linestyle='solid', linewidth=1 )
-            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker=markit, color="blue", \
-             markersize=5, linestyle='dashed', linewidth=1 )
+          #if f1 == f2prev :			# connect with line
+          if True :
+            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker=DRmark, color=self.color, \
+             markersize=msize, linestyle='solid', linewidth=1 )
+            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker=DLmark, color=self.color, \
+             markersize=msize, linestyle='dashed', linewidth=1 )
           else :                    # don't connect with line  
-            p.plot( DR.real, DR.imag, marker=markit, color="red", markersize=5 )
-            p.plot( DL.real, DL.imag, marker=markit, color="blue", markersize=5 )
+            p.plot( DR.real, DR.imag, marker=DRmark, color=self.color, markersize=msize )
+            p.plot( DL.real, DL.imag, marker=DLmark, color=self.color, markersize=msize )
         xRprev = DR.real
         yRprev = DR.imag
         xLprev = DL.real
         yLprev = DL.imag
         f2prev = f2
-    p.legend( loc=0, prop={'size':5}, numpoints=1 )
+    p.legend( loc=0, prop={'size':6}, numpoints=1 )
          
 
   def panel(self, p, type, lk, fstart, fstop ) :
@@ -189,7 +128,7 @@ class Leak:
           y = numpy.abs(ycomplex)
 
       # Plot like histogram if these are > 240 MHz chunks
-        if (abs(f1-f2) > .24) or (self.avgchan == 0) :
+        if (abs(f1-f2) > .24) or (self.avgchan == "0") :
           if first :
             p.plot( [f1,f2], [y,y] , color=self.color, \
               linestyle='solid', linewidth=2, label=self.legend )
@@ -275,20 +214,6 @@ class Plot:
         n = n + 1
         print n, self.plotList[n-1], file, legend
 
-#  def amp(self, antenna, f1=0., f2=0., amax=.25) :
-#    [f1, f2] = Plot.xlimits( self )
-#    pylab.clf()
-#    pylab.ion()
-#    for Leak in self.LeakList :
-#      Leak.ap( 'amp', antenna, f1, f2, 0., amax )
-
-#  def phs(self, antenna, f1=0., f2=0.) :
-#    [f1, f2] = Plot.xlimits( self )
-#    pylab.clf()
-#    pylab.ion()
-#    for Leak in self.LeakList :
-#      Leak.ap( 'phs', antenna, f1, f2, -180, 180. )
-
   def xlimits(self) :
     f1 = 300.
     f2 = 0.
@@ -343,36 +268,12 @@ class Plot:
 # for complex plot, f1 and f2 could in principle be used to select range of points
 #    but this is not implemented yet
 
-  def complexAll(self, f1=0., f2=0., type="complex", amax=.16) :
+  def complexAll(self, f1=0., f2=0., amax=.16, nrows=1, ncols=1) :
     pyplot.ioff()
     pp = PdfPages( 'ComplexLeaks.pdf' )
+    scale = 10./math.sqrt(ncols*nrows)
     if f1 == 0. :
       [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
-      print f1,f2
-    ymin = -1.*amax
-    ymax = amax
-    for ant in range(1,16) :
-      pyplot.clf()
-      p = pyplot.subplot(1,1,1, aspect='equal')    # DL,DR in one panel
-      p.axis( [ymin, ymax, ymin, ymax] )
-      p.grid(True)
-      for Leak in self.LeakList :
-        if Leak.ant == ant :
-          print "plotting DR and DL for antenna %d" % ant
-          Leak.plotComplex( p, f1, f2, 'o' ) 
-          #Leak.panel(p, type, "DL", f1, f2 )
-          #Leak.panel(p, type, "DR", f1, f2 )
-      pyplot.title("C%d DR (circles, solid) and DL (diamonds, dashed)" % ant)
-      pyplot.savefig( pp, format='pdf' )
-    pp.close()
-
-  def complex4All(self, f1=0., f2=0., amax=.16, nrows=2, ncols=3) :
-    pyplot.ioff()
-    pp = PdfPages( 'ComplexLeaks.pdf' )
-    scale = 10./ncols
-    if f1 == 0. :
-      [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
-      print f1,f2
     ymin = -1.*amax
     ymax = amax
     npanel = 0
@@ -382,14 +283,67 @@ class Plot:
         npanel = 1
         pyplot.clf()
       p = pyplot.subplot(nrows, ncols, npanel, aspect='equal')    # DL,DR in one panel
-      p.tick_params( axis='both', which='major', labelsize=5 )
+      p.tick_params( axis='both', which='major', labelsize=scale )
       p.axis( [ymin, ymax, ymin, ymax] )
       p.grid(True)
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DR and DL for antenna %d" % ant
           Leak.plotComplex( p, f1, f2 ) 
-      pyplot.title("C%d DR (red) and DL (blue)" % ant, fontdict={'fontsize': 7} )
+      pyplot.title("C%d DR (circles, solid) and DL (diamonds, dashed)" % ant, fontdict={'fontsize': scale})
       if (npanel == nrows*ncols) or (ant == 15) :
         pyplot.savefig( pp, format='pdf' )
     pp.close()
+
+# first file in LeakList is Lktemplate
+# for each freq interval in Lktemplate that is within range f1-f2, find all other entries in LeakList
+#   which match within 10% of the freq range; append these to list; form avg of list; plot scatter
+#   relative to the avg, 15 plots per page; compute rms
+
+  def complexCmp(self, fmin=0., fmax=300., amax=.05, nrows=4, ncols=4) :
+    Lktemplate = self.LeakList[0]
+    DRmark = "o"
+    DLmark = "x"
+    pyplot.ioff()
+    pp = PdfPages( 'ComplexCmp.pdf' )
+    for f1ref,f2ref in zip ( Lktemplate.f1, Lktemplate.f2 ) :
+      if (f1ref > fmin) and (f2ref < fmax) :
+        finterval = f2ref-f1ref
+        print f1ref,f2ref,finterval
+        npanel = 0
+        for ant in range(1,16) :
+          DRlist = []
+          DLlist = []
+          leglist = []
+          collist = []
+          for Lk in self.LeakList :
+            if Lk.ant == ant :
+              for f1,f2,DR,DL in zip( Lk.f1, Lk.f2, Lk.DR, Lk.DL ) :
+                if (abs( (f1-f1ref)/finterval ) < 0.1) and (abs( (f2-f2ref)/finterval) < 0.1) and (abs(DR) > 0.) and (abs(DL) > 0.) :
+                  DRlist.append( DR )
+                  DLlist.append( DL )
+                  leglist.append(Lk.legend)
+                  collist.append(Lk.color)
+                  print ant,DR,DL,Lk.legend
+          DRmean = numpy.mean(DRlist)
+          DLmean = numpy.mean(DLlist)
+          print ant,DRmean,DLmean
+          npanel= npanel + 1
+          p = pyplot.subplot(nrows, ncols, npanel, aspect='equal')    # DL,DR in one panel
+          p.tick_params( axis='both', which='major', labelsize=5 )
+          p.axis( [-1.*amax, amax, -1.*amax, amax] )
+          p.grid(True)
+          p.text(.93,.81,"C%d" % ant, horizontalalignment='right',transform=p.transAxes, size=7)
+          for DR,legend,color in zip( DRlist,leglist,collist ) :
+            p.plot( (DR-DRmean).real, (DR-DRmean).imag, marker=DRmark, color=color, markersize=5, \
+              label=legend )
+          for DL,color in zip( DLlist,collist) :
+            p.plot( (DL-DLmean).real, (DL-DLmean).imag, marker=DLmark, color=color, markersize=5 )
+          if ant == 13 :
+            p.legend(bbox_to_anchor=(5.7,0.9), prop={'size':5})
+            p.text(5.5,0.92,"(%.3f,%.3f)" % (f1ref,f2ref), horizontalalignment='center',transform=p.transAxes, size=7)
+        pyplot.savefig( pp, format='pdf' )
+        pyplot.clf()
+    pp.close()
+         
+          
