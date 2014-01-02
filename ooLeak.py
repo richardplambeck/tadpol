@@ -10,6 +10,7 @@ import pylab
 import sys
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Circle
 
 
 class Leak:
@@ -312,6 +313,7 @@ class Plot:
         print f1ref,f2ref,finterval
         npanel = 0
         for ant in range(1,16) :
+          print ""
           DRlist = []
           DLlist = []
           leglist = []
@@ -324,15 +326,27 @@ class Plot:
                   DLlist.append( DL )
                   leglist.append(Lk.legend)
                   collist.append(Lk.color)
-                  print ant,DR,DL,Lk.legend
+                  # print "%3d  (%+5.3f%+5.3fj)  (%+5.3f%+5.3fj)  %s" % ( ant, DR.real, DR.imag, DL.real, DL.imag ,Lk.legend )
           DRmean = numpy.mean(DRlist)
           DLmean = numpy.mean(DLlist)
-          print ant,DRmean,DLmean
+          rmsDR = numpy.std( DRlist - DRmean ) 
+          rmsDL = numpy.std( DLlist - DLmean ) 
+          for DR,DL,legend in zip( DRlist, DLlist, leglist ) :
+            print "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s" % \
+             ( ant, DR.real, DR.imag, abs(DR-DRmean), DL.real, DL.imag, abs(DL-DLmean), legend )
+          print "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s" % \
+           ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" )
           npanel= npanel + 1
           p = pyplot.subplot(nrows, ncols, npanel, aspect='equal')    # DL,DR in one panel
           p.tick_params( axis='both', which='major', labelsize=5 )
           p.axis( [-1.*amax, amax, -1.*amax, amax] )
-          p.grid(True)
+          #p.grid(True)
+          circ1 = Circle( (0,0), rmsDR, linestyle="dotted", color="r", fill=False )
+          p.add_patch(circ1)
+          circ2 = Circle( (0,0), rmsDL, linestyle="dotted", color="b", fill=False )
+          p.add_patch(circ2)
+          p.text(.07,.07, "DR %5.3f" % rmsDR, horizontalalignment='left',transform=p.transAxes, size=7, color="r" )
+          p.text(.07,.17, "DL %5.3f" % rmsDL, horizontalalignment='left',transform=p.transAxes, size=7, color="b" )
           p.text(.93,.81,"C%d" % ant, horizontalalignment='right',transform=p.transAxes, size=7)
           for DR,legend,color in zip( DRlist,leglist,collist ) :
             p.plot( (DR-DRmean).real, (DR-DRmean).imag, marker=DRmark, color=color, markersize=5, \
