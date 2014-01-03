@@ -12,6 +12,7 @@ import string
 import leakSolve
 import paPlot
 import pickle
+import copy
 import scipy.optimize
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
@@ -67,16 +68,16 @@ def makeStrList( LkFile ) :
 # time average selected data from visFile into 'sstmp', with options=nopol
 # this saves time in creating a multichannel SS object because input file
 #    is re-read for every LkFile channel interval
-def avgtoSStmp( visFile, selectStr ) :
-  'time-average from visFile to sstmp over interval specified by selectStr'
-  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
-     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  time.sleep(1)
-  p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol interval=10000' \
-     % (visFile, selectStr) ) ), \
-     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  result = p.communicate()[0]
-  print result
+#def avgtoSStmp( visFile, selectStr ) :
+#  'time-average from visFile to sstmp over interval specified by selectStr'
+#  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
+#     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+#  time.sleep(1)
+#  p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol interval=10000' \
+#     % (visFile, selectStr) ) ), \
+#     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+#  result = p.communicate()[0]
+#  print result
 
 # an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and their uncertainties vs freq
 #   for a particular source over a particular time range
@@ -107,16 +108,16 @@ class SS :
     self.RMrms = 0.
     self.freq0 = 0.
 
-  def make( self, visFile, selectStr, LkFile, preavg=False, f0=226. ) :
+  def make( self, visFile, selectStr, LkFile, preavg="copy", f0=226. ) :
     'generate multichannel SS object from visibility data using leakages from LkFile'
     self.visFile = visFile        
     self.selectStr = selectStr
     self.LkFile = LkFile
-    if preavg :
+    if preavg == "avg" :
       print "Preaveraging to create temporary file sstmp" 
       avgtoSStmp( visFile, selectStr ) 
         # preaveraging is not recommended because it leaves only 1 parallactic angle!
-    else :
+    elif preavg == "copy" :
       print "Copying (but not averaging) selected data to temporary file sstmp"
       leakSolve.copytoSStmp( visFile, selectStr ) 
         # copying is preferred
@@ -174,6 +175,7 @@ class SS :
     self.fitPARM( f0 )                 # fits p0, PA, RM, frac
     return True
 
+  # -----------------------------------------------------------------------------------------------------------------------#
   # writes to file; if outfile=None, prints to screen
   def dump( self, outfile ) :
     outStr = "# visFile     : %s\n" % self.visFile 
@@ -201,6 +203,7 @@ class SS :
       fout.write( "# ----------------------------\n" )       # this delimiter needed by readAll
       fout.close()
 
+  # -----------------------------------------------------------------------------------------------------------------------#
   # model Stokes Q, U as a function of 1/lambda^2
   # ... x = c^2/freq^2 - c^2/freq0^2, in m^2; each x given twice, once for Q, once for U
   # ... p0 is polarized intensity in Jy; a real number
@@ -331,8 +334,22 @@ class SS :
       verticalalignment='bottom', fontsize=0.8*labelsize, bbox=props )
     pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
 
-# generate table of SS objects
-def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, schedFile=None, preavg=False, plot=False ) :
+# -----------------------------------------------------------------------------------------------------------------------#
+# generate series of SS objects (usually for one source, with different Lks, sometimes for different time intervals)
+# pickle the results and append to outfile
+
+def makeTable( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, schedFile=None, plot=False ) :
+  # Generate list of leakages
+  LkList = []
+  fin = open( LkListFile, "r" )
+  for line in fin :
+    if not line.startswith("#") :
+      a = line.split()
+      if len(a) > 0 :
+        LkList.append( a[0] )
+  fin.close()
+  print "LkList = ", LkList
+  # Generate list of selectStrings (time ranges, usually)
   if schedFile :
     print "making list according to vlbi schedFile %s" % schedFile 
     selectList = paPlot.makeSelectList2( schedFile, srcName )
@@ -340,51 +357,24 @@ def makeTable( visFile, LkFile, srcName, extra, nint, maxgap, outfile, schedFile
     print "include up to %d integrations; no gaps > %.1f minutes" % (nint, maxgap)
     selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
   print "selectList = ",selectList
+  # Generate SS object for each time range, each leakage; append to outfile 
   nlist = len(selectList)
   for n, selectString in enumerate(selectList) :
     if len( extra ) > 0 :
       selectString = selectString + "," + extra
     print " "
     print "%d/%d  %s" % (n+1,nlist,selectString)
-    ss = SS()
-    if ss.make( visFile, selectString, LkFile, preavg=preavg ) :		# returns False if it fails
-      fout = open(outfile,"ab")
-      pickle.dump( ss, fout )
-      if plot : 
-        ss.plot()
-                                                                                                                  
-def RMsearch( infile, outfile ) :
-  RMmin = -5.e9
-  RMmax = 5.e9
-  RMstep = 5.e5
-
-# read in the data
-  plist = []
-  flist = []
-  fin = open( infile, "r" )
-  for line in fin :
-    if not line.startswith("#") :
-      a = line.split()
-      flist.append( (float(a[0]) + float(a[1]))/2. )
-      Q = float(a[4])
-      U = float(a[6])
-      plist.append( Q + 1j*U )
-  fin.close()  
-
-  fGHz = numpy.array(flist)
-  lambdasq = (.2998*.2998)/(fGHz*fGHz)
-  pol = numpy.array(plist)
-  norm = 1./len(pol)
-
-  fout = open( outfile, "w" ) 
-  for RM in range( RMmin, RMmax+RMstep, RMstep ) :
-    rot = numpy.exp( 1j * RM * lambdasq )
-    #print numpy.angle(rot, deg=True)
-    P = norm * numpy.abs(numpy.sum( pol * rot )) 
-    print "RM = %.3e, P = %5.3f" % (RM,P)
-    fout.write( "%.3e  %11.4e\n" % ( RM, P ) )
-  fout.close()
-   
+    print "Copying (but not averaging) selected data to temporary file sstmp"
+    leakSolve.copytoSStmp( visFile, selectString ) 
+    for Lk in LkList :
+      ss = SS()
+      if ss.make( "sstmp", selectString, Lk, preavg=None ) :		# returns False if it fails
+        fout = open(outfile,"ab")
+        pickle.dump( ss, fout )
+        fout.close()
+        if plot : 
+          ss.plot()
+                                                                                                                   
 # read in series of SSs from input pickle file, append to ssList
 def readAll2( infile, ssList ) :
   fin = open( infile, "rb" )
@@ -397,59 +387,114 @@ def readAll2( infile, ssList ) :
       break
   fin.close()
 
-# read in series of SSs from input file
-def readAll(  infile, ssList ) :
-  fin = open( infile, "r" )
-  ss = SS()
-  f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
+def findUniqueStrings( ssList ) :
+  uniqueStrList = []
+  for ss in ssList :
+    if not ss.selectStr in uniqueStrList :
+      uniqueStrList.append(ss.selectStr)
+  return uniqueStrList
 
-  for line in fin :
-    a = line.split()
-    if line == "# ----------------------------\n" :     # this delimits end of each SS list
-      ss.f1 = numpy.array(f1)
-      ss.f2 = numpy.array(f2)
-      ss.I = numpy.array(I)
-      ss.rmsI = numpy.array(rmsI)
-      ss.Q = numpy.array(Q)
-      ss.rmsQ = numpy.array(rmsQ)
-      ss.U = numpy.array(U)
-      ss.rmsU = numpy.array(rmsU)
-      ss.V = numpy.array(V)
-      ss.rmsV = numpy.array(rmsV)
-      ssList.append(ss)       # add completed SS object to the list
-      ss = SS()               # initialize a new SS object
-      f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
-    elif line.startswith("# visFile") : ss.visFile = a[3]
-    elif line.startswith("# LkFile") : ss.LkFile = a[3]
-    elif line.startswith("# selectStr") : ss.selectStr = a[3]
-    elif line.startswith("# avg UT") : ss.UT = float( a[4] )
-    elif line.startswith("# avg HA") : ss.HA = float( a[4] )
-    elif line.startswith("# avg parang") : ss.parang = float( a[4] )
-    elif line.startswith("# p0") : 
-      ss.p0 = float( a[3] )
-      ss.p0rms = float( a[5] )
-    elif line.startswith("# frac") : 
-      ss.frac = float( a[3] )
-      ss.fracrms = float( a[5] )
-    elif line.startswith("# PAfit") : 
-      ss.pa0 = float( a[3] )
-      ss.pa0rms = float( a[5] )
-    elif line.startswith("# RMfit") : 
-      ss.RM = float( a[3] ) * 1.e5
-      ss.RMrms = float( a[5] ) * 1.e5
-    elif line.startswith("# PAfreq0") : ss.freq0 = float( a[3] )
-    elif not line.startswith("#") :
-      f1.append( float( a[0] ) )
-      f2.append( float( a[1] ) )
-      I.append( float(a[2]) )
-      rmsI.append( float( a[3] ) )
-      Q.append( float( a[4] ) )
-      rmsQ.append( float( a[5] ) )
-      U.append( float( a[6] ) )
-      rmsU.append( float( a[7] ) )
-      V.append( float( a[8] ) )
-      rmsV.append( float( a[9] ) )
-      ss.strList.append( a[10] ) 
+# fit p, PA, frac, RM to one or more SS spectra
+# the intent is to better estimate the errors by fitting data reduced with different leakages
+# for each unique selectStr, concatenate all the I,Q,U,V data into one SS, fit it
+def fitAll( infile, outfile, plot=False ) :
+  ssList = []
+  readAll2( infile, ssList )
+  for ss in ssList :
+    print ss.selectStr
+  # Make list of unique selectStr; note this will usually be different time range
+  uniqueList = findUniqueStrings( ssList )
+  for uniqueStr in uniqueList :
+    first = True
+    for ss in ssList :
+      if ss.selectStr == uniqueStr :
+        if first :
+          ssWork = copy.deepcopy(ss)
+          first = False
+        else :
+          print "appending values from %s" % ss.LkFile
+          tmp = numpy.append( ssWork.f1, ss.f1 )
+          ssWork.f1 = tmp
+          tmp = numpy.append( ssWork.f2, ss.f2 )
+          ssWork.f2 = tmp
+          tmp = numpy.append( ssWork.I, ss.I )
+          ssWork.I = tmp
+          tmp = numpy.append( ssWork.rmsI, ss.rmsI )
+          ssWork.rmsI = tmp
+          tmp = numpy.append( ssWork.Q, ss.Q )
+          ssWork.Q = tmp
+          tmp = numpy.append( ssWork.rmsQ, ss.rmsQ )
+          ssWork.rmsQ = tmp
+          tmp = numpy.append( ssWork.U, ss.U )
+          ssWork.U = tmp
+          tmp = numpy.append( ssWork.rmsU, ss.rmsU )
+          ssWork.rmsU = tmp
+          tmp = numpy.append( ssWork.V, ss.V )
+          ssWork.V = tmp
+          tmp = numpy.append( ssWork.rmsV, ss.rmsV )
+          ssWork.rmsV = tmp
+    f0 = 226.
+    ssWork.fitPARM( f0 )                 # fits p0, PA, RM, frac
+    ssWork.LkFile = "various"
+    fout = open(outfile,"ab")
+    pickle.dump( ssWork, fout )
+    fout.close()
+    if plot : 
+      ssWork.plot()
+
+# read in series of SSs from input file (old style, pre-pickle)
+#def readAll(  infile, ssList ) :
+#  fin = open( infile, "r" )
+#  ss = SS()
+#  f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
+#
+#  for line in fin :
+#    a = line.split()
+#    if line == "# ----------------------------\n" :     # this delimits end of each SS list
+#      ss.f1 = numpy.array(f1)
+#      ss.f2 = numpy.array(f2)
+#      ss.I = numpy.array(I)
+#      ss.rmsI = numpy.array(rmsI)
+#      ss.Q = numpy.array(Q)
+#      ss.rmsQ = numpy.array(rmsQ)
+#      ss.U = numpy.array(U)
+#      ss.rmsU = numpy.array(rmsU)
+#      ss.V = numpy.array(V)
+#      ss.rmsV = numpy.array(rmsV)
+#      ssList.append(ss)       # add completed SS object to the list
+#      ss = SS()               # initialize a new SS object
+#      f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
+#    elif line.startswith("# visFile") : ss.visFile = a[3]
+#    elif line.startswith("# LkFile") : ss.LkFile = a[3]
+#    elif line.startswith("# selectStr") : ss.selectStr = a[3]
+#    elif line.startswith("# avg UT") : ss.UT = float( a[4] )
+#    elif line.startswith("# avg HA") : ss.HA = float( a[4] )
+#    elif line.startswith("# avg parang") : ss.parang = float( a[4] )
+#    elif line.startswith("# p0") : 
+#      ss.p0 = float( a[3] )
+#      ss.p0rms = float( a[5] )
+#    elif line.startswith("# frac") : 
+#      ss.frac = float( a[3] )
+#      ss.fracrms = float( a[5] )
+#    elif line.startswith("# PAfit") : 
+#      ss.pa0 = float( a[3] )
+#      ss.pa0rms = float( a[5] )
+#    elif line.startswith("# RMfit") : 
+#      ss.RM = float( a[3] ) * 1.e5
+#      ss.RMrms = float( a[5] ) * 1.e5
+#    elif line.startswith("# PAfreq0") : ss.freq0 = float( a[3] )
+#    elif not line.startswith("#") :
+#      f1.append( float( a[0] ) )
+#      f2.append( float( a[1] ) )
+#      I.append( float(a[2]) )
+#      rmsI.append( float( a[3] ) )
+#      Q.append( float( a[4] ) )
+#      rmsQ.append( float( a[5] ) )
+#      U.append( float( a[6] ) )
+#      rmsU.append( float( a[7] ) )
+#      V.append( float( a[8] ) )
+#      rmsV.append( float( a[9] ) )
+#      ss.strList.append( a[10] ) 
 
 # read in one or more PA files, write summary file for wip (this is geared toward vlbi)
 def summary( paList, outfile ) :
@@ -503,7 +548,6 @@ def summary( paList, outfile ) :
       nstart = nstop + 1
   fin.close()
         
-
 # read in one or more PA files, write summary file with Q,U for wip
 def DSBsummary( paList, outfile ) :
   srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
@@ -576,6 +620,24 @@ def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
   pyplot.savefig( pp, format='pdf' )
   pp.close()
   
+def replot2( infile, Ymax=0., nrows=2, ncols=1 ) :
+  ssList = []
+  readAll2( infile, ssList )
+  pyplot.ioff()
+  pp = PdfPages( 'multipage.pdf' )
+  pyplot.subplots_adjust( hspace=0.25 )
+  nplot = 0
+  for ss in ssList :
+    if nplot > nrows*ncols : 
+       pyplot.savefig( pp, format='pdf' )
+       nplot = 1
+       pyplot.clf()
+    fig = pyplot.subplot( nrows, ncols, nplot )
+    ss.plot2( fig, Ymax, labelsize=10./ncols )
+    nplot = nplot + 1
+  pyplot.savefig( pp, format='pdf' )
+  pp.close()
+  
 # plot Q,U with error bars over the course of a night
 # color code the points (and arrows between them) by time?
 # paFile contains a set of stokes objects
@@ -612,3 +674,36 @@ def QUtrajectory ( paFile ) :
     #pyplot.arrow(Q[n],U[n],Q[n+1]-Q[n],U[n+1]-U[n],length_includes_head=True, head_width=0.02*ymax)
     #pyplot.annotate( "", [Q[n],U[n]], xytext=[Q[n+1],U[n+1]], arrowprops=dict(linewidth=1) )
   pyplot.show()
+
+def RMsearch( infile, outfile ) :
+  RMmin = -5.e9
+  RMmax = 5.e9
+  RMstep = 5.e5
+
+# read in the data
+  plist = []
+  flist = []
+  fin = open( infile, "r" )
+  for line in fin :
+    if not line.startswith("#") :
+      a = line.split()
+      flist.append( (float(a[0]) + float(a[1]))/2. )
+      Q = float(a[4])
+      U = float(a[6])
+      plist.append( Q + 1j*U )
+  fin.close()  
+
+  fGHz = numpy.array(flist)
+  lambdasq = (.2998*.2998)/(fGHz*fGHz)
+  pol = numpy.array(plist)
+  norm = 1./len(pol)
+
+  fout = open( outfile, "w" ) 
+  for RM in range( RMmin, RMmax+RMstep, RMstep ) :
+    rot = numpy.exp( 1j * RM * lambdasq )
+    #print numpy.angle(rot, deg=True)
+    P = norm * numpy.abs(numpy.sum( pol * rot )) 
+    print "RM = %.3e, P = %5.3f" % (RM,P)
+    fout.write( "%.3e  %11.4e\n" % ( RM, P ) )
+  fout.close()
+   
