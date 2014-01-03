@@ -307,13 +307,17 @@ class Plot:
     DLmark = "x"
     pyplot.ioff()
     pp = PdfPages( 'ComplexCmp.pdf' )
+    fout = open( "ComplexCmp.dat", "w" )
     for f1ref,f2ref in zip ( Lktemplate.f1, Lktemplate.f2 ) :
       if (f1ref > fmin) and (f2ref < fmax) :
         finterval = f2ref-f1ref
+        fout.write("\n ******************************************************************* \n")
+        fout.write("(%.3f,%.3f)\n" % (f1ref,f2ref))
         print f1ref,f2ref,finterval
         npanel = 0
         for ant in range(1,16) :
           print ""
+          fout.write("\n")
           DRlist = []
           DLlist = []
           leglist = []
@@ -327,6 +331,11 @@ class Plot:
                   leglist.append(Lk.legend)
                   collist.append(Lk.color)
                   # print "%3d  (%+5.3f%+5.3fj)  (%+5.3f%+5.3fj)  %s" % ( ant, DR.real, DR.imag, DL.real, DL.imag ,Lk.legend )
+          # Redefine colors
+          cmap = pyplot.get_cmap("brg")
+          numcolors = len(collist)
+          for n in range(0,numcolors) :
+            collist[n] = cmap(n/float(numcolors))
           DRmean = numpy.mean(DRlist)
           DLmean = numpy.mean(DLlist)
           rmsDR = numpy.std( DRlist - DRmean ) 
@@ -334,8 +343,12 @@ class Plot:
           for DR,DL,legend in zip( DRlist, DLlist, leglist ) :
             print "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s" % \
              ( ant, DR.real, DR.imag, abs(DR-DRmean), DL.real, DL.imag, abs(DL-DLmean), legend )
+            fout.write("%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s\n" % \
+             ( ant, DR.real, DR.imag, abs(DR-DRmean), DL.real, DL.imag, abs(DL-DLmean), legend ) )
           print "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s" % \
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" )
+          fout.write( "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s\n" % \
+           ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" ))
           npanel= npanel + 1
           p = pyplot.subplot(nrows, ncols, npanel, aspect='equal')    # DL,DR in one panel
           p.tick_params( axis='both', which='major', labelsize=5 )
@@ -349,15 +362,16 @@ class Plot:
           p.text(.07,.17, "DL %5.3f" % rmsDL, horizontalalignment='left',transform=p.transAxes, size=7, color="b" )
           p.text(.93,.81,"C%d" % ant, horizontalalignment='right',transform=p.transAxes, size=7)
           for DR,legend,color in zip( DRlist,leglist,collist ) :
-            p.plot( (DR-DRmean).real, (DR-DRmean).imag, marker=DRmark, color=color, markersize=5, \
+            p.plot( (DR-DRmean).real, (DR-DRmean).imag, marker=DRmark, color=color, markeredgecolor=color, markersize=4, \
               label=legend )
           for DL,color in zip( DLlist,collist) :
-            p.plot( (DL-DLmean).real, (DL-DLmean).imag, marker=DLmark, color=color, markersize=5 )
+            p.plot( (DL-DLmean).real, (DL-DLmean).imag, marker=DLmark, color=color, markeredgecolor=color, markersize=4 )
           if ant == 13 :
-            p.legend(bbox_to_anchor=(5.7,0.9), prop={'size':5})
-            p.text(5.5,0.92,"(%.3f,%.3f)" % (f1ref,f2ref), horizontalalignment='center',transform=p.transAxes, size=7)
+            p.legend(bbox_to_anchor=(5.5,0.9), prop={'size':4})
+            p.text(5.5,0.92,"(%.3f,%.3f)" % (f1ref,f2ref), horizontalalignment='right',transform=p.transAxes, size=7)
         pyplot.savefig( pp, format='pdf' )
         pyplot.clf()
     pp.close()
+    fout.close()
          
           
