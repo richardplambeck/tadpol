@@ -442,6 +442,46 @@ def fitAll( infile, outfile, plot=False ) :
     if plot : 
       ssWork.plot()
 
+# read in the pickled SS spectra
+# for each unique selectStr, tabulate the fit results, compute means and rms scatter
+
+def summarizeFits( infile, outfile, plot=False ) :
+  ssList = []
+  readAll2( infile, ssList )
+  for ss in ssList :
+    print ss.selectStr
+  fout = open( outfile, "w")
+  # Make list of unique selectStr - may be different sources, time ranges, etc.
+  uniqueList = findUniqueStrings( ssList )
+  for uniqueStr in uniqueList :
+    I = []
+    p0 = []
+    pa = []
+    rm = []
+    frac = []
+    first = True
+    for ss in ssList :
+      if ss.selectStr == uniqueStr :
+        if first :
+          fout.write("\n#> %s   avgUT = %.3f\n" % (uniqueStr,ss.UT))
+          fout.write("#     S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  LFile\n")
+          first = False
+        Iavg = numpy.average(ss.I )
+        Istd = numpy.std(ss.I, ddof=1)
+        I.append(Iavg)
+        p0.append(ss.p0)
+        pa.append(ss.pa0)
+        rm.append(ss.RM)
+        frac.append(ss.frac)
+        fout.write(" %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f   %s\n" % \
+          ( Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
+          ss.frac, ss.fracrms, ss.LkFile) )
+  # Print averages and rms
+    fout.write("#  %6.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f   AVG\n" % \
+      ( numpy.mean(I), numpy.std(I), numpy.mean(p0), numpy.std(p0), numpy.mean(pa), numpy.std(pa), \
+      numpy.mean(rm)/1.e5, numpy.std(rm)/1.e5, numpy.mean(frac), numpy.std(frac) ) )
+  fout.close()
+
 # read in series of SSs from input file (old style, pre-pickle)
 #def readAll(  infile, ssList ) :
 #  fin = open( infile, "r" )
@@ -521,13 +561,13 @@ def summary( paList, outfile ) :
       fout.write("#  dechr  parang    HA        S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  col   selectString\n")
       fout.close()
 
-      fout = open( "QUsummary", "a" )
+      fout = open( "QUVsummary", "a" )
       fout.write("#\n")
       fout.write("# %s\n" % infile)
       fout.write("#  dechr  parang    HA        S    sigma     Q   sigma      U  sigma      V  sigma    col   selectString\n")
       fout.close()
 
-      readAll( infile, ssList )
+      readAll2( infile, ssList )
       for ss in ssList : 
         #Iavg = numpy.average(ss.I, weights=ss.rmsI )
         Iavg = numpy.average(ss.I )
@@ -538,9 +578,9 @@ def summary( paList, outfile ) :
           ss.frac, ss.fracrms, color, ss.selectStr) )
         fout.close()
 
-        fout = open("QUsummary", 'a')
-        fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.3f %5.3f %7.3f %5.3f  %2d   %s\n" % \
-          (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.Q, ss.rmsQ, ss.U, ss.rmsU, ss.V, ss.rmsV, color, ss.selectStr) )
+        fout = open("QUVsummary", 'a')
+        #fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.3f %5.3f %7.3f %5.3f  %2d   %s\n" % \
+        #  (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.Q, ss.rmsQ, ss.U, ss.rmsU, ss.V, ss.rmsV, color, ss.selectStr) )
         fout.close()
 
       nstop = nstart + len(ssList) + 2
