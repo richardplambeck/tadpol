@@ -38,34 +38,63 @@ def getGains( infile ) :
         gainComplex[ng][nant-1] = float(a[4]) + 1j * float(a[5])
   return [time, gainComplex]
    
-# --- compute what we WOULD have gotten with 10-sec feedback --- #
-def emGain( time, rawGain, outfile ) :
-  fout = open( outfile,"w")
-  cumOffsetPhase = numpy.ones( 15, dtype=complex )
-    # cumulative phase correction, stored as complex number with magnitude 1
-  emGain = numpy.empty( (len(rawGain),15), dtype=complex )
-  for i in range(0,len(rawGain)) :
-    emGain[i] = cumOffsetPhase * rawGain[i]
-      # gain we would have measured if previous corrections had been applied
-    phaseCorr = -0.5 * numpy.angle( emGain[i] )
-      # phase correction we then would have made
-    #print " "
-    #print "raw   ", numpy.array_str( numpy.angle(rawGain[i], deg=True ), precision=0, suppress_small=True, max_line_width=200 )
-    #print "cum   ", numpy.array_str( numpy.angle(cumOffsetPhase, deg=True ), precision=0, suppress_small=True, max_line_width=200 )
-    #print "em    ", numpy.array_str( numpy.angle(emGain[i], deg=True ), precision=0, suppress_small=True, max_line_width=200 )
-    #print "corr  ", numpy.array_str( 180.*phaseCorr/math.pi, precision=0, suppress_small=True, max_line_width=200 )
-    cumOffsetPhase = numpy.exp(phaseCorr*1j) * cumOffsetPhase
-      # cumOffsetPhase we would then have had
-    angleRaw = numpy.angle(rawGain[i], deg=True)
-    angleEm = numpy.angle(emGain[i], deg=True)
-    fout.write(" %7.4f" % dechrs( time[i] ) )
-    for n in range(0,15) :
-      fout.write("  %4d %4d" % (angleRaw[n], angleEm[n]) )
-    fout.write("\n")
-  fout.close()
-  return emGain  
-    
+# --- this is a helper file that parses output of gplist --- #
+def parseGains( input ) :
+  time = []
+  lines = input.split("\n")
+  ngains = (len(lines) - 3)/23
+    # caution: this presumes 23 antennas will be listed for each time, and that
+    # gains output has 3 header lines (and one blank line at the end ?)
+  gainComplex = numpy.zeros( (ngains,15), dtype=complex )
+  ng = -1 
+  for n in range(3, len(lines) ) :
+    a = lines[n].split()
+    if ( (len(a) > 0) and (a[0] != "Ant") ) : 
+      ng = ng + 1
+      time.append( a[0] )
+      nant = int(a[2])
+      if ( nant != 1 ) :
+        print "getGains error - unexpected ant number"
+      gainComplex[ng][nant-1] = float(a[5]) + 1j * float(a[6])
+    elif ( len(a) > 0 ) :
+      nant = int(a[1]) 
+      if ( nant < 16 ) :
+        gainComplex[ng][nant-1] = float(a[4]) + 1j * float(a[5])
+  return [time, gainComplex]
 
+
+# --- compute R/L gain ratio from gplist outputs Rgains and Lgains --- #
+# ... selfcal vis=wide.cal select=pol(RR) options=amplitude,apriori,noscale ...
+# ... gplist vis=wide.cal options=all > Rgains
+# ... selfcal vis=wide.cal select=pol(LL) options=amplitude,apriori,noscale ...
+# ... gplist vis=wide.cal options=all > Lgains
+
+def RLratio( RgainsFile, LgainsFile, outfile ) :
+  ratios = []
+  fin = open( RgainsFile, "r" )
+  [timeR, gainComplexR] = parseGains( fin.read() )
+  fin.close()
+  fin = open( LgainsFile, "r" )
+  [timeL, gainComplexL] = parseGains( fin.read() )
+  fin.close()
+  fout = open( outfile, "w" )
+  if len(timeR) != len(timeL) :
+    print "len(timeR) = %d != len(timeL) = % d - exiting" % ( len(timeR),len(timeL) )
+    return
+  for n in range( 0, len(timeR) ) :
+    if (timeR[n] != timeL[n] ) :
+      print timeR[n], " != ", timeL[n], " - exiting"
+      return
+    else :
+      ratio = (abs(gainComplexL[n])*abs(gainComplexL[n])) / (abs(gainComplexR[n])*abs(gainComplexR[n]) )
+      fout.write(" %s %s\n" % (timeR[n],numpy.array_str( ratio, precision=3, max_line_width=200 ) ) )
+      ratios.append( ratio )
+  maskedRatios = numpy.ma.array( ratios, mask=(numpy.isnan(ratios) ) )	 # mask off the nans
+  print "AVG: ", numpy.array_str( numpy.ma.mean(maskedRatios, axis=0 ), precision=3, max_line_width=200 )
+  fout.close()
+         
+  
+  
 # --- read varplt log containing tsys or elev, 6 lines per vis record, 4 values per line --- #
 # ... t is the decimal time array
 def getVar15( infile, t ) :
@@ -230,77 +259,6 @@ def oneday( day, cpList ) :
   fin.close()
   fout.close()
 
-# --- compute emulated phasing effic --- #
-def emoneday( day, cpList ) :
-
-  # ... retrieve time and gain arrays
-  [time,gain] = getGains( infile = day + "/vis.pb" )
-
-  # ... create decimal time array 
-  t = numpy.empty( len(time), dtype=float )
-  for n in range (0, len(time) ) :
-    t[n] = dechrs( time[n] )
-
-  # ... retrieve tsys, rmspath, tau230, elev arrays
-  tsys0 = getVar15( day+"/tsys.win13", t )
-  tsys1 = getVar15( day+"/tsys.win15", t )
-  rmspath = getVar( day+"/rmspath", t )
-  tau230 = getVar( day+"/tau230", t )
-  source = getSource ( day+"/uvindex.log", t )
-  elev = getVar15( day+"/elev", t )
-
-  # ... all array lengths should match, otherwise this routine will crash!
-  print len(time), len(gain), len(tsys0), len(tsys1), len(rmspath), len(tau230), len(source), len(elev)
-
-  # ... create absgain and default gain files for future use
-  absgain = numpy.empty( (len(time),15), dtype=complex )
-  for n in range (0, len(time)) : 
-    for i in range (0,14) :
-      absgain[n][i] = numpy.abs( gain[n][i] ) + 1j * 0.
-  emgain = emGain( time, gain, "emgain."+day )
-
-  # ... process the 'summ' file which lists the schedule
-  fin = open( day+"/summ", "r" )
-  dayno = getDayNo( day )
-  fout = open( "day"+dayno+".emresults", "w" )
-  fout.write("#   scan        src     UTstart   UTstop    el  tau  path    C4-lo     CP-hi   ph-eff  em-eff\n")
-  fout.write("#                                          deg        um    SEFD-Jy   SEFD-Jy  \n")
-  for line in fin :
-
-    # ... print scanname, src, UTstart, UTstop, elev (from summ file) - ONLY FOR PHASED DATA
-    a = line.split()
-    if a[1] == "CP" :
-      src = a[4]
-      hr,min,sec = a[8].split(":")
-      scanname = dayno + "-" + str(hr)+str(min)+str(sec)
-      fout.write(" %10s %9s  %8s  %8s   %2s" % (scanname,src,a[8],a[9],a[6] ) ) 
-
-      # ... create decimal start and stop times, print tau230, rmspath
-      t1 = dechrs( a[8] )  # scan start time
-      t2 = dechrs( a[9] )  # scan stop time
-      tau230avg = avgVar( t1, t2, t, tau230 )
-      rmspathavg = avgVar( t1, t2, t, rmspath )
-      fout.write(" %5.2f %4.0f" % (tau230avg,rmspathavg ) ) 
-
-      print a[8], t1, a[9], t2, src
-
-      # ... compute SEFDs and efficiencies
-      s41 = avgSEFD( t1, t2, src, t, source, gain, tsys1, cpList ) 
-      s41_em = avgSEFD( t1, t2, src, t, source, emgain, tsys1, cpList ) 
-      s41_ideal = avgSEFD( t1, t2, src, t, source, absgain, tsys1, cpList ) 
-      if (s41 > 0.) :
-        effic = s41_ideal/s41
-      else :
-        effic = 0.
-      if (s41_em > 0.) :
-        effic_em = s41_ideal/s41_em
-      else :
-        effic_em = 0.
-      fout.write("  %8.0f  %8.0f   %5.3f  %5.3f\n"  % (s41, s41_em, effic, effic_em ) )
-
-  # ... finished
-  fin.close()
-  fout.close()
 
 # --- compute avg of variable over a scan --- #
 def avgVar( t1, t2, t, var ) : 
@@ -408,27 +366,18 @@ def sourceFlux( src ) :
  
 # --- convert day to day number --- #
 def getDayNo( day ) :
-  dayno = { '29mar' : '088', \
+  dayno = { '21mar' : '079', \
+            '22mar' : '080', \
+            '23mar' : '081', \
+            '25mar' : '083', \
+            '26mar' : '084', \
+            '27mar' : '085', \
+            '29mar' : '088', \
             '31mar' : '090', \
             '01apr' : '091', \
             '02apr' : '092', \
             '04apr' : '094' }
   return dayno[day]
-
-# --- generate calibration tables for all 5 days --- #
-def doall() :
-  
-  cpList = [2,3,5,10,11,12,13]
-  oneday( '29mar', cpList )
-  oneday( '31mar', cpList )
-  oneday( '01apr', cpList )
-  emoneday( '01apr', cpList )
-  oneday( '02apr', cpList )
-  emoneday( '02apr', cpList )
-
-  cpList = [2,3,5,9,11,12,13]
-  oneday( '04apr', cpList )
-  emoneday( '04apr', cpList )
 
 # --- compare VLBI amps with CARMA amps --- #
 # ... col = 13 for lo-band, col = 14 for hi-band
@@ -528,9 +477,17 @@ def basicEffic( antList, infile, outfile ) :
       scalarSum = scalarSum + 1. 
     fout.write("%s  %7.4f  %6.4f\n" % (time[n], dechrs(time[n]), numpy.abs(vectorSum)/scalarSum ))
   fout.close()
-
-def doit( ) :
-  basicEffic( antList, "day075/s.vis", "day075/s.phEffic" )
-  cumEffic( 3, "day075/s.phEffici", "day075.cumEffic" ) 
-
   
+# --- generate calibration tables for all 5 days --- #
+def doall2013() :
+
+  cpList = [2,3,4,5,6,8,9,14]
+  oneday( '21mar', cpList )
+  oneday( '22mar', cpList )
+
+  cpList = [2,4,5,6,8,9,13,14]
+  oneday( '23mar', cpList )
+  oneday( '25mar', cpList )
+  oneday( '26mar', cpList )
+  oneday( '27mar', cpList )
+
