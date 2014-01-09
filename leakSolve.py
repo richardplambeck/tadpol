@@ -17,18 +17,15 @@ import sys
 # this is a collection of routines (not objects!) that solve for or restore leakages;
 #    leakages are written to or read from a disk file
 # 
-# note that each correlator section will have a leakage; it is not possible to
-#    average across the whole LSB or USB, or across all bands
-#
-# begin with a fully calibrated data set; it may include many sources, but only
-#    a single source should be specified in selectStr
+# begin with a fully calibrated data set; it may include many sources, and may have a
+#    gains (and conceivably) passband items in it
 #
 # dictionary file controls operation - generally this will be created in calling routine
-# vis1 = { "fileName"   : "wide.cal",                    (no default)
+# vis1 = { "fileName"   : "wide.cal",                    (no default) (this should be "visName")
 #          "selectStr"  : "source(3c279),-ant(7)",       (no default)
 #          "LkName"     : "Lk.22mar2013",                (no default)
-#          "avgchan"    : "5",                             (default = 0 -> avg across corr section)
-#          "interval"   : 5,                            
+#          "avgchan"    : "5",                           (default = 0 -> avg across each corr section)
+#          "interval"   : 5,                              
 #          "refant"     : 8,                           
 #          "optionStr"  : "circular,noxy,nopass,qusolve",
 #          "flux"       : "10.",
@@ -38,6 +35,30 @@ import sys
 # leakSolve.restoreLk( LkFile, lineStr, outfile )               - restores leakage solution to outfile 
 # leakSolve.stripout( Lkfile, antList, fstart, fstop, outfile ) - phased leakage sum for vlbi
 
+
+def fillDefaults( vis ) :
+  """Enter defaults for any missing dictionary items"""
+  if "fileName" in vis :
+    print "... fileName : ", vis["fileName"]
+  else :
+    print "... FATAL: no fileName specified"
+  if not "selectStr" in vis :
+    vis[ "selectStr" ] = ""  
+    print "... WARNING: selectStr is blank - using all sources"
+  print "... selectStr : ", vis[ "selectStr" ]
+  if not "flux" in vis :
+    vis["flux"] = "1."
+  if not "interval" in vis :
+    vis[ "interval" ] = 5.
+  if not "LkName" in vis :
+    vis[ "LkName" ] = "Lk"
+  if not "refant" in vis :
+    vis[ "refant" ] = 8
+  if not "avgchan" in vis :
+    vis[ "avgchan" ] = "DSB"
+  if not "legend" in vis :
+    vis[ "legend" ] = ""
+    
 def delHd( fileName ) :
   """Delete existing leakage file"""
   p= subprocess.Popen( ( shlex.split('delhd in=%s/leakage' % ( fileName ) ) ), \
@@ -45,7 +66,7 @@ def delHd( fileName ) :
   
 # copy (do not average) selected data from visFile into 'sstmp', with options=nopol
 def copytoSStmp( visFile, selectStr ) :
-  'copy from visFile to sstmp over interval specified by selectStr'
+  """copy data specified by selectStr from from visFile to sstmp; apply gain cal"""
   p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
   time.sleep(1)
@@ -66,7 +87,6 @@ def makeFtable( vis ) :
   p= subprocess.Popen( ( shlex.split('uvlist options=spectra vis=%s' % vis["fileName"] ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   uvlistOutput = p.communicate()[0]
-  #print uvlistOutput
   lines = uvlistOutput.split("\n")
   for line in lines :
     a = line.split()
@@ -118,6 +138,7 @@ def runGpcal( vis, lineString='' ) :
         DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
   return [ percentQ, percentU, DR, DL ]
 
+# --- particularly useful if averaging over multiple correlator windows --- #
 def fminfmax( vis, ch1, ch2 ) :
   """find min and max freqs in channel range (ch1,ch2); uses vis[chfreq] and vis[chwidth] arrays"""
   fmin = 1000.   # GHz
@@ -147,29 +168,6 @@ def addLk( vis, ch1, navg ) :
        DL[nant].imag, percentQ, percentU, lineString) )
   fout.close()
 
-def fillDefaults( vis ) :
-  """Enter defaults for any missing dictionary items"""
-  if "fileName" in vis :
-    print "... fileName : ", vis["fileName"]
-  else :
-    print "... FATAL: no fileName specified"
-  if not "selectStr" in vis :
-    vis[ "selectStr" ] = ""  
-    print "... WARNING: selectStr is blank - using all sources"
-  print "... selectStr : ", vis[ "selectStr" ]
-  if not "flux" in vis :
-    vis["flux"] = "1."
-  if not "interval" in vis :
-    vis[ "interval" ] = 5.
-  if not "LkName" in vis :
-    vis[ "LkName" ] = "Lk"
-  if not "refant" in vis :
-    vis[ "refant" ] = 8
-  if not "avgchan" in vis :
-    vis[ "avgchan" ] = "DSB"
-  if not "legend" in vis :
-    vis[ "legend" ] = ""
-    
 def makeLk( visin ) :
   """Creates new Lkfile following prescription given in vis dictionary"""
   vis = visin.copy()
@@ -186,11 +184,9 @@ def makeLk( visin ) :
   fout.write("# avgchan    : %s\n" % vis["avgchan"] )
   fout.write("# interval   : %.2f\n" % vis["interval"] )
   fout.close()
-
   copytoSStmp( vis["fileName"], vis["selectStr"] ) 
     # copies requested data to file sstmp, applying gain correction if present 
   vis["fileName"] = "sstmp"
-
   makeFtable( vis )	   # fill in nstart, nchan, chfreq, chwidth dictionary items
   nchlist = numpy.array( vis["nchan"] )   # needed only for DSB or 2SB
   nchtot = numpy.sum(nchlist)             # needed only for DSB or 2SB
@@ -337,3 +333,37 @@ def visualize( visList ) :
       except :
         print "failed to process %s" % vis["fileName"]
         
+# --- plot R/L gain ratio --- #
+def gainRatio( visFile, selectStr, refant=8, interval=10000 ) :
+  parray = numpy.array( [2.,2.,2.,2.,2.,2.,2.,2.,2.,2.,2.,2.,2.,2.,2.] )
+  gR = numpy.zeros( 15 )
+  gL = numpy.zeros( 15 )
+  # use mfcal to solve for gains
+  p= subprocess.Popen( ( shlex.split('mfcal vis=%s select=%s refant=%d interval=%0.1f' % \
+     (visFile, selectStr, refant, interval ) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  time.sleep(1)
+  result = p.communicate()[0]
+  print result
+  # use gpplt to list the gains
+  p= subprocess.Popen( ( shlex.split('gpplt vis=%s log=gainlog' % visFile ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  time.sleep(1)
+  result = p.communicate()[0]
+  print result
+  # read the gains file, and plot the gain ratios
+  fin = open("gainlog", "r")
+  ant = 1
+  for line in fin :
+    if not line.startswith("#") and len(line) > 1 :
+      a = line.split()
+      noffset = 0
+      if len(a) == 8 :	   # begins new time
+        ant = 1
+        noffset = 2
+      if (ant < 15) :
+        for n in range(0,5,2) :
+          gR[ant-1] = a[n+noffset]
+          gL[ant-1] = a[n+1+noffset]
+          ant = ant + 1
+  print numpy.power(gL,parray)/numpy.power(gR,parray)
