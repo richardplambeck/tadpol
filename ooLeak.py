@@ -1,17 +1,34 @@
 # ooLeak.py
 #
-#import subarrayCommands as SAC
+# this is a collection of routines to plot, list, compare, or average leakages
+# unfortunately I chose to make it object-oriented, which turned out not to be particularly useful
+#
+# there are 2 objects:
+# - a Leak object is a single leakage solution for a particular source, channel averaging interval, etc
+# - a Plot object is a collection of multiple Leak objects
+#
+# the actual leakage solutions are computed by leakSolve, and are written to disk files with 
+#   names like, e.g., Lka.21mar2013; an older format with one antenna per file, e.g., lk13, also
+#   may be read in
+#
+# to get away from the object-oriented stuff, I have some wrapper routines that do what I usually
+#   want to do: plotAllAmps, etc; these are at the beginning 
+
+
 import math
 import time
-#import device
 import cmath
 import numpy
 import pylab
 import sys
+import RM
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
 
+
+# ----------------------------------------------------------------------------------------------------- #
+# the Leak object - leakages vs frequency for one antenna
 
 class Leak:
   'leak object with data, legend, color'
@@ -28,6 +45,7 @@ class Leak:
     self.f2 = []
     self.DR = []
     self.DL = []
+    self.lineStr = []
     self.avgchan = "0"
     try :
       fin = open( self.file, "r" )
@@ -49,7 +67,7 @@ class Leak:
             f2 = max(float(a[1]),float(a[2]))
             DR = float(a[3]) + 1j * float(a[4])
             DL = float(a[5]) + 1j * float(a[6])
-            solin.append( [f1,f2,DR,DL] )
+            solin.append( [f1,f2,DR,DL,a[9]] )
         if (not line.startswith("#")) and (len(a) > 10) :       # old style lk table, one antenna only
             f1 = min(float(a[0]),float(a[1]))
             f2 = max(float(a[0]),float(a[1]))
@@ -57,7 +75,7 @@ class Leak:
             DL = float(a[8]) + 1j * float(a[9])
             chanfacts = a[12].split(",")
             self.avgchan = chanfacts[3]
-            solin.append( [f1,f2,DR,DL] )
+            solin.append( [f1,f2,DR,DL,a[12]] )
       fin.close()
     # it would be smarter to store values as self.sol = sorted..., but I am temporarily breaking
     #   up everything into f1,f2,DR,DL for compatibility with existing routines
@@ -66,6 +84,7 @@ class Leak:
         self.f2.append( s[1] )    
         self.DR.append( s[2] )
         self.DL.append( s[3] )
+        self.lineStr.append( s[4] )
    
   def list(self) :
     return [self.ant, self.file, self.legend]
@@ -109,25 +128,20 @@ class Leak:
         f2prev = f2
     p.legend( loc=0, prop={'size':6}, numpoints=1 )
          
-
   def panel(self, p, type, lk, fstart, fstop ) :
     """add to one panel of a plot; p = plot handle; type = amp,phs,complex; lk = DR or DL"""
-
     if lk == "DL" :  
       yc = self.DL
     else :
       yc = self.DR
     first = True
     f2prev = 0.
-
   # Go through the array freq by freq
     for f1,f2,ycomplex in zip( self.f1, self.f2, yc) :
-
         if (type == 'phs' ) : 
           y = numpy.angle(ycomplex, deg=True)
         else :
           y = numpy.abs(ycomplex)
-
       # Plot like histogram if these are > 240 MHz chunks
         if (abs(f1-f2) > .24) or (self.avgchan == "0") :
           if first :
@@ -137,7 +151,6 @@ class Leak:
           else :
             p.plot( [f1,f2], [y,y] , color=self.color, \
               linestyle='solid', linewidth=2 )
-     
         else :  
           f = (f1+f2)/2.              # mean freq
         # Plot dots for phase
@@ -157,11 +170,11 @@ class Leak:
             fprev = f
             f2prev = f2
             yprev = y
-
     p.legend( loc=0, prop={'size':10} )
     
 
-# ====================================================================================#
+# ----------------------------------------------------------------------------------------------------- #
+# the Plot object - a collection of multiple leakage objects, for various antennas, frequencies, sources
 
 class Plot:
   """Plot object contains one or more Leak objects"""
@@ -301,9 +314,9 @@ class Plot:
 #   which match within 10% of the freq range; append these to list; form avg of list; plot scatter
 #   relative to the avg, 15 plots per page; compute rms
 
-  def complexCmp(self, fmin=0., fmax=300., amax=.05, nrows=4, ncols=4) :
+  def complexCmp(self, fmin=0., fmax=300., amax=.05, nrows=4, ncols=4, delta=True ) :
     Lktemplate = self.LeakList[0]
-    DRmark = "o"
+    DRmark = "."
     DLmark = "x"
     pyplot.ioff()
     pp = PdfPages( 'ComplexCmp.pdf' )
@@ -315,6 +328,8 @@ class Plot:
         fout.write("(%.3f,%.3f)\n" % (f1ref,f2ref))
         print f1ref,f2ref,finterval
         npanel = 0
+
+      # Process one antenna at a time 
         for ant in range(1,16) :
           print ""
           fout.write("\n")
@@ -330,16 +345,27 @@ class Plot:
                   DLlist.append( DL )
                   leglist.append(Lk.legend)
                   collist.append(Lk.color)
-                  # print "%3d  (%+5.3f%+5.3fj)  (%+5.3f%+5.3fj)  %s" % ( ant, DR.real, DR.imag, DL.real, DL.imag ,Lk.legend )
-          # Redefine colors
+
+        # redefine color map so each LeakFile has unique color
+        # ... this is a FLAWED procedure if there will be only one legend for all antennas,
+        # ... since colors could be different for different antennas
           cmap = pyplot.get_cmap("brg")
           numcolors = len(collist)
           for n in range(0,numcolors) :
             collist[n] = cmap(n/float(numcolors))
+
+        # compute mean; if delta=True, subtract from array
           DRmean = numpy.mean(DRlist)
           DLmean = numpy.mean(DLlist)
-          rmsDR = numpy.std( DRlist - DRmean ) 
-          rmsDL = numpy.std( DLlist - DLmean ) 
+          rmsDR = numpy.std( DRlist ) 
+          rmsDL = numpy.std( DLlist ) 
+          if (delta) :
+            DRlist = DRlist - DRmean
+            DLlist = DLlist - DLmean
+          DRref = numpy.mean(DRlist)  # circles will be centered on DRref
+          DLref = numpy.mean(DLlist)
+        
+        # summarize results in file
           for DR,DL,legend in zip( DRlist, DLlist, leglist ) :
             print "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s" % \
              ( ant, DR.real, DR.imag, abs(DR-DRmean), DL.real, DL.imag, abs(DL-DLmean), legend )
@@ -349,29 +375,81 @@ class Plot:
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" )
           fout.write( "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s\n" % \
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" ))
+
+        # plot this panel
           npanel= npanel + 1
           p = pyplot.subplot(nrows, ncols, npanel, aspect='equal')    # DL,DR in one panel
-          p.tick_params( axis='both', which='major', labelsize=5 )
+          p.tick_params( axis='both', which='major', labelsize=4 )
+          #p.set_ticks( [-.1, 0., .1] )
           p.axis( [-1.*amax, amax, -1.*amax, amax] )
+          p.plot( [0.,0.], [-amax,amax], "k--", linewidth=0.2 )
+          p.plot( [-amax,amax], [0.,0.], "k--", linewidth=0.2 )
           #p.grid(True)
-          circ1 = Circle( (0,0), rmsDR, linestyle="dotted", color="r", fill=False )
-          p.add_patch(circ1)
-          circ2 = Circle( (0,0), rmsDL, linestyle="dotted", color="b", fill=False )
-          p.add_patch(circ2)
-          p.text(.07,.07, "DR %5.3f" % rmsDR, horizontalalignment='left',transform=p.transAxes, size=7, color="r" )
-          p.text(.07,.17, "DL %5.3f" % rmsDL, horizontalalignment='left',transform=p.transAxes, size=7, color="b" )
-          p.text(.93,.81,"C%d" % ant, horizontalalignment='right',transform=p.transAxes, size=7)
+
+        # Draw circles showing scatter; center on mean position, or on 0,0 if delta==True
+          circ1 = Circle( (DRref.real,DRref.imag), rmsDR, linestyle="dotted", color="r", fill=False )
+          #p.add_patch(circ1)
+          circ2 = Circle( (DLref.real,DLref.imag), rmsDL, linestyle="dotted", color="b", fill=False )
+          #p.add_patch(circ2)
+
+          #p.text(.07,.07, "DR = %5.3f%+5.3fj" % (DRmean.real, DRmean.imag), horizontalalignment='left',transform=p.transAxes, size=6, color="r" )
+          #p.text(.07,.15, "DL = %5.3f%+5.3fj" % (DLmean.real, DLmean.imag), horizontalalignment='left',transform=p.transAxes, size=6, color="b" )
+          #p.text(.07,.17, "DL %5.3f" % rmsDL, horizontalalignment='left',transform=p.transAxes, size=7, color="b" )
+          p.text(.93,.85,"C%d" % ant, horizontalalignment='right',transform=p.transAxes, size=7)
+
           for DR,legend,color in zip( DRlist,leglist,collist ) :
-            p.plot( (DR-DRmean).real, (DR-DRmean).imag, marker=DRmark, color=color, markeredgecolor=color, markersize=4, \
+            p.plot( DR.real, DR.imag, marker=DRmark, color=color, markeredgecolor=color, markersize=4, \
               label=legend )
           for DL,color in zip( DLlist,collist) :
-            p.plot( (DL-DLmean).real, (DL-DLmean).imag, marker=DLmark, color=color, markeredgecolor=color, markersize=4 )
+            p.plot( DL.real, DL.imag, marker=DLmark, color=color, markeredgecolor=color, markersize=4 )
           if ant == 13 :
-            p.legend(bbox_to_anchor=(5.5,0.9), prop={'size':4})
-            p.text(5.5,0.92,"(%.3f,%.3f)" % (f1ref,f2ref), horizontalalignment='right',transform=p.transAxes, size=7)
+            p.legend(bbox_to_anchor=(5.5,0.9), prop={'size':3})
+            p.text(5.52,0.92,"(%.3f,%.3f)" % (f1ref,f2ref), horizontalalignment='right',transform=p.transAxes, size=7)
         pyplot.savefig( pp, format='pdf' )
         pyplot.clf()
     pp.close()
     fout.close()
          
-          
+
+# average together leakages in the Plot object, write out avg to new LkFile; optionally, add offset
+# remember that each leak inside LeakList covers just one antenna
+
+  def newLk( self, newLkFile, DRoffset=0.+0j, DLoffset=0.+0j ) :
+    fout = open( newLkFile, "w" )
+    fout.write("# input data : %s\n" % "AVG"  )
+    percentU = percentQ = 0.
+    for lineStr,f1,f2 in zip (self.LeakList[0].lineStr, self.LeakList[0].f1, self.LeakList[0].f2) :
+      print lineStr
+      fout.write("#\n")
+      for ant in range(1,16) :
+        DRlist = []
+        DLlist = []
+        for Lk in self.LeakList :
+          if Lk.ant == ant :
+            for lineStr1,DR1,DL1 in zip( Lk.lineStr, Lk.DR, Lk.DL ) :
+              if (lineStr1 == lineStr) and (abs(DR1) > 0.) and (abs(DL1) > 0.) :
+                DRlist.append( DR1 )
+                DLlist.append( DL1 )
+                print "... ant %d - appending data from %s" % ( ant, Lk.legend )
+        DRmean = numpy.mean(DRlist) + DRoffset
+        DLmean = numpy.mean(DLlist) + DLoffset
+        fout.write("C%02d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f    %s\n" % \
+            ( ant, f1, f2, DRmean.real, DRmean.imag, DLmean.real, \
+            DLmean.imag, percentQ, percentU, lineStr) )
+    fout.close()
+
+# ----------------------------------------------------------------------------------------------------- #
+# wrapper routines - all deal with a list of leakages specifed as LkList
+
+def plotAmps( LkList, f1=0., f2=0. ) :
+  p = Plot( LkList )
+  p.ampAll( f1=f1, f2=f2, amax=.16 ) 
+
+def plotComplex( LkList, f1=0., f2=0. ) :
+  p = Plot( LkList )
+  p.complexAll( f1=f1, f2=f2, amax=.16, nrows=1, ncols=1) 
+
+def cmpComplex( LkList, f1=0., f2=300. ) :
+  p = Plot( LkList )
+  p.complexCmp( fmin=f1, fmax=f2, amax=.05, nrows=4, ncols=4) 
+
