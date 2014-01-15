@@ -26,6 +26,7 @@ import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
 
+allAnts = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]   # default antList
 
 # ----------------------------------------------------------------------------------------------------- #
 # the Leak object - leakages vs frequency for one antenna
@@ -247,18 +248,19 @@ class Plot:
   def clear(self) :
     pylab.clf()
 
-  def ampAll(self, f1=0., f2=0., type="amp", amax=.25) :
+  def ampAll(self, f1=0., f2=0., type="amp", amax=.25, antList=allAnts ) :
     pyplot.ioff()
-    pp = PdfPages( 'AmpLeaks.pdf' )
     if f1 == 0. :
       [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
-      print f1,f2
+    print "frequency limits: %.3f - %.3f GHz" % (f1,f2)
     ymin = 0.
     ymax = amax
+    pp = PdfPages( 'AmpLeaks.pdf' )
     if type == "phs" :
       ymin = -180.
       ymax = 180.
-    for ant in range(1,16) :
+      pp = PdfPages( 'PhsLeaks.pdf' )
+    for ant in antList :
       pyplot.clf()
       pL = pyplot.subplot(2,1,1)    # DL in upper panel
       pL.axis( [f1, f2, ymin, ymax] )
@@ -267,7 +269,7 @@ class Plot:
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
           Leak.panel(pL, type, "DL", f1, f2 )
-          pyplot.title("C%d DL" % ant)
+      pyplot.title("C%d DL" % ant)
       pR = pyplot.subplot(2,1,2)    # DR in lower panel
       pR.axis( [f1, f2, ymin, ymax] )
       pR.grid(True)
@@ -275,23 +277,24 @@ class Plot:
         if Leak.ant == ant :
           print "plotting DR for antenna %d" % ant
           Leak.panel(pR, type, "DR", f1, f2 )
-          pyplot.title("C%d DR" % ant)
+      pyplot.title("C%d DR" % ant)
       pyplot.savefig( pp, format='pdf' )
     pp.close()
 
 # for complex plot, f1 and f2 could in principle be used to select range of points
 #    but this is not implemented yet
 
-  def complexAll(self, f1=0., f2=0., amax=.16, nrows=1, ncols=1) :
+  def complexAll(self, f1=0., f2=0., amax=.16, nrows=1, ncols=1, antList=allAnts ) :
     pyplot.ioff()
     pp = PdfPages( 'ComplexLeaks.pdf' )
     scale = 10./math.sqrt(ncols*nrows)
     if f1 == 0. :
       [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
+    print "frequency limits: %.3f - %.3f GHz" % (f1,f2)
     ymin = -1.*amax
     ymax = amax
     npanel = 0
-    for ant in range(1,16) :
+    for ant in antList :
       npanel = npanel + 1
       if npanel > nrows * ncols :
         npanel = 1
@@ -305,7 +308,7 @@ class Plot:
           print "plotting DR and DL for antenna %d" % ant
           Leak.plotComplex( p, f1, f2 ) 
       pyplot.title("C%d DR (circles, solid) and DL (diamonds, dashed)" % ant, fontdict={'fontsize': scale})
-      if (npanel == nrows*ncols) or (ant == 15) :
+      if (npanel == nrows*ncols) or (ant == antList[-1] ) :
         pyplot.savefig( pp, format='pdf' )
     pp.close()
 
@@ -314,7 +317,7 @@ class Plot:
 #   which match within 10% of the freq range; append these to list; form avg of list; plot scatter
 #   relative to the avg, 15 plots per page; compute rms
 
-  def complexCmp(self, fmin=0., fmax=300., amax=.05, nrows=4, ncols=4, delta=True ) :
+  def complexCmp(self, fmin=0., fmax=300., amax=.05, nrows=4, ncols=4, delta=True, antList=allAnts ) :
     Lktemplate = self.LeakList[0]
     DRmark = "."
     DLmark = "x"
@@ -330,7 +333,7 @@ class Plot:
         npanel = 0
 
       # Process one antenna at a time 
-        for ant in range(1,16) :
+        for ant in antList :
           print ""
           fout.write("\n")
           DRlist = []
@@ -433,6 +436,7 @@ class Plot:
                 print "... ant %d - appending data from %s" % ( ant, Lk.legend )
         DRmean = numpy.mean(DRlist) + DRoffset
         DLmean = numpy.mean(DLlist) + DLoffset
+        print ant, DRlist, DRmean, DLlist, DLmean
         fout.write("C%02d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f    %s\n" % \
             ( ant, f1, f2, DRmean.real, DRmean.imag, DLmean.real, \
             DLmean.imag, percentQ, percentU, lineStr) )
@@ -441,13 +445,17 @@ class Plot:
 # ----------------------------------------------------------------------------------------------------- #
 # wrapper routines - all deal with a list of leakages specifed as LkList
 
-def plotAmps( LkList, f1=0., f2=0. ) :
+def plotAmps( LkList, f1=0., f2=0., antList=allAnts ) :
   p = Plot( LkList )
-  p.ampAll( f1=f1, f2=f2, amax=.16 ) 
+  p.ampAll( f1=f1, f2=f2, amax=.2, antList=antList ) 
 
-def plotComplex( LkList, f1=0., f2=0. ) :
+def plotPhases( LkList, f1=0., f2=0., antList=allAnts ) :
   p = Plot( LkList )
-  p.complexAll( f1=f1, f2=f2, amax=.16, nrows=1, ncols=1) 
+  p.ampAll( f1=f1, f2=f2, type='phs', antList=antList ) 
+
+def plotComplex( LkList, f1=0., f2=0., antList=allAnts ) :
+  p = Plot( LkList )
+  p.complexAll( f1=f1, f2=f2, amax=.16, nrows=1, ncols=1, antList=antList ) 
 
 def cmpComplex( LkList, f1=0., f2=300. ) :
   p = Plot( LkList )
