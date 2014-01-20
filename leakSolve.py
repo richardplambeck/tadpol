@@ -206,6 +206,14 @@ def makeLk( visin ) :
     print "computing DSB leakage"
     delHd( vis["fileName"] )
     addLk( vis, 1, nchtot )    # average all chans
+  elif vis["avgchan"] == "LSB" :
+    print "computing LSB eakage"
+    delHd( vis["fileName"] )
+    addLk( vis, 1, nchtot/2 )             # LSB
+  elif vis["avgchan"] == "USB" :
+    print "computing USB leakage"
+    delHd( vis["fileName"] )
+    addLk( vis, nchtot/2+1, nchtot/2 )    # USB
   elif vis["avgchan"] == "2SB" :
     print "computing LSB and USB leakages"
     delHd( vis["fileName"] )
