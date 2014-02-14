@@ -7,6 +7,8 @@ import subprocess
 import shlex
 import string
 import sys
+from matplotlib import pyplot
+from matplotlib.patches import Circle 
 
 # figure out deviation from radial of mars PA vectors
 
@@ -40,8 +42,25 @@ def printArray( array ) :
     for i in range( n-1, -1, -1 ) :
       print " " + numpy.array_str( asq[i], precision=2, suppress_small=True, max_line_width=200 )
        
+def plotArray( array, arcsecBox ) :
+  nsq = int( math.sqrt(len(array)) + .0001 )
+  imgplot = pyplot.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
+        extent=[-arcsecBox,arcsecBox,-arcsecBox,arcsecBox] )
+  #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
+  #imgplot.add_patch(circ)
+  pyplot.show()
+ 
+def plotHisto( array, wgt ) :
+  n, bins, patches = pyplot.hist( array, bins=100, normed=True, weights=wgt, facecolor='g')
+  #pyplot.axis( [-10.,10., 0, .1] )
+  pyplot.show()
+
+
 def calc( arcsecBox ) :
   [x,y,U] = readArray( "Mars.U.cm", arcsecBox )
+  [x,y,Q] = readArray( "Mars.Q.cm", arcsecBox )
+  #[x,y,pa] = readArray( "Mars.pa.cm", arcsecBox )
+
   print "\nx:"
   printArray( x )
   print "\ny:"
@@ -51,16 +70,15 @@ def calc( arcsecBox ) :
   for n in range( 0, len(PAradial) ) :
     if PAradial[n] < -math.pi/2. :
       PAradial[n] = PAradial[n] + math.pi
+  print "\npa-radial:"
   printArray( PAradial * 180./math.pi )
 
-  [x,y,pa] = readArray( "Mars.pa.cm", arcsecBox )
-  print "\npa-miriad:"
-  printArray( pa )
+  #print "\npa-miriad:"
+  #printArray( pa )
 
   print "\nU:"
   printArray( U )
 
-  [x,y,Q] = readArray( "Mars.Q.cm", arcsecBox )
   print "\nQ:"
   printArray( Q )
 
@@ -83,6 +101,14 @@ def calc( arcsecBox ) :
       wgt[n] = 0.
   print "\ndevDeg:"
   printArray( devDeg )
+
+  #plotArray( x, arcsecBox )
+  #plotArray( y, arcsecBox )
+  plotArray( wgt, arcsecBox )
+  #plotArray( PAradial, arcsecBox )
+  #plotArray( devDeg, arcsecBox )
+  plotArray( wgt*devDeg, arcsecBox )
+  plotHisto( devDeg, wgt )
 
   
   print "\nmean deviation = ", numpy.ma.average(devDeg, weights=wgt)
