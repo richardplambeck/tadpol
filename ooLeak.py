@@ -324,6 +324,7 @@ class Plot:
     pyplot.ioff()
     pp = PdfPages( 'ComplexCmp.pdf' )
     fout = open( "ComplexCmp.dat", "w" )
+    fout2 = open( "ComplexCmpRMS.dat", "w" )
     for f1ref,f2ref in zip ( Lktemplate.f1, Lktemplate.f2 ) :
       if (f1ref > fmin) and (f2ref < fmax) :
         finterval = f2ref-f1ref
@@ -362,6 +363,10 @@ class Plot:
           DLmean = numpy.mean(DLlist)
           rmsDR = numpy.std( DRlist ) 
           rmsDL = numpy.std( DLlist ) 
+          rmsDRreal = numpy.std(numpy.real(DRlist))
+          rmsDRimag = numpy.std(numpy.imag(DRlist))
+          rmsDLreal = numpy.std(numpy.real(DLlist))
+          rmsDLimag = numpy.std(numpy.imag(DLlist))
           if (delta) :
             DRlist = DRlist - DRmean
             DLlist = DLlist - DLmean
@@ -378,6 +383,8 @@ class Plot:
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" )
           fout.write( "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s\n" % \
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" ))
+          fout2.write( "%.4f  %.4f  %.4f  rmsDR\n" % (rmsDRreal,rmsDRimag,rmsDR))
+          fout2.write( "%.4f  %.4f  %.4f  rmsDL\n" % (rmsDLreal,rmsDLimag,rmsDL))
 
         # plot this panel
           npanel= npanel + 1
@@ -412,6 +419,7 @@ class Plot:
         pyplot.clf()
     pp.close()
     fout.close()
+    fout2.close()
          
 
 # average together leakages in the Plot object, write out avg to new LkFile; optionally, add offset
@@ -442,12 +450,25 @@ class Plot:
             DLmean.imag, percentQ, percentU, lineStr) )
     fout.close()
 
+# Figure out how much leakage changes the XYphase calibration
+# assume that L and R are in phase
+# then compute measured angles of L and R taking into account the leakge
+# then compute difference in these phases - it turns out to be very small
+# note: this is specialized for DSB data where there is only one DR,DL for each ant
+
+  def XYphsOffset( self ) :
+    for Lk in self.LeakList :
+      VRmeas = numpy.angle( 1. + Lk.DR[0], deg=True) 
+      VLmeas = numpy.angle( 1. + Lk.DL[0], deg=True)
+      #print Lk.ant, VRmeas, VLmeas 
+      print "ant %d  %.2f  %.2f  XYphsOffset = %.2f" % (Lk.ant, VLmeas, VRmeas, VLmeas-VRmeas)
+
 # ----------------------------------------------------------------------------------------------------- #
 # wrapper routines - all deal with a list of leakages specifed as LkList
 
-def plotAmps( LkList, f1=0., f2=0., antList=allAnts ) :
+def plotAmps( LkList, f1=0., f2=0., amax=0.25, antList=allAnts ) :
   p = Plot( LkList )
-  p.ampAll( f1=f1, f2=f2, amax=.2, antList=antList ) 
+  p.ampAll( f1=f1, f2=f2, amax=amax, antList=antList ) 
 
 def plotPhases( LkList, f1=0., f2=0., antList=allAnts ) :
   p = Plot( LkList )
