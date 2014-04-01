@@ -22,6 +22,7 @@ import numpy
 import pylab
 import sys
 import RM
+import random
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
@@ -450,6 +451,37 @@ class Plot:
             DLmean.imag, percentQ, percentU, lineStr) )
     fout.close()
 
+# average together leakages in the Plot object; offset real and imag part of the leakage
+# for every antenna with a gaussian random error (same for all ants, for real and imag,
+# for R and L); apply Miriad constraint?; write new Lk object
+
+  def GaussLk( self, newLkFile, sigma ) :
+    fout = open( newLkFile, "w" )
+    fout.write("# input data : %s\n" % "+ Gaussian error"  )
+    percentU = percentQ = 0.
+    for lineStr,f1,f2 in zip (self.LeakList[0].lineStr, self.LeakList[0].f1, self.LeakList[0].f2) :
+      print lineStr
+      fout.write("#\n")
+      for ant in range(1,16) :
+        DRlist = []
+        DLlist = []
+        for Lk in self.LeakList :
+          if Lk.ant == ant :
+            for lineStr1,DR1,DL1 in zip( Lk.lineStr, Lk.DR, Lk.DL ) :
+              if (lineStr1 == lineStr) and (abs(DR1) > 0.) and (abs(DL1) > 0.) :
+                DRlist.append( DR1 )
+                DLlist.append( DL1 )
+                print "... ant %d - appending data from %s" % ( ant, Lk.legend )
+        DRmean = numpy.mean(DRlist)
+        DLmean = numpy.mean(DLlist)
+        DRnew = random.gauss(numpy.real(DRmean), sigma) + random.gauss(numpy.imag(DRmean), sigma) * 1j
+        DLnew = random.gauss(numpy.real(DRmean), sigma) + random.gauss(numpy.imag(DRmean), sigma) * 1j
+        print ant, DRnew, DLnew
+        fout.write("C%02d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f    %s\n" % \
+            ( ant, f1, f2, DRnew.real, DRnew.imag, DLnew.real, \
+            DLnew.imag, percentQ, percentU, lineStr) )
+    fout.close()
+     
 # Figure out how much leakage changes the XYphase calibration
 # assume that L and R are in phase
 # then compute measured angles of L and R taking into account the leakge
