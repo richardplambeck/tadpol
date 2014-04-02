@@ -4,8 +4,8 @@
 # unfortunately I chose to make it object-oriented, which turned out not to be particularly useful
 #
 # there are 2 objects:
-# - a Leak object is a single leakage solution for a particular source, channel averaging interval, etc
-# - a Plot object is a collection of multiple Leak objects
+# - a Leak object is for a single antenna, source, channel averaging interval, etc.
+# - a LkSet object is a collection of multiple Leak objects
 #
 # the actual leakage solutions are computed by leakSolve, and are written to disk files with 
 #   names like, e.g., Lka.21mar2013; an older format with one antenna per file, e.g., lk13, also
@@ -176,10 +176,10 @@ class Leak:
     
 
 # ----------------------------------------------------------------------------------------------------- #
-# the Plot object - a collection of multiple leakage objects, for various antennas, frequencies, sources
+# the LkSet object - a collection of multiple leakage objects, for various antennas, frequencies, sources
 
-class Plot:
-  """Plot object contains one or more Leak objects"""
+class LkSet:
+  """LkSet object contains one or more Leak objects"""
  
   # --- initialize plot object; optionally, load leakage data from list
   def __init__(self, masterList ) :
@@ -191,16 +191,16 @@ class Plot:
       print "creating blank plot object"
     else :
       print "loading leakage objects from file %s" % masterList
-      Plot.loadAll(self, masterListFile=masterList )
+      LkSet.loadAll(self, masterListFile=masterList )
 
-  # --- add one Leak to Plot object ---
+  # --- add one Leak to LkSet object ---
   def addLeak(self, file, antenna, legend, color, marker ) :
     newLeak = Leak( file, antenna, legend, color, marker )
     self.LeakList.append( newLeak )
     self.plotList.append( True )
 
   def loadAll(self, masterListFile ) :
-    """Read in multiple leakage files to Plot object"""
+    """Read in multiple leakage files to LkSet object"""
     color = [ "black", "red", "blue", "green", "cyan", "magenta", "yellow" ]
     marker = [ "o", "D", "v", "^", "s", "h", "d" ]
     fin = open( masterListFile, "r" )
@@ -217,7 +217,7 @@ class Plot:
               filename = a[0]
             legend = ""
             if len(a) > 1 : legend = a[1]
-            Plot.addLeak(self, filename, nant, legend, color[ncolor], marker[ncolor] )
+            LkSet.addLeak(self, filename, nant, legend, color[ncolor], marker[ncolor] )
               # addLeak opens disk file, reads data into Leak object
           ncolor = ncolor + 1
           if (ncolor > (len(color)-1) ) : ncolor = 0
@@ -252,7 +252,7 @@ class Plot:
   def ampAll(self, f1=0., f2=0., type="amp", amax=.25, antList=allAnts ) :
     pyplot.ioff()
     if f1 == 0. :
-      [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
+      [f1, f2] = LkSet.xlimits( self )          # default is to find freq limits in the data
     print "frequency limits: %.3f - %.3f GHz" % (f1,f2)
     ymin = 0.
     ymax = amax
@@ -290,7 +290,7 @@ class Plot:
     pp = PdfPages( 'ComplexLeaks.pdf' )
     scale = 10./math.sqrt(ncols*nrows)
     if f1 == 0. :
-      [f1, f2] = Plot.xlimits( self )          # default is to find freq limits in the data
+      [f1, f2] = LkSet.xlimits( self )          # default is to find freq limits in the data
     print "frequency limits: %.3f - %.3f GHz" % (f1,f2)
     ymin = -1.*amax
     ymax = amax
@@ -325,7 +325,7 @@ class Plot:
     pyplot.ioff()
     pp = PdfPages( 'ComplexCmp.pdf' )
     fout = open( "ComplexCmp.dat", "w" )
-    fout2 = open( "ComplexCmpRMS.dat", "w" )
+    fout2 = open( "ComplexCmpDelta.dat", "w" )
     for f1ref,f2ref in zip ( Lktemplate.f1, Lktemplate.f2 ) :
       if (f1ref > fmin) and (f2ref < fmax) :
         finterval = f2ref-f1ref
@@ -359,34 +359,35 @@ class Plot:
           for n in range(0,numcolors) :
             collist[n] = cmap(n/float(numcolors))
 
-        # compute mean; if delta=True, subtract from array
+        # summarize raw data (without subtracting the mean) in file
           DRmean = numpy.mean(DRlist)
           DLmean = numpy.mean(DLlist)
           rmsDR = numpy.std( DRlist ) 
           rmsDL = numpy.std( DLlist ) 
-          rmsDRreal = numpy.std(numpy.real(DRlist))
-          rmsDRimag = numpy.std(numpy.imag(DRlist))
-          rmsDLreal = numpy.std(numpy.real(DLlist))
-          rmsDLimag = numpy.std(numpy.imag(DLlist))
-          if (delta) :
-            DRlist = DRlist - DRmean
-            DLlist = DLlist - DLmean
-          DRref = numpy.mean(DRlist)  # circles will be centered on DRref
-          DLref = numpy.mean(DLlist)
-        
-        # summarize results in file
+
           for DR,DL,legend in zip( DRlist, DLlist, leglist ) :
             print "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s" % \
-             ( ant, DR.real, DR.imag, abs(DR-DRmean), DL.real, DL.imag, abs(DL-DLmean), legend )
+             ( ant, DR.real, DR.imag, abs(DR), DL.real, DL.imag, abs(DL), legend )
             fout.write("%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s\n" % \
-             ( ant, DR.real, DR.imag, abs(DR-DRmean), DL.real, DL.imag, abs(DL-DLmean), legend ) )
+             ( ant, DR.real, DR.imag, abs(DR), DL.real, DL.imag, abs(DL), legend ) )
+            
+            fout2.write(" C%d  %.4f  %.4f   %.4f    deltaDR\n" % 
+             (ant, numpy.real(DR-DRmean), numpy.imag(DR-DRmean), abs(DR-DRmean)))
+            fout2.write(" C%d  %.4f  %.4f   %.4f    deltaDL\n" % 
+             (ant, numpy.real(DL-DLmean), numpy.imag(DL-DLmean), abs(DL-DLmean)))
+
           print "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s" % \
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" )
           fout.write( "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s\n" % \
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" ))
-          fout2.write( "%.4f  %.4f  %.4f  rmsDR\n" % (rmsDRreal,rmsDRimag,rmsDR))
-          fout2.write( "%.4f  %.4f  %.4f  rmsDL\n" % (rmsDLreal,rmsDLimag,rmsDL))
 
+        # if delta=True, subtract average before plotting
+          if (delta) :
+            DRlist = DRlist - DRmean
+            DLlist = DLlist - DLmean
+          DRref = numpy.mean(DRlist)  # circles will be centered on DRref 
+          DLref = numpy.mean(DLlist)
+        
         # plot this panel
           npanel= npanel + 1
           p = pyplot.subplot(nrows, ncols, npanel, aspect='equal')    # DL,DR in one panel
@@ -423,7 +424,7 @@ class Plot:
     fout2.close()
          
 
-# average together leakages in the Plot object, write out avg to new LkFile; optionally, add offset
+# average together leakages in the LkSet object, write out avg to new LkFile; optionally, add offset
 # remember that each leak inside LeakList covers just one antenna
 
   def newLk( self, newLkFile, DRoffset=0.+0j, DLoffset=0.+0j ) :
@@ -451,9 +452,10 @@ class Plot:
             DLmean.imag, percentQ, percentU, lineStr) )
     fout.close()
 
-# average together leakages in the Plot object; offset real and imag part of the leakage
-# for every antenna with a gaussian random error (same for all ants, for real and imag,
-# for R and L); apply Miriad constraint?; write new Lk object
+# average together leakages for each antenna in the LkSet object; 
+# offset real and imag parts of the leakage with a Gaussian random error
+#   (error is the same for real and imaginary, for all ants)
+# apply Miriad constraint?; write new Lk file 
 
   def GaussLk( self, newLkFile, sigma ) :
     fout = open( newLkFile, "w" )
@@ -499,18 +501,18 @@ class Plot:
 # wrapper routines - all deal with a list of leakages specifed as LkList
 
 def plotAmps( LkList, f1=0., f2=0., amax=0.25, antList=allAnts ) :
-  p = Plot( LkList )
+  p = LkSet( LkList )
   p.ampAll( f1=f1, f2=f2, amax=amax, antList=antList ) 
 
 def plotPhases( LkList, f1=0., f2=0., antList=allAnts ) :
-  p = Plot( LkList )
+  p = LkSet( LkList )
   p.ampAll( f1=f1, f2=f2, type='phs', antList=antList ) 
 
 def plotComplex( LkList, f1=0., f2=0., antList=allAnts ) :
-  p = Plot( LkList )
+  p = LkSet( LkList )
   p.complexAll( f1=f1, f2=f2, amax=.16, nrows=1, ncols=1, antList=antList ) 
 
 def cmpComplex( LkList, f1=0., f2=300. ) :
-  p = Plot( LkList )
+  p = LkSet( LkList )
   p.complexCmp( fmin=f1, fmax=f2, amax=.05, nrows=4, ncols=4) 
 
