@@ -16,6 +16,8 @@ import copy
 import scipy.optimize
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
+from mpl_toolkits.mplot3d import Axes3D
+
 
      
 # Extract Stokes (I,Q,U, or V) amplitude and rms from one line of uvflux output 
@@ -146,7 +148,7 @@ class SS :
       ch2 = ch1 + int(a[3]) - 1
       [fstart,fstop] = leakSolve.fminfmax( vis, ch1, ch2 )
       if (abs(fstartLeak - fstart) > .002) or (abs(fstopLeak - fstop) > .002) :
-        print "    freq mismatch:  Leak %.3f - %.3f,  Data %.3f - %.3f"  % (fstartLeak, fstopLeak, fstart, fstop) 
+        print "    warning: freq mismatch:  Leak %.3f - %.3f,  Data %.3f - %.3f"  % (fstartLeak, fstopLeak, fstart, fstop) 
 
     # compute the stokes parameters for this 'lineStr'
       result = getStokes2( vis["fileName"], vis["selectStr"], lineStr )
@@ -224,7 +226,7 @@ class SS :
     sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
     Qavg = numpy.average( self.Q )
     Uavg = numpy.average( self.U )
-    print "# Qavg,Uvg = ", Qavg, Uavg
+    #print "# Qavg,Uvg = ", Qavg, Uavg
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
     pa0 = 0.5 * math.atan2(Uavg,Qavg)
     print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = 0." % (p0, pa0 * 180./math.pi)
@@ -237,36 +239,38 @@ class SS :
         popt[0] = -1. * popt[0]
         popt[1] = popt[1] + math.pi/2.
       p0,pa0,rm = popt
-      pa0 = pa0 * 180./math.pi
       # compute chisq and scale covariances to get 'true' error estimates - see scipy thread
       #     by Christoph Deil; makes errors unreasonably small, so I am dropping it
-        #  chi = y - self.func( x, p0, pa0, rm)/sigma
-      #  chisq = (chi**2).sum()
-      #  print "chisq = %.2e" % chisq
-      #  dof = len(x) - len(popt)
+      chi = (y - self.func( x, p0, pa0, rm))/sigma
+      print "sigma = ",sigma
+      print "chi = ",chi
+      chisq = (chi**2).sum()
+      print "chisq = %.2e" % chisq
+      dof = len(x) - len(popt)
       #  pcov = pcov/(chisq/dof)
       try :
         p0rms = math.sqrt(pcov[0][0])
-        pa0rms = math.sqrt(pcov[1][1]) * 180./math.pi
+        pa0rms = math.sqrt(pcov[1][1])
         rmrms = math.sqrt(pcov[2][2]) 
       except :
         p0rms = pa0rms = rmrms = 0.
+      #self.ran( x, y, p0, p0rms, pa0, pa0rms, rm, rmrms, sigma )  
 
     # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
     else :
       p0rms = self.rmsI
-      pa0 = pa0 * 180./math.pi
+      pa0 = pa0 
       pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
         / ( pow(self.Q,2.) + pow(self.U,2.) )
-      pa0rms = pa0rms * 180./math.pi
+      pa0rms = pa0rms
       rm = 0.
       rmrms = 0.
       freq0 = freq
     
     self.p0 = p0
     self.p0rms = p0rms
-    self.pa0 = pa0
-    self.pa0rms = pa0rms
+    self.pa0 = pa0 * 180./math.pi
+    self.pa0rms = pa0rms * 180./math.pi
     self.RM = rm
     self.RMrms = rmrms
     self.freq0 = freq0
@@ -276,6 +280,17 @@ class SS :
     print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
     print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
     print ""
+
+# returns changes that double chisq
+# x and y are the independent and dependent variables
+# p0, pa0, rm are the best fit values
+  def ran( self, x, y, p0, p0rms, pa0, pa0rms, rm, rmrms, sigma ) : 
+    for p0test in numpy.arange( p0-3.*p0rms, p0+4*p0rms, p0rms) :
+      for pa0test in numpy.arange( pa0-3.*pa0rms, pa0+4.*pa0rms, pa0rms ) :
+        for rmtest in numpy.arange( rm-3.*rmrms, rm+4.*rmrms, rmrms ) :
+          chi = (y - self.func( x, p0test, pa0test, rmtest))/sigma
+          chisq = (chi**2).sum()
+          print " %5.3f %5.1f %7.2f %9.1f" % (p0test,pa0test*180./math.pi,rmtest/1.e5,chisq)
 
   def calcFrac( self ) :
     'compute fractional polarization and uncertainty'
@@ -337,16 +352,24 @@ class SS :
 # -----------------------------------------------------------------------------------------------------------------------#
 # generate series of SS objects (usually for one source, with different Lks, sometimes for different time intervals)
 # pickle the results and append to outfile
+# renamed - was makeTable
+# change: LkListFile can be either the name of a single LkFile, or a list of LkFile names
 
-def makeTable( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, schedFile=None, plot=False ) :
+def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, schedFile=None, plot=False ) :
   # Generate list of leakages
   LkList = []
+  first = True
   fin = open( LkListFile, "r" )
   for line in fin :
-    if not line.startswith("#") :
-      a = line.split()
-      if len(a) > 0 :
-        LkList.append( a[0] )
+    if first and line.startswith("# input data") :   # then LkListFile is itself a single Lk file
+      LkList.append( LkListFile )
+      break
+    else :                                           # then LkListFile is a list of Lk file names
+      first = False
+      if not line.startswith("#") :
+        a = line.split()
+        if len(a) > 0 :
+          LkList.append( a[0] )
   fin.close()
   print "LkList = ", LkList
   # Generate list of selectStrings (time ranges, usually)
@@ -375,8 +398,8 @@ def makeTable( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, sched
         if plot : 
           ss.plot()
                                                                                                                    
-# read in series of SSs from input pickle file, append to ssList
-def readAll2( infile, ssList ) :
+# read in series of SSs from input pickle file, append to ssList (was readAll2)
+def readSSfile( infile, ssList ) :
   fin = open( infile, "rb" )
   while True :
     try :
@@ -394,12 +417,12 @@ def findUniqueStrings( ssList ) :
       uniqueStrList.append(ss.selectStr)
   return uniqueStrList
 
-# fit p, PA, frac, RM to one or more SS spectra
-# the intent is to better estimate the errors by fitting data reduced with different leakages
-# for each unique selectStr, concatenate all the I,Q,U,V data into one SS, fit it
+# read in many SS spectra - usually, these were fit with different leakages
+# for each unique selectStr, concatenate all the I,Q,U,V data into one SS, fit p, PA, frac, RM 
+# the hope was that this global fit would be more accurate than individual fits
 def fitAll( infile, outfile, plot=False ) :
   ssList = []
-  readAll2( infile, ssList )
+  readSSfile( infile, ssList )
   for ss in ssList :
     print ss.selectStr
   # Make list of unique selectStr; note this will usually be different time range
@@ -442,12 +465,20 @@ def fitAll( infile, outfile, plot=False ) :
     if plot : 
       ssWork.plot()
 
-# read in the pickled SS spectra
-# for each unique selectStr, tabulate the fit results, compute means and rms scatter
+# weighted mean and its error (Bevington+Robinson, pp 58-59)
+# .. weighted mean = sum(x_i/sigma_i^2) / sum(1./sigma_i^2)
+# .. error in the weighted mean = sqrt(1./sum(1/sigma_i^2))
+def weightedMeanAndError( data, rms ) :
+  wgts = numpy.array( 1./(rms*rms) )
+  avg = numpy.average( data, weights=wgts )
+  avgRms = math.sqrt(1./numpy.sum(wgts))
+  return (avg, avgRms)
 
+# read in file of pickled SS spectra
+# for each unique selectStr, tabulate the fit results, compute means and rms scatter
 def summarizeFits( infile, outfile, plot=False ) :
   ssList = []
-  readAll2( infile, ssList )
+  readSSfile( infile, ssList )
   for ss in ssList :
     print ss.selectStr
   fout = open( outfile, "w")
@@ -455,6 +486,7 @@ def summarizeFits( infile, outfile, plot=False ) :
   uniqueList = findUniqueStrings( ssList )
   for uniqueStr in uniqueList :
     I = []
+    V = []
     p0 = []
     pa = []
     rm = []
@@ -464,22 +496,34 @@ def summarizeFits( infile, outfile, plot=False ) :
       if ss.selectStr == uniqueStr :
         if first :
           fout.write("\n#> %s   avgUT = %.3f\n" % (uniqueStr,ss.UT))
-          fout.write("#     S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  LFile\n")
+          fout.write("#     S    sigma   poli  sigma     PA  sigma      RM  sigma   frac  sigma   V sigma  LkFile\n")
           first = False
-        Iavg = numpy.average(ss.I )
-        Istd = numpy.std(ss.I, ddof=1)
+        [Iavg,Istd] = weightedMeanAndError( ss.I, ss.rmsI )
+        [Vavg,Vstd] = weightedMeanAndError( ss.V, ss.rmsV )
+        Iavg = numpy.mean(ss.I)
+        Istd = numpy.std(ss.I)
+        Vavg = numpy.mean(ss.V)
+        Vstd = numpy.std(ss.V)
         I.append(Iavg)
+        V.append(Vavg)
         p0.append(ss.p0)
         pa.append(ss.pa0)
         rm.append(ss.RM)
         frac.append(ss.frac)
-        fout.write(" %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f   %s\n" % \
+        fout.write(" %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  %s \n" % \
           ( Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
-          ss.frac, ss.fracrms, ss.LkFile) )
-  # Print averages and rms
-    fout.write("#  %6.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f   AVG\n" % \
+          ss.frac, ss.fracrms, Vavg, Vstd, ss.LkFile) )
+  # Print averages and rms; here the rms is from the dispersion in the means!
+    fout.write("#* %6.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  AVG\n" % \
       ( numpy.mean(I), numpy.std(I), numpy.mean(p0), numpy.std(p0), numpy.mean(pa), numpy.std(pa), \
-      numpy.mean(rm)/1.e5, numpy.std(rm)/1.e5, numpy.mean(frac), numpy.std(frac) ) )
+      numpy.mean(rm)/1.e5, numpy.std(rm)/1.e5, numpy.mean(frac), numpy.std(frac), numpy.mean(V), numpy.std(V) ) )
+  # 3D plot of fits
+    #print "begin figure"
+    #fig = pyplot.figure()
+    #ax = Axes3D(fig)
+    #q = Axes3D.scatter(ax,numpy.array(p0),numpy.array(pa),numpy.array(rm) )
+    #print "show figure"
+    #pyplot.show()
   fout.close()
 
 # read in series of SSs from input file (old style, pre-pickle)
@@ -567,7 +611,7 @@ def summary( paList, outfile ) :
       fout.write("#  dechr  parang    HA        S    sigma     Q   sigma      U  sigma      V  sigma    col   selectString\n")
       fout.close()
 
-      readAll2( infile, ssList )
+      readSSfile( infile, ssList )
       for ss in ssList : 
         #Iavg = numpy.average(ss.I, weights=ss.rmsI )
         Iavg = numpy.average(ss.I )
@@ -662,7 +706,7 @@ def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
   
 def replot2( infile, Ymax=0., nrows=2, ncols=1 ) :
   ssList = []
-  readAll2( infile, ssList )
+  readSSfile( infile, ssList )
   pyplot.ioff()
   pp = PdfPages( 'multipage.pdf' )
   pyplot.subplots_adjust( hspace=0.25 )
