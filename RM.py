@@ -205,12 +205,87 @@ class SS :
       fout.write( "# ----------------------------\n" )       # this delimiter needed by readAll
       fout.close()
 
+  # ----------------------------------------------------------------------------------------- #
+  # model pa as a function of 1/lambda^2
+  # ... x = c^2/freq^2 - c^2/freq0^2, in m^2
+  # ... pa0 is the position angle at the reference wavelength x=0, in radians; real number
+  # ... rm is the rotation measure in radians/m^2; real number
+  def func2( self, x, pa0, rm ) :
+    chimodel = pa0 + rm*x 
+    return chimodel
+
+  def fitPARM2( self, freq0 ) :
+    print "entering fitPARM2"
+    freq = 0.5 * (self.f1 + self.f2)
+    x = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
+    y = 0.5 * numpy.arctan2(self.U,self.Q)
+    variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
+     ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
+    sigma = numpy.sqrt(variance)   # this is an array
+    Qavg = numpy.average( self.Q )
+    Uavg = numpy.average( self.U )
+    p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
+    # is the following formula correct?
+    p0rms =  numpy.average( numpy.sqrt(pow(self.Q*self.rmsQ,2.) + pow(self.rmsU*self.U,2.)))/p0
+    pa0 = 0.5 * math.atan2(Uavg,Qavg)
+    rm = 0.
+    print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = %.2e." % (p0, pa0 * 180./math.pi, rm )
+    
+    # --- fit data if there are measurements at at least 2 freqs --- #
+    if len(self.f1) > 1 :
+      popt,pcov = scipy.optimize.curve_fit( self.func2, x, y, p0=[pa0,0.], sigma=sigma  )
+      pa0,rm = popt
+      print "pa0, rm =",pa0, rm
+      chi = (y - self.func2( x, pa0, rm))/sigma
+      chisq = (chi**2).sum()
+      print "chisq = %.2e" % chisq
+      chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm))/sigma, 2.))
+      print "chisq = %.2e" % chisq
+      try :
+        pa0rms = math.sqrt(pcov[0][0])
+        rmrms = math.sqrt(pcov[1][1]) 
+      except :
+        pa0rms = rmrms = 0.
+      self.ran2( x, y, pa0, rm, sigma )  
+
+    # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
+    else :
+      pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
+        / ( pow(self.Q,2.) + pow(self.U,2.) )
+      rmrms = 0.
+      freq0 = freq
+    
+    self.p0 = p0
+    self.p0rms = p0rms
+    self.pa0 = pa0 * 180./math.pi
+    self.pa0rms = pa0rms * 180./math.pi
+    self.RM = rm
+    self.RMrms = rmrms
+    self.freq0 = freq0
+    self.calcFrac()                            # fills in fractional pol
+    print "# p0 = %.3f (%.3f)" % (self.p0, self.p0rms)
+    print "# frac = %.3f (%.3f)" % (self.frac, self.fracrms)
+    print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
+    print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
+    print ""
+
+# returns changes that double chisq
+# x and y are the independent and dependent variables
+# p0, pa0, rm are the best fit values
+  def ran2( self, x, y, pa0, rm, sigma ) : 
+    print "ran2 RM = ",rm
+    print "ran2 sigma =",sigma
+    for deltarm in numpy.arange(-5.e5,5.e5,2.e4) :
+      chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm+deltarm))/sigma, 2.))
+      print "# deltaRM, RM+deltaRM, chisq: %.3e  %.3e  %7.2f" % (deltarm, rm+deltarm, chisq)
+
   # -----------------------------------------------------------------------------------------------------------------------#
-  # model Stokes Q, U as a function of 1/lambda^2
+  # model Stokes Q, U as a function of 1/lambda^2; solve for p0, pa0, RM
   # ... x = c^2/freq^2 - c^2/freq0^2, in m^2; each x given twice, once for Q, once for U
   # ... p0 is polarized intensity in Jy; a real number
   # ... pa0 is the position angle at the reference wavelength x=0, in radians; real number
   # ... rm is the rotation measure in radians/m^2; real number
+
   def func( self, x, p0, pa0, rm ) :
     xhalf = x[0 : len(x)/2]
     qmodel = p0 * numpy.cos(2 * (pa0 + rm*xhalf))
@@ -226,15 +301,14 @@ class SS :
     sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
     Qavg = numpy.average( self.Q )
     Uavg = numpy.average( self.U )
-    #print "# Qavg,Uvg = ", Qavg, Uavg
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
     pa0 = 0.5 * math.atan2(Uavg,Qavg)
-    print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = 0." % (p0, pa0 * 180./math.pi)
+    rm = 0.
+    print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = %.2e." % (p0, pa0 * 180./math.pi, rm )
     
     # --- fit data if there are measurements at at least 2 freqs --- #
     if len(self.f1) > 1 :
       popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
-      print "popt = ", popt
       if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
         popt[0] = -1. * popt[0]
         popt[1] = popt[1] + math.pi/2.
@@ -242,8 +316,6 @@ class SS :
       # compute chisq and scale covariances to get 'true' error estimates - see scipy thread
       #     by Christoph Deil; makes errors unreasonably small, so I am dropping it
       chi = (y - self.func( x, p0, pa0, rm))/sigma
-      print "sigma = ",sigma
-      print "chi = ",chi
       chisq = (chi**2).sum()
       print "chisq = %.2e" % chisq
       dof = len(x) - len(popt)
@@ -258,12 +330,9 @@ class SS :
 
     # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
     else :
-      p0rms = self.rmsI
-      pa0 = pa0 
+      p0rms = ( self.Q * self.rmsQ + self.rmsU * self.U)/p0
       pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
         / ( pow(self.Q,2.) + pow(self.U,2.) )
-      pa0rms = pa0rms
-      rm = 0.
       rmrms = 0.
       freq0 = freq
     
