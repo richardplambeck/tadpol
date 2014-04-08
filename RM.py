@@ -67,6 +67,19 @@ def makeStrList( LkFile ) :
   fin.close()
   return strList
 
+# out of frustration, write my own least squares routine for a + bx (Numerical Recipes pp. 507-508)
+def mylsq( x, y, sigma ) :
+   Sx = numpy.sum( x/pow(sigma,2.) )
+   Sy = numpy.sum( y/pow(sigma,2.) )
+   S = numpy.sum( 1./pow(sigma,2.) )
+   t = 1./sigma * (x - Sx/S)
+   Stt = numpy.sum( pow(t,2) )
+   b = 1./Stt * numpy.sum(t*y/sigma)
+   a = (Sy - Sx*b)/S
+   sigmaa = math.sqrt( 1./S * (1. + pow(Sx,2.)/(S*Stt) ) )
+   sigmab = math.sqrt( 1./Stt )
+   return [a,b,sigmaa,sigmab]
+
 # time average selected data from visFile into 'sstmp', with options=nopol
 # this saves time in creating a multichannel SS object because input file
 #    is re-read for every LkFile channel interval
@@ -214,14 +227,21 @@ class SS :
     chimodel = pa0 + rm*x 
     return chimodel
 
-  def fitPARM2( self, freq0 ) :
+  def fitPARM2( self, freq0, outfile="fitPARM2.dat" ) :
     print "entering fitPARM2"
     freq = 0.5 * (self.f1 + self.f2)
     x = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
     y = 0.5 * numpy.arctan2(self.U,self.Q)
+    # this is here just for 0359+509 - should comment out later
+    # for n in range (0,len(y)) :
+    #   print y[n]
+    #   if (y[n] > 0.) :
+    #     y[n] = y[n] - math.pi
     variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
      ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
     sigma = numpy.sqrt(variance)   # this is an array
+    # for now, try sigma=1
+    #sigma = numpy.ones( len(variance) )
     Qavg = numpy.average( self.Q )
     Uavg = numpy.average( self.U )
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
@@ -233,12 +253,9 @@ class SS :
     
     # --- fit data if there are measurements at at least 2 freqs --- #
     if len(self.f1) > 1 :
-      popt,pcov = scipy.optimize.curve_fit( self.func2, x, y, p0=[pa0,0.], sigma=sigma  )
+      popt,pcov = scipy.optimize.curve_fit( self.func2, x, y, p0=[pa0,0.], sigma=sigma )
       pa0,rm = popt
-      print "pa0, rm =",pa0, rm
-      chi = (y - self.func2( x, pa0, rm))/sigma
-      chisq = (chi**2).sum()
-      print "chisq = %.2e" % chisq
+      # print "pa0, rm =",pa0, rm
       chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm))/sigma, 2.))
       print "chisq = %.2e" % chisq
       try :
@@ -246,7 +263,14 @@ class SS :
         rmrms = math.sqrt(pcov[1][1]) 
       except :
         pa0rms = rmrms = 0.
-      self.ran2( x, y, pa0, rm, sigma )  
+      # recompute pa0rms and rmrms by scaling, per p. 507 of Numerical Recipes
+      #print "# pa0, rm uncertainties BEFORE scaling: ",pa0rms,rmrms
+      #scaleFactor =  math.sqrt(chisq/(len(sigma)-2.))
+      #pa0rms = pa0rms * scaleFactor
+      #rmrms = rmrms * scaleFactor
+      #print "# pa0, rm uncertainties AFTER scaling: ",pa0rms,rmrms
+      # sigran2 = self.ran2( x, y, pa0, rm, 4.*sigma )  
+      sigran2 = 0.
 
     # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
     else :
@@ -268,16 +292,100 @@ class SS :
     print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
     print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
     print ""
+    pyplot.clf()
+    pyplot.ion()
+    Ymax = 0.
+    fig = pyplot.subplot(1,1,1)
+    self.plot3( fig, Ymax, sigran2, labelsize=12 ) 
+    pyplot.draw()                 # plots and continues...
 
-# returns changes that double chisq
+
+# use my own stupid least squares fit to a + bx
+  def fitPARM3( self, freq0 ) :
+    print "entering fitPARM3"
+    freq = 0.5 * (self.f1 + self.f2)
+    x = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
+    y = 0.5 * numpy.arctan2(self.U,self.Q)
+    variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
+     ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
+    sigma = numpy.sqrt(variance)   # this is an array
+    # for now, try sigma=1
+    #sigma = numpy.ones( len(variance) )
+    sigma = 4.*sigma
+    Qavg = numpy.average( self.Q )
+    Uavg = numpy.average( self.U )
+    p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
+    # is the following formula correct?
+    p0rms =  numpy.average( numpy.sqrt(pow(self.Q*self.rmsQ,2.) + pow(self.rmsU*self.U,2.)))/p0
+    
+    # --- fit data if there are measurements at at least 2 freqs --- #
+    if len(self.f1) > 1 :
+      [pa0,rm,pa0rms,rmrms] = mylsq( x, y, sigma )
+      chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm))/sigma, 2.))
+      print "chisq = %.2e" % chisq
+      # recompute pa0rms and rmrms by scaling, per p. 507 of Numerical Recipes
+      # print "# pa0, rm uncertainties BEFORE scaling: ",pa0rms,rmrms
+      # scaleFactor =  math.sqrt(chisq/(len(sigma)-2.))
+      # pa0rms = pa0rms * scaleFactor
+      # rmrms = rmrms * scaleFactor
+      # print "# pa0, rm uncertainties AFTER scaling: ",pa0rms,rmrms
+      # sigran2 = self.ran2( x, y, pa0, rm, 4.*sigma )  
+      sigran2 = 0.
+
+    # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
+    else :
+      pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
+        / ( pow(self.Q,2.) + pow(self.U,2.) )
+      rmrms = 0.
+      freq0 = freq
+    
+    self.p0 = p0
+    self.p0rms = p0rms
+    self.pa0 = pa0 * 180./math.pi
+    self.pa0rms = pa0rms * 180./math.pi
+    self.RM = rm
+    self.RMrms = rmrms
+    self.freq0 = freq0
+    self.calcFrac()                            # fills in fractional pol
+    print "# p0 = %.3f (%.3f)" % (self.p0, self.p0rms)
+    print "# frac = %.3f (%.3f)" % (self.frac, self.fracrms)
+    print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
+    print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
+    print ""
+    pyplot.clf()
+    pyplot.ion()
+    Ymax = 0.
+    fig = pyplot.subplot(1,1,1)
+    self.plot3( fig, Ymax, sigran2, labelsize=12 ) 
+    pyplot.draw()                 # plots and continues...
+
+# returns change in RM that doubles chisq
 # x and y are the independent and dependent variables
 # p0, pa0, rm are the best fit values
+
   def ran2( self, x, y, pa0, rm, sigma ) : 
-    print "ran2 RM = ",rm
+    #print "ran2 RM = ",rm
     print "ran2 sigma =",sigma
-    for deltarm in numpy.arange(-5.e5,5.e5,2.e4) :
-      chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm+deltarm))/sigma, 2.))
-      print "# deltaRM, RM+deltaRM, chisq: %.3e  %.3e  %7.2f" % (deltarm, rm+deltarm, chisq)
+    varbest = numpy.sum(pow( (y-self.func2( x, pa0, rm))/sigma, 2.))
+
+    var = varbest
+    deltarm = 0.
+    while var < 2.*varbest :
+      deltarm = deltarm - 1.e4
+      var = numpy.sum(pow( (y-self.func2( x, pa0, rm+deltarm))/sigma, 2.))
+      #print "# deltaRM, chisq: %.3e  %7.2f" % (deltarm, var)
+    deltaminus = deltarm
+
+    var = varbest
+    deltarm = 0.
+    while var < 2.*varbest :
+      deltarm = deltarm + 1.e4
+      var = numpy.sum(pow( (y-self.func2( x, pa0, rm+deltarm))/sigma, 2.))
+      print "# deltaRM, chisq: %.3e  %7.2f" % (deltarm, var)
+    deltaplus = deltarm
+      
+    print "# RAN2 result: RM = %.2e (%.2e  %.2e)" % (rm,deltaminus,deltaplus)
+    return deltaplus
 
   # -----------------------------------------------------------------------------------------------------------------------#
   # model Stokes Q, U as a function of 1/lambda^2; solve for p0, pa0, RM
@@ -418,6 +526,56 @@ class SS :
       verticalalignment='bottom', fontsize=0.8*labelsize, bbox=props )
     pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
 
+# Plot PA vs freq, along with fits
+# sigran2 is the uncertainty computed by ran2
+  def plot3( self, fig, Ymax, sigran2, labelsize ) :
+    fmin = numpy.concatenate( (self.f1,self.f2) ).min()
+    fmax = numpy.concatenate( (self.f1,self.f2) ).max()
+    fmin = fmin - 0.1 * (fmax - fmin)
+    fmax = fmax + 0.1 * (fmax - fmin)
+  # Here I am just copying from fitparm2 to save on passing variables
+    freq = 0.5 * (self.f1 + self.f2)
+    x = (.30*.30)/(freq*freq) - (.30*.30)/(self.freq0*self.freq0)
+    y = 0.5 * numpy.arctan2(self.U,self.Q)  # radians
+    # for n in range (0,len(y)) :
+    #   print y[n]
+    #   if (y[n] > 0.) :
+    #     y[n] = y[n] - math.pi
+    variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
+     ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
+    sigma = numpy.sqrt(variance)   # this is an array
+  # ---
+    ymin = 180./math.pi * (y.min() - 0.3*(y.max()-y.min()))
+    ymax = 180./math.pi * (y.max() + 0.3*(y.max()-y.min()))
+
+    fig.axis( [fmin, fmax, ymin, ymax], size=3 )
+    fig.tick_params(axis='both', which='major', labelsize=labelsize )
+    fig.grid( True )
+    fig.errorbar( freq, (180./math.pi)*y, yerr=(180./math.pi)*sigma, fmt='ro', markersize=3 )
+
+    fx = numpy.arange(fmin,fmax,.1)
+    xp = (.30*.30)/(fx*fx) - (.30*.30)/(self.freq0 * self.freq0)
+    yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM)
+    fig.plot( fx, yp, 'r-' )
+
+    yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM-self.RMrms)
+    fig.plot( fx, yp, 'r--' )
+    yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM+self.RMrms)
+    fig.plot( fx, yp, 'r--' )
+
+    if sigran2 != 0. :
+      yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM-sigran2)
+      fig.plot( fx, yp, 'b--' )
+      yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM+sigran2)
+      fig.plot( fx, yp, 'b--' )
+
+    textStr = "pol = %.2f (%.2f)%%\nPA = %.1f (%.1f)\nRM = %.1e (%.1e)" % \
+      ( 100.*self.frac, 100*self.fracrms, self.pa0 ,self.pa0rms, self.RM, self.RMrms)
+    props = dict(boxstyle='round', facecolor='wheat', alpha=1 )	# patch.Patch properties
+    fig.text( .5, .05, textStr, transform=fig.transAxes, horizontalalignment='center', 
+      verticalalignment='bottom', fontsize=0.8*labelsize, bbox=props )
+    pyplot.title( self.selectStr, size=labelsize, y=.9+.05*labelsize/5. )  
+
 # -----------------------------------------------------------------------------------------------------------------------#
 # generate series of SS objects (usually for one source, with different Lks, sometimes for different time intervals)
 # pickle the results and append to outfile
@@ -486,10 +644,11 @@ def findUniqueStrings( ssList ) :
       uniqueStrList.append(ss.selectStr)
   return uniqueStrList
 
-# read in many SS spectra - usually, these were fit with different leakages
+# read in many SS spectra - these may have been fit with different leakages, or perhaps
+#   they cover different time ranges, but frequencies must agree!!
 # for each unique selectStr, concatenate all the I,Q,U,V data into one SS, fit p, PA, frac, RM 
 # the hope was that this global fit would be more accurate than individual fits
-def fitAll( infile, outfile, plot=False ) :
+def fitAll( infile, outfile, FitEverybody=True, plot=False ) :
   ssList = []
   readSSfile( infile, ssList )
   for ss in ssList :
@@ -499,7 +658,7 @@ def fitAll( infile, outfile, plot=False ) :
   for uniqueStr in uniqueList :
     first = True
     for ss in ssList :
-      if ss.selectStr == uniqueStr :
+      if (ss.selectStr == uniqueStr) or FitEverybody :
         if first :
           ssWork = copy.deepcopy(ss)
           first = False
@@ -533,6 +692,8 @@ def fitAll( infile, outfile, plot=False ) :
     fout.close()
     if plot : 
       ssWork.plot()
+    if FitEverybody: 
+      break
 
 # weighted mean and its error (Bevington+Robinson, pp 58-59)
 # .. weighted mean = sum(x_i/sigma_i^2) / sum(1./sigma_i^2)
