@@ -15,6 +15,7 @@ import paPlot
 import pickle
 import datetime
 import scipy.optimize
+import dateutil
 import matplotlib.pyplot as pyplot
 import matplotlib.dates as mpdates
 from matplotlib.backends.backend_pdf import PdfPages
@@ -48,6 +49,25 @@ def getdata2(infile,col) :
   fin.close()
   return[t,s]
 
+
+def getcsvdata(infile,col) :
+  s = []
+  fin = open(infile,"r")
+  for line in fin:
+    if not line.startswith("#"):
+      a = line.split(',')
+      s.append( a[col] )
+      print a[col]
+  fin.close()
+  return s
+  
+# convert from LIST of STRINGS containing dates (e.g., "11/9/2011", "11/11/2011" ...] to list of datetime objects
+def convert( datestrlist ) :
+  out = []
+  for dt in datestrlist :
+    out.append( dateutil.parser.parse( dt ) )
+  return out
+
 def plot( t, s) :
   pyplot.clf()
   pyplot.ion()
@@ -66,7 +86,6 @@ def plot( t, s) :
 
 #  fig.xaxis.set_major_formatter(timeFmt)
 #  fig.draw()
-
 def plot2( t, s) :
   print t,s
   pyplot.clf()
@@ -110,3 +129,54 @@ def plot2( t, s) :
   #fig.xaxis.set_major_formatter(mpdates.AutoDateFormatter())
   pyplot.draw()
 
+def plot3( fig, t, s, serr, ymin, ymax, label=None ) :
+  #pyplot.clf()
+  #pyplot.ion()
+  #fig = pyplot.subplot(2,1,panel)
+  tt = mpdates.date2num(t)
+  print tt.min(), tt.max()
+  ttrange = tt.max() - tt.min()
+  fig.axis( [tt.min() - 0.05*ttrange, tt.max() + .05*ttrange, ymin, ymax], size=3 )
+  fig.xaxis_date()
+  #print x
+  #print s
+  #print serr
+
+  if len(serr) == len(s) :
+    fig.errorbar( tt, s, yerr=serr, fmt='ro', markersize=3 )
+  fig.plot( tt, s, "o" )
+   
+  ##fig.xaxis.set_major_locator(mpdates.DateLocator())
+  fig.xaxis.set_major_locator(mpdates.AutoDateLocator())
+  fig.xaxis.set_major_formatter(mpdates.DateFormatter( "%y%b" ) )
+  fig.grid()
+  if label :
+    pyplot.ylabel( label )
+  #fig.xaxis.set_major_formatter(mpdates.AutoDateFormatter())
+  #pyplot.draw()
+
+def RMplot( infile ) :
+  t = convert( getcsvdata(infile,0))
+  frac = numpy.array( getcsvdata(infile,5),dtype=float)
+  pa = numpy.array( getcsvdata(infile,6),dtype=float)
+  paerr = numpy.array( getcsvdata(infile,7),dtype=float)
+  rm = numpy.array( getcsvdata(infile,8),dtype=float)
+  rmerr = numpy.array( getcsvdata(infile,9),dtype=float)
+  pyplot.clf()
+  pyplot.ion()
+  fig = pyplot.subplot(3,1,1)
+  plot3( fig, t, rm, rmerr, 0, 15, label="RM (x 1.e5)")
+  fig = pyplot.subplot(3,1,2)
+  plot3( fig, t, pa, paerr, -90, 90, label="PA")
+  fracerr = 0.001 * numpy.ones( len(frac) )
+  fig = pyplot.subplot(3,1,3)
+  plot3( fig, t, frac, fracerr, 0, .02, label="frac")
+  pyplot.draw()
+ 
+# convert from dateTime to Julian Day
+# 2011 Jan 1 00:00:00 UT = jd 2455562.50
+def dtToJD( dt ) :
+  dtref = datetime.datetime.strptime("2011-jan-01-00:00","%Y-%b-%d-%H:%M")
+  jdref = 2455562.50
+  delt = dt - dtref
+  return (jdref + delt.days + delt.seconds/86400.)
