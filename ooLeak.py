@@ -22,6 +22,7 @@ import numpy
 import pylab
 import sys
 import RM
+import pickle
 import random
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
@@ -31,22 +32,26 @@ allAnts = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]   # default antList
 
 # ----------------------------------------------------------------------------------------------------- #
 # the Leak object - leakages vs frequency for one antenna
+# when given a standard Lk file, opens it, strips out only the data for specfied antenna
 
 class Leak:
   'leak object with data, legend, color'
  
   def __init__(self, file, antenna, legend, color, marker ) :
     """read leakages from disk file, sort by frequency"""
-    self.file = file
-    self.ant = antenna
+    self.file = file        # name of file in quotes
+    self.ant = antenna      # integer
     self.legend = legend
     self.color = color
     self.marker = marker
-    solin = []
+    self.selectStr = ""
+    solin = []	             # just a sequential list
     self.f1 = []
     self.f2 = []
     self.DR = []
     self.DL = []
+    self.Qpercent = []
+    self.Upercent = []
     self.lineStr = []
     self.avgchan = "0"
     try :
@@ -60,6 +65,8 @@ class Leak:
         a = line.split()
         if (line.startswith("# legend")) and (len(self.legend)==0) :
           self.legend = a[3]
+        if (line.startswith("# selectStr")) :
+          self.selectStr = a[3]
         if line.startswith("# avgchan") :
           self.avgchan = a[3]
         if (len(a) > 9) and (line.startswith("C")) :		# new style Lk table, includes all antennas
@@ -69,7 +76,9 @@ class Leak:
             f2 = max(float(a[1]),float(a[2]))
             DR = float(a[3]) + 1j * float(a[4])
             DL = float(a[5]) + 1j * float(a[6])
-            solin.append( [f1,f2,DR,DL,a[9]] )
+            Qpercent = float(a[7])
+            Upercent = float(a[8])
+            solin.append( [f1,f2,DR,DL,a[9],Qpercent,Upercent] )
         if (not line.startswith("#")) and (len(a) > 10) :       # old style lk table, one antenna only
             f1 = min(float(a[0]),float(a[1]))
             f2 = max(float(a[0]),float(a[1]))
@@ -77,8 +86,9 @@ class Leak:
             DL = float(a[8]) + 1j * float(a[9])
             chanfacts = a[12].split(",")
             self.avgchan = chanfacts[3]
-            solin.append( [f1,f2,DR,DL,a[12]] )
+            solin.append( [f1,f2,DR,DL,a[12]],0.,0. )
       fin.close()
+
     # it would be smarter to store values as self.sol = sorted..., but I am temporarily breaking
     #   up everything into f1,f2,DR,DL for compatibility with existing routines
       for s in sorted( solin, key = lambda(x) : x[1] ):	# store solutions in frequency order
@@ -87,6 +97,8 @@ class Leak:
         self.DR.append( s[2] )
         self.DL.append( s[3] )
         self.lineStr.append( s[4] )
+        self.Qpercent.append( s[5] )
+        self.Upercent.append( s[6] )
    
   def list(self) :
     return [self.ant, self.file, self.legend]
@@ -516,3 +528,30 @@ def cmpComplex( LkList, f1=0., f2=300. ) :
   p = LkSet( LkList )
   p.complexCmp( fmin=f1, fmax=f2, amax=.05, nrows=4, ncols=4) 
 
+def makeSS( LkFile, SSfile ) :
+  oneLeak = Leak( LkFile, 1, "", "black", "o")    # dummy color and markers are required, sadly
+  ss = RM.SS()	                                  # empty Stokes Spectrum
+  ss.LkFile = LkFile
+  ss.selectStr = oneLeak.selectStr 
+  ss.visFile = "from LkFile"
+  ss.UT = 0.
+  ss.parang = 0.
+  ss.HA = 0.
+  nfreqs = len(oneLeak.f1)
+  ss.strList = oneLeak.lineStr
+  ss.f1 = numpy.array( oneLeak.f1 )
+  ss.f2 = numpy.array( oneLeak.f2 )
+  ss.I = 100.*numpy.ones( nfreqs )
+  ss.rmsI = numpy.ones( nfreqs )
+  ss.Q = numpy.array( oneLeak.Qpercent )
+  ss.rmsQ = 0.1 * numpy.ones( nfreqs )
+  ss.U = numpy.array( oneLeak.Upercent )
+  ss.rmsU = 0.1 * numpy.ones( nfreqs )
+  ss.V = numpy.zeros( nfreqs )
+  ss.rmsV = numpy.zeros( nfreqs )
+  ss.fitPARM( 226. )
+  ss.plot()
+#  ss.dump( None )
+  fout = open( SSfile, "ab" )
+  pickle.dump( ss, fout )
+  fout.close()
