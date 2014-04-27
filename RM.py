@@ -83,16 +83,17 @@ def mylsq( x, y, sigma ) :
 # time average selected data from visFile into 'sstmp', with options=nopol
 # this saves time in creating a multichannel SS object because input file
 #    is re-read for every LkFile channel interval
-#def avgtoSStmp( visFile, selectStr ) :
-#  'time-average from visFile to sstmp over interval specified by selectStr'
-#  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
-#     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-#  time.sleep(1)
-#  p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol interval=10000' \
-#     % (visFile, selectStr) ) ), \
-#     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-#  result = p.communicate()[0]
-#  print result
+
+def avgtoSStmp( visFile, selectStr ) :
+  'time-average from visFile to sstmp over interval specified by selectStr'
+  p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  time.sleep(1)
+  p= subprocess.Popen( ( shlex.split('uvaver vis=%s select=%s out=sstmp options=nopol interval=10000' \
+     % (visFile, selectStr) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  result = p.communicate()[0]
+  print result
 
 # an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and their uncertainties vs freq
 #   for a particular source over a particular time range
@@ -128,6 +129,8 @@ class SS :
     self.visFile = visFile        
     self.selectStr = selectStr
     self.LkFile = LkFile
+
+  # generally preavg=None, meaning that data already are copied to sstmp 
     if preavg == "avg" :
       print "Preaveraging to create temporary file sstmp" 
       avgtoSStmp( visFile, selectStr ) 
@@ -402,6 +405,8 @@ class SS :
 
   def fitPARM( self, freq0 ) :
     print "entering fitPARM"
+    print self.f1
+    print self.f2
     freq = 0.5 * (self.f1 + self.f2)
     lambdasq = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
     x = numpy.concatenate( (lambdasq,lambdasq) )
@@ -582,8 +587,9 @@ class SS :
 # renamed - was makeTable
 # change: LkListFile can be either the name of a single LkFile, or a list of LkFile names
 
-def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, schedFile=None, plot=False ) :
-  # Generate list of leakages
+def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, schedFile=None, plot=False, preavg='copy' ) :
+
+  # --- Generate list of leakages --- #
   LkList = []
   first = True
   fin = open( LkListFile, "r" )
@@ -599,7 +605,8 @@ def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, 
           LkList.append( a[0] )
   fin.close()
   print "LkList = ", LkList
-  # Generate list of selectStrings (time ranges, usually)
+
+  # --- Generate list of selectStrings (time ranges, usually) --- #
   if schedFile :
     print "making list according to vlbi schedFile %s" % schedFile 
     selectList = paPlot.makeSelectList2( schedFile, srcName )
@@ -607,18 +614,27 @@ def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, 
     print "include up to %d integrations; no gaps > %.1f minutes" % (nint, maxgap)
     selectList = paPlot.makeSelectList( visFile, srcName, nint, maxgap )
   print "selectList = ",selectList
-  # Generate SS object for each time range, each leakage; append to outfile 
+
+  # --- Generate SS object for each time range, each leakage; append to outfile --- #
   nlist = len(selectList)
   for n, selectString in enumerate(selectList) :
     if len( extra ) > 0 :
       selectString = selectString + "," + extra
     print " "
     print "%d/%d  %s" % (n+1,nlist,selectString)
-    print "Copying (but not averaging) selected data to temporary file sstmp"
-    leakSolve.copytoSStmp( visFile, selectString ) 
+
+  # copy relevant data to sstmp here in case there are multiple leakages
+    if (preavg == 'avg') :
+      print "Warning (not recommended): averaging selected data to temporary file sstmp"
+      avgtoSStmp( visFile, selectString ) 
+    else :
+      print "Copying (but not averaging) selected data to temporary file sstmp"
+      leakSolve.copytoSStmp( visFile, selectString )  
+
+  # now process data with each leakage in list
     for Lk in LkList :
       ss = SS()
-      if ss.make( "sstmp", selectString, Lk, preavg=None ) :		# returns False if it fails
+      if ss.make( "sstmp", selectString, Lk, preavg=None ) :	# None -> already copied to sstmp
         fout = open(outfile,"ab")
         pickle.dump( ss, fout )
         fout.close()
@@ -726,7 +742,7 @@ def summarizeFits( infile, outfile, plot=False ) :
       if ss.selectStr == uniqueStr :
         if first :
           fout.write("\n#> %s   avgUT = %.3f\n" % (uniqueStr,ss.UT))
-          fout.write("#     S    sigma   poli  sigma     PA  sigma      RM  sigma   frac  sigma   V sigma  LkFile\n")
+          fout.write("#     S    sigma   poli  sigma     PA  sigma      RM  sigma   frac  sigma   Vfrac sigma  LkFile\n")
           first = False
         [Iavg,Istd] = weightedMeanAndError( ss.I, ss.rmsI )
         [Vavg,Vstd] = weightedMeanAndError( ss.V, ss.rmsV )
@@ -740,9 +756,11 @@ def summarizeFits( infile, outfile, plot=False ) :
         pa.append(ss.pa0)
         rm.append(ss.RM)
         frac.append(ss.frac)
+        Vfrac = Vavg/Iavg
+        Vfracstd = Vfrac * math.sqrt( pow(Istd/Iavg,2.) + pow(Vstd/Vavg,2.) )
         fout.write(" %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  %s \n" % \
           ( Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
-          ss.frac, ss.fracrms, Vavg, Vstd, ss.LkFile) )
+          ss.frac, ss.fracrms, Vfrac, Vfracstd, ss.LkFile) )
   # Print averages and rms; here the rms is from the dispersion in the means!
     fout.write("#* %6.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  AVG\n" % \
       ( numpy.mean(I), numpy.std(I), numpy.mean(p0), numpy.std(p0), numpy.mean(pa), numpy.std(pa), \
