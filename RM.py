@@ -20,9 +20,8 @@ from mpl_toolkits.mplot3d import Axes3D
 
 
      
-# Extract Stokes (I,Q,U, or V) amplitude and rms from one line of uvflux output 
 def parseLine( line ) :
-  #print line
+  '''Extract Stokes (I,Q,U,or V) amplitude and rms from one line of uvflux output''' 
   a = line.split()
   if (len(a) == 9) :
     src = a[0]
@@ -36,8 +35,9 @@ def parseLine( line ) :
     rms = float(a[4])/math.sqrt(ncorrs)
   return [ src, stokes, rms, ncorrs ]
 
-# Run uvflux on selected data; return I, Q, U, V, and rms errors
+
 def getStokes2( infile, selectString, lineString ) :
+  '''Run uvflux on selected data; return I,Q,U,V and rms uncertainties'''
   p= subprocess.Popen( ( shlex.split('uvflux vis=%s select=%s line=%s stokes=I,Q,U,V' \
      % (infile, selectString, lineString) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
@@ -55,8 +55,10 @@ def getStokes2( infile, selectString, lineString ) :
   #print "\n%7.4f %5.4f  %6.4f %5.4f  %6.4f %5.4f  %6.4f %5.4f" % (I, rmsI, Q, rmsQ, U, rmsU, V, rmsV) 
   return [ I, rmsI, Q, rmsQ, U, rmsU, V, rmsV ]
 
-# makes list of lineStrings in LkFile
+
+# ?? shouldn't I read leak object and work with that ?? #
 def makeStrList( LkFile ) :
+  '''make list of lineStrings in LkFile'''
   fin = open( LkFile, "r" )
   strList = []
   for line in fin :
@@ -66,6 +68,7 @@ def makeStrList( LkFile ) :
         strList.append( a[9] )
   fin.close()
   return strList
+
 
 # out of frustration, write my own least squares routine for a + bx (Numerical Recipes pp. 507-508)
 def mylsq( x, y, sigma ) :
@@ -80,12 +83,12 @@ def mylsq( x, y, sigma ) :
    sigmab = math.sqrt( 1./Stt )
    return [a,b,sigmaa,sigmab]
 
+
 # time average selected data from visFile into 'sstmp', with options=nopol
 # this saves time in creating a multichannel SS object because input file
 #    is re-read for every LkFile channel interval
-
 def avgtoSStmp( visFile, selectStr ) :
-  'time-average from visFile to sstmp over interval specified by selectStr'
+  '''time-average from visFile to sstmp over interval specified by selectStr'''
   p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   time.sleep(1)
@@ -94,6 +97,7 @@ def avgtoSStmp( visFile, selectStr ) :
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   result = p.communicate()[0]
   print result
+
 
 # an SS ("StokeSpectrum") object is a collection of I,Q,U,V measurements and their uncertainties vs freq
 #   for a particular source over a particular time range
@@ -125,7 +129,7 @@ class SS :
     self.freq0 = 0.
 
   def make( self, visFile, selectStr, LkFile, preavg="copy", f0=226. ) :
-    'generate multichannel SS object from visibility data using leakages from LkFile'
+    '''generate multichannel SS object from visibility data using leakages from LkFile'''
     self.visFile = visFile        
     self.selectStr = selectStr
     self.LkFile = LkFile
@@ -148,7 +152,6 @@ class SS :
     if not vis["chfreq"] :						# this checks for empty list
       print "ABORTING THIS INTERVAL: sstmp is an empty file - perhaps all data are flagged"
       return False
-
   # process data in sstmp one channel range at a time
     self.strList = makeStrList( LkFile )	    # make list of available channel ranges in LkFile
     frq1 = []
@@ -190,7 +193,8 @@ class SS :
     self.V = numpy.array(Stokes).transpose()[6]
     self.rmsV = numpy.array(Stokes).transpose()[7]
     self.UT, self.parang, self.HA = paPlot.getUTPAHA( self.visFile, self.selectStr )
-    self.fitPARM( f0 )                 # fits p0, PA, RM, frac
+    self.fitPARM( f0, type="PA" )                 # fits p0, PA, RM, frac
+    self.fitPARM( f0, type="QU" )                 # fits p0, PA, RM, frac
     return True
 
   # -----------------------------------------------------------------------------------------------------------------------#
@@ -221,6 +225,20 @@ class SS :
       fout.write( "# ----------------------------\n" )       # this delimiter needed by readAll
       fout.close()
 
+
+
+  # ---------------------------------------------------------------------------------------------------------#
+  # model Stokes Q, U as a function of 1/lambda^2; solve for p0, pa0, RM
+  # ... x = c^2/freq^2 - c^2/freq0^2, in m^2; each x given twice, once for Q, once for U
+  # ... p0 is polarized intensity in Jy; a real number
+  # ... pa0 is the position angle at the reference wavelength x=0, in radians; real number
+  # ... rm is the rotation measure in radians/m^2; real number
+  def func( self, x, p0, pa0, rm ) :
+    xhalf = x[0 : len(x)/2]
+    qmodel = p0 * numpy.cos(2 * (pa0 + rm*xhalf))
+    umodel = p0 * numpy.sin(2 * (pa0 + rm*xhalf))
+    return numpy.concatenate( (qmodel,umodel) )
+
   # ----------------------------------------------------------------------------------------- #
   # model pa as a function of 1/lambda^2
   # ... x = c^2/freq^2 - c^2/freq0^2, in m^2
@@ -230,21 +248,12 @@ class SS :
     chimodel = pa0 + rm*x 
     return chimodel
 
-  def fitPARM2( self, freq0, outfile="fitPARM2.dat" ) :
-    print "entering fitPARM2"
+
+  def fitPARM( self, freq0, type="QU" ) :
+    print "entering fitPARM"
     freq = 0.5 * (self.f1 + self.f2)
-    x = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
-    y = 0.5 * numpy.arctan2(self.U,self.Q)
-    # this is here just for 0359+509 - should comment out later
-    # for n in range (0,len(y)) :
-    #   print y[n]
-    #   if (y[n] > 0.) :
-    #     y[n] = y[n] - math.pi
-    variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
-     ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
-    sigma = numpy.sqrt(variance)   # this is an array
-    # for now, try sigma=1
-    #sigma = numpy.ones( len(variance) )
+    lambdasq = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
+
     Qavg = numpy.average( self.Q )
     Uavg = numpy.average( self.U )
     p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
@@ -256,27 +265,60 @@ class SS :
     
     # --- fit data if there are measurements at at least 2 freqs --- #
     if len(self.f1) > 1 :
-      popt,pcov = scipy.optimize.curve_fit( self.func2, x, y, p0=[pa0,0.], sigma=sigma )
-      pa0,rm = popt
-      # print "pa0, rm =",pa0, rm
-      chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm))/sigma, 2.))
-      print "chisq = %.2e" % chisq
-      try :
-        pa0rms = math.sqrt(pcov[0][0])
-        rmrms = math.sqrt(pcov[1][1]) 
-      except :
-        pa0rms = rmrms = 0.
-      # recompute pa0rms and rmrms by scaling, per p. 507 of Numerical Recipes
-      #print "# pa0, rm uncertainties BEFORE scaling: ",pa0rms,rmrms
-      #scaleFactor =  math.sqrt(chisq/(len(sigma)-2.))
-      #pa0rms = pa0rms * scaleFactor
-      #rmrms = rmrms * scaleFactor
-      #print "# pa0, rm uncertainties AFTER scaling: ",pa0rms,rmrms
-      # sigran2 = self.ran2( x, y, pa0, rm, 4.*sigma )  
-      sigran2 = 0.
+
+      if type == "QU" :
+        x = numpy.concatenate( (lambdasq,lambdasq) )
+        y = numpy.concatenate( (self.Q,self.U) )
+        sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
+        popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
+        if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
+          popt[0] = -1. * popt[0]
+          popt[1] = popt[1] + math.pi/2.
+        p0,pa0,rm = popt
+        chi = (y - self.func( x, p0, pa0, rm))/sigma
+        chisq = (chi**2).sum()
+        print "chisq = %.2e" % chisq
+        dof = len(x) - len(popt)
+        # pcov = pcov/(chisq/dof)  - see scipy thread by Christoph Deil
+        # self.ran( x, y, p0, p0rms, pa0, pa0rms, rm, rmrms, sigma )  
+        try :
+          p0rms = math.sqrt(pcov[0][0])
+          pa0rms = math.sqrt(pcov[1][1])
+          rmrms = math.sqrt(pcov[2][2]) 
+        except :
+          p0rms = pa0rms = rmrms = 0.
+
+      else :     # fit PA
+        x = lambdasq
+        y = 0.5 * numpy.arctan2( self.U, self.Q )
+        variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
+           ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
+        sigma = numpy.sqrt(variance)   # this is an array
+        if type == "PA" :    # use scipy curve_fit
+          popt,pcov = scipy.optimize.curve_fit( self.func2, x, y, p0=[pa0,0.], sigma=sigma )
+          pa0,rm = popt
+          try :
+            pa0rms = math.sqrt(pcov[0][0])
+            rmrms = math.sqrt(pcov[1][1])
+          except :
+            pa0rms = rmrms = 0.
+        elif type == "MINE" :    # use my own home-cooked least squares
+            [pa0,rm,pa0rms,rmrms] = mylsq( x, y, sigma )
+
+        chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm))/sigma, 2.))
+        print "chisq = %.2e" % chisq
+        # recompute pa0rms and rmrms by scaling, per p. 507 of Numerical Recipes
+        #print "# pa0, rm uncertainties BEFORE scaling: ",pa0rms,rmrms
+        #scaleFactor =  math.sqrt(chisq/(len(sigma)-2.))
+        #pa0rms = pa0rms * scaleFactor
+        #rmrms = rmrms * scaleFactor
+        #print "# pa0, rm uncertainties AFTER scaling: ",pa0rms,rmrms
+        # sigran2 = self.ran2( x, y, pa0, rm, 4.*sigma )  
+        sigran2 = 0.
 
     # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
     else :
+      p0rms = ( self.Q * self.rmsQ + self.rmsU * self.U)/p0
       pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
         / ( pow(self.Q,2.) + pow(self.U,2.) )
       rmrms = 0.
@@ -295,77 +337,31 @@ class SS :
     print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
     print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
     print ""
-    pyplot.clf()
-    pyplot.ion()
-    Ymax = 0.
-    fig = pyplot.subplot(1,1,1)
-    self.plot3( fig, Ymax, sigran2, labelsize=12 ) 
-    pyplot.draw()                 # plots and continues...
+    if type == "PA" :
+      pyplot.clf()
+      pyplot.ion()
+      Ymax = 0.
+      fig = pyplot.subplot(1,1,1)
+      self.plot3( fig, Ymax, sigran2, labelsize=12 )
+      pyplot.draw()                 
+      time.sleep(3) 
+      
 
 
-# use my own stupid least squares fit to a + bx
-  def fitPARM3( self, freq0 ) :
-    print "entering fitPARM3"
-    freq = 0.5 * (self.f1 + self.f2)
-    x = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
-    y = 0.5 * numpy.arctan2(self.U,self.Q)
-    variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
-     ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
-    sigma = numpy.sqrt(variance)   # this is an array
-    # for now, try sigma=1
-    #sigma = numpy.ones( len(variance) )
-    sigma = 4.*sigma
-    Qavg = numpy.average( self.Q )
-    Uavg = numpy.average( self.U )
-    p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
-    # is the following formula correct?
-    p0rms =  numpy.average( numpy.sqrt(pow(self.Q*self.rmsQ,2.) + pow(self.rmsU*self.U,2.)))/p0
-    
-    # --- fit data if there are measurements at at least 2 freqs --- #
-    if len(self.f1) > 1 :
-      [pa0,rm,pa0rms,rmrms] = mylsq( x, y, sigma )
-      chisq = numpy.sum(pow( (y-self.func2( x, pa0, rm))/sigma, 2.))
-      print "chisq = %.2e" % chisq
-      # recompute pa0rms and rmrms by scaling, per p. 507 of Numerical Recipes
-      # print "# pa0, rm uncertainties BEFORE scaling: ",pa0rms,rmrms
-      # scaleFactor =  math.sqrt(chisq/(len(sigma)-2.))
-      # pa0rms = pa0rms * scaleFactor
-      # rmrms = rmrms * scaleFactor
-      # print "# pa0, rm uncertainties AFTER scaling: ",pa0rms,rmrms
-      # sigran2 = self.ran2( x, y, pa0, rm, 4.*sigma )  
-      sigran2 = 0.
+  # returns changes that double chisq
+  # x and y are the independent and dependent variables
+  # p0, pa0, rm are the best fit values
+  def ran( self, x, y, p0, p0rms, pa0, pa0rms, rm, rmrms, sigma ) : 
+    for p0test in numpy.arange( p0-3.*p0rms, p0+4*p0rms, p0rms) :
+      for pa0test in numpy.arange( pa0-3.*pa0rms, pa0+4.*pa0rms, pa0rms ) :
+        for rmtest in numpy.arange( rm-3.*rmrms, rm+4.*rmrms, rmrms ) :
+          chi = (y - self.func( x, p0test, pa0test, rmtest))/sigma
+          chisq = (chi**2).sum()
+          print " %5.3f %5.1f %7.2f %9.1f" % (p0test,pa0test*180./math.pi,rmtest/1.e5,chisq)
 
-    # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
-    else :
-      pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
-        / ( pow(self.Q,2.) + pow(self.U,2.) )
-      rmrms = 0.
-      freq0 = freq
-    
-    self.p0 = p0
-    self.p0rms = p0rms
-    self.pa0 = pa0 * 180./math.pi
-    self.pa0rms = pa0rms * 180./math.pi
-    self.RM = rm
-    self.RMrms = rmrms
-    self.freq0 = freq0
-    self.calcFrac()                            # fills in fractional pol
-    print "# p0 = %.3f (%.3f)" % (self.p0, self.p0rms)
-    print "# frac = %.3f (%.3f)" % (self.frac, self.fracrms)
-    print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
-    print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
-    print ""
-    pyplot.clf()
-    pyplot.ion()
-    Ymax = 0.
-    fig = pyplot.subplot(1,1,1)
-    self.plot3( fig, Ymax, sigran2, labelsize=12 ) 
-    pyplot.draw()                 # plots and continues...
-
-# returns change in RM that doubles chisq
-# x and y are the independent and dependent variables
-# p0, pa0, rm are the best fit values
-
+  # returns change in RM that doubles chisq
+  # x and y are the independent and dependent variables
+  # p0, pa0, rm are the best fit values
   def ran2( self, x, y, pa0, rm, sigma ) : 
     #print "ran2 RM = ",rm
     print "ran2 sigma =",sigma
@@ -389,90 +385,6 @@ class SS :
       
     print "# RAN2 result: RM = %.2e (%.2e  %.2e)" % (rm,deltaminus,deltaplus)
     return deltaplus
-
-  # -----------------------------------------------------------------------------------------------------------------------#
-  # model Stokes Q, U as a function of 1/lambda^2; solve for p0, pa0, RM
-  # ... x = c^2/freq^2 - c^2/freq0^2, in m^2; each x given twice, once for Q, once for U
-  # ... p0 is polarized intensity in Jy; a real number
-  # ... pa0 is the position angle at the reference wavelength x=0, in radians; real number
-  # ... rm is the rotation measure in radians/m^2; real number
-
-  def func( self, x, p0, pa0, rm ) :
-    xhalf = x[0 : len(x)/2]
-    qmodel = p0 * numpy.cos(2 * (pa0 + rm*xhalf))
-    umodel = p0 * numpy.sin(2 * (pa0 + rm*xhalf))
-    return numpy.concatenate( (qmodel,umodel) )
-
-  def fitPARM( self, freq0 ) :
-    print "entering fitPARM"
-    print self.f1
-    print self.f2
-    freq = 0.5 * (self.f1 + self.f2)
-    lambdasq = (.30*.30)/(freq*freq) - (.30*.30)/(freq0*freq0)
-    x = numpy.concatenate( (lambdasq,lambdasq) )
-    y = numpy.concatenate( (self.Q,self.U) )
-    sigma = numpy.concatenate( (self.rmsQ,self.rmsU) )
-    Qavg = numpy.average( self.Q )
-    Uavg = numpy.average( self.U )
-    p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
-    pa0 = 0.5 * math.atan2(Uavg,Qavg)
-    rm = 0.
-    print "# initial guess: p0 = %.3f, pa0 = %.2f, RM = %.2e." % (p0, pa0 * 180./math.pi, rm )
-    
-    # --- fit data if there are measurements at at least 2 freqs --- #
-    if len(self.f1) > 1 :
-      popt,pcov = scipy.optimize.curve_fit( self.func, x, y, p0=[p0,pa0,0.], sigma=sigma  )
-      if popt[0] < 0. :                 # if fit amplitude is negative, add 180 to 2 * PA
-        popt[0] = -1. * popt[0]
-        popt[1] = popt[1] + math.pi/2.
-      p0,pa0,rm = popt
-      # compute chisq and scale covariances to get 'true' error estimates - see scipy thread
-      #     by Christoph Deil; makes errors unreasonably small, so I am dropping it
-      chi = (y - self.func( x, p0, pa0, rm))/sigma
-      chisq = (chi**2).sum()
-      print "chisq = %.2e" % chisq
-      dof = len(x) - len(popt)
-      #  pcov = pcov/(chisq/dof)
-      try :
-        p0rms = math.sqrt(pcov[0][0])
-        pa0rms = math.sqrt(pcov[1][1])
-        rmrms = math.sqrt(pcov[2][2]) 
-      except :
-        p0rms = pa0rms = rmrms = 0.
-      #self.ran( x, y, p0, p0rms, pa0, pa0rms, rm, rmrms, sigma )  
-
-    # --- for DSB data, one freq only, do not fit RM, estimate errors from Qrms and Urms ---
-    else :
-      p0rms = ( self.Q * self.rmsQ + self.rmsU * self.U)/p0
-      pa0rms = 0.5 * math.sqrt( pow(self.Q*self.rmsU, 2.) + pow(self.U*self.rmsQ, 2.)) \
-        / ( pow(self.Q,2.) + pow(self.U,2.) )
-      rmrms = 0.
-      freq0 = freq
-    
-    self.p0 = p0
-    self.p0rms = p0rms
-    self.pa0 = pa0 * 180./math.pi
-    self.pa0rms = pa0rms * 180./math.pi
-    self.RM = rm
-    self.RMrms = rmrms
-    self.freq0 = freq0
-    self.calcFrac()                            # fills in fractional pol
-    print "# p0 = %.3f (%.3f)" % (self.p0, self.p0rms)
-    print "# frac = %.3f (%.3f)" % (self.frac, self.fracrms)
-    print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
-    print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
-    print ""
-
-# returns changes that double chisq
-# x and y are the independent and dependent variables
-# p0, pa0, rm are the best fit values
-  def ran( self, x, y, p0, p0rms, pa0, pa0rms, rm, rmrms, sigma ) : 
-    for p0test in numpy.arange( p0-3.*p0rms, p0+4*p0rms, p0rms) :
-      for pa0test in numpy.arange( pa0-3.*pa0rms, pa0+4.*pa0rms, pa0rms ) :
-        for rmtest in numpy.arange( rm-3.*rmrms, rm+4.*rmrms, rmrms ) :
-          chi = (y - self.func( x, p0test, pa0test, rmtest))/sigma
-          chisq = (chi**2).sum()
-          print " %5.3f %5.1f %7.2f %9.1f" % (p0test,pa0test*180./math.pi,rmtest/1.e5,chisq)
 
   def calcFrac( self ) :
     'compute fractional polarization and uncertainty'
