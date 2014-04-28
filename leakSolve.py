@@ -138,6 +138,33 @@ def runGpcal( vis, lineString='' ) :
         DL[ant-1] = float(line[32:38]) + 1.j * float(line[39:45])
   return [ percentQ, percentU, DR, DL ]
 
+def dumpGainRatio( visFile ) :
+  '''Compute avg R/L gain ratio for each antenna in file vis'''
+  print "dump gain ratio from file %s" % visFile
+  g = []                 # accumulate gains in 1-D list of floats
+  n = 0                  # number of time intervals
+  RLratio = numpy.zeros(15)
+  p= subprocess.Popen( ( shlex.split('gpplt vis=%s log=tmpGain' % visFile ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  result = p.communicate()[0]
+  print result
+  fin = open( 'tmpGain', 'r' )
+  for line in fin :
+    if (len(line) > 0) and (not line.startswith("#")) :
+      a = line.split()
+      if len(a) == 8 :  # begins new record
+        n = n + 1       # increment line number
+        del a[0:2]      # discard daynumber and UT
+      for i in range(0,len(a)) :
+        g.append( float( a[i] ) )
+  gains = numpy.average( numpy.reshape( numpy.array(g), [n,-1] ), axis=0 )
+  gRL = numpy.reshape( gains, [-1, 2] )
+  for i in range(0,15) :
+    if ( gRL[i][1] > 0. ) :
+      RLratio[i] = gRL[i][0]/gRL[i][1]
+  print RLratio 
+  return RLratio
+  
 # --- particularly useful if averaging over multiple correlator windows --- #
 def fminfmax( vis, ch1, ch2 ) :
   """find min and max freqs in channel range (ch1,ch2); uses vis[chfreq] and vis[chwidth] arrays"""
@@ -159,13 +186,14 @@ def addLk( vis, ch1, navg ) :
   [fstart,fstop] = fminfmax( vis, ch1, ch2 )
   print "%s   %8.3f %8.3f" % (lineString, fstart, fstop)
   [ percentQ, percentU, DR, DL ] = runGpcal( vis, lineString=lineString )
+  RLgainRatio = dumpGainRatio( vis["fileName"] )
   filename = vis["LkFile"]
   fout = open( filename, "a" )
   fout.write("#\n")
   for nant in range(0,15) :
-    fout.write("C%02d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f    %s\n" % \
+    fout.write("C%02d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f   %s   %5.3f\n" % \
        ( nant+1, fstart, fstop, DR[nant].real, DR[nant].imag, DL[nant].real, \
-       DL[nant].imag, percentQ, percentU, lineString) )
+       DL[nant].imag, percentQ, percentU, lineString, RLgainRatio[nant]) )
   fout.close()
 
 def makeLk( visin ) :
