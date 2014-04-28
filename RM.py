@@ -56,6 +56,20 @@ def getStokes2( infile, selectString, lineString ) :
   return [ I, rmsI, Q, rmsQ, U, rmsU, V, rmsV ]
 
 
+# this is a test routine that will run mfcal on particular channel range before I copy
+# data to sstmp; the goal is to see if changing the gains affects Q and U
+def setGains( infile, selectString, lineString ) :
+  #print "mfcal vis=%s select=%s line=%s refant=8 interval=5" % (infile,selectString,lineString)
+  #p= subprocess.Popen( ( shlex.split('mfcal vis=%s select=%s line=%s refant=8 interval=5 flux=8.3' \
+  #   % (infile, selectString, lineString) ) ), \
+  #   stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  print "gpcal vis=%s select=%s line=%s refant=8 interval=5 options=circular,qusolve,noxy,nopass" % (infile,selectString,lineString)
+  p= subprocess.Popen( ( shlex.split('gpcal vis=%s select=%s line=%s refant=8 interval=5 flux=8.3 options=circular,qusolve,noxy,nopass' \
+     % (infile, selectString, lineString) ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  result = p.communicate()[0]
+  print result
+
 # ?? shouldn't I read leak object and work with that ?? #
 def makeStrList( LkFile ) :
   '''make list of lineStrings in LkFile'''
@@ -124,15 +138,17 @@ class SS :
     self.fracrms = 0.
     self.pa0 = 0.
     self.pa0rms = 0.
+    self.f0 = 0.         # freq for pa0 fit
     self.RM = 0. 
     self.RMrms = 0.
     self.freq0 = 0.
 
-  def make( self, visFile, selectStr, LkFile, preavg="copy", f0=226. ) :
+  def make( self, visFile, selectStr, LkFile, preavg="copy", f0=225. ) :
     '''generate multichannel SS object from visibility data using leakages from LkFile'''
     self.visFile = visFile        
     self.selectStr = selectStr
     self.LkFile = LkFile
+    self.f0 = f0
 
   # generally preavg=None, meaning that data already are copied to sstmp 
     if preavg == "avg" :
@@ -152,12 +168,15 @@ class SS :
     if not vis["chfreq"] :						# this checks for empty list
       print "ABORTING THIS INTERVAL: sstmp is an empty file - perhaps all data are flagged"
       return False
+
   # process data in sstmp one channel range at a time
     self.strList = makeStrList( LkFile )	    # make list of available channel ranges in LkFile
     frq1 = []
     frq2 = []
     Stokes = []									# temporary work area
     for lineStr in self.strList :
+      #setGains( visFile, selectStr, lineStr )   # insert amplitude gains for this section
+      # leakSolve.copytoSStmp( visFile, selectStr ) 
       [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, "sstmp" )
          # ... copy leakage for one lineStr from LkFile to sstmp
 
@@ -209,6 +228,7 @@ class SS :
     outStr = outStr + "# p0          : %.4f  ( %.4f ) Jy\n" % (self.p0, self.p0rms) 
     outStr = outStr + "# frac        : %.3f  ( %.3f ) \n" % (self.frac, self.fracrms) 
     outStr = outStr + "# PAfit       : %.2f  ( %.2f ) deg\n" % (self.pa0,self.pa0rms)     
+    #outStr = outStr + "# f0          : %.0f  GHz\n" % (self.f0)
     outStr = outStr + "# RMfit       : %.4f  ( %.4f ) x 1.e5 rad/m^2\n" % (self.RM/1.e5, self.RMrms/1.e5) 
     outStr = outStr + "# PAfreq0     : %.3f GHz\n" % self.freq0 
     outStr = outStr + \
@@ -612,7 +632,7 @@ def fitAll( infile, outfile, FitEverybody=True, plot=False ) :
           ssWork.V = tmp
           tmp = numpy.append( ssWork.rmsV, ss.rmsV )
           ssWork.rmsV = tmp
-    f0 = 226.
+    f0 = 225.
     ssWork.fitPARM( f0 )                 # fits p0, PA, RM, frac
     ssWork.LkFile = "various"
     fout = open(outfile,"ab")
