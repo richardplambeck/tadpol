@@ -59,14 +59,14 @@ def getStokes2( infile, selectString, lineString ) :
 # this is a test routine that will run mfcal on particular channel range before I copy
 # data to sstmp; the goal is to see if changing the gains affects Q and U
 def setGains( infile, selectString, lineString ) :
-  #print "mfcal vis=%s select=%s line=%s refant=8 interval=5" % (infile,selectString,lineString)
-  #p= subprocess.Popen( ( shlex.split('mfcal vis=%s select=%s line=%s refant=8 interval=5 flux=8.3' \
-  #   % (infile, selectString, lineString) ) ), \
-  #   stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-  print "gpcal vis=%s select=%s line=%s refant=8 interval=5 options=circular,qusolve,noxy,nopass" % (infile,selectString,lineString)
-  p= subprocess.Popen( ( shlex.split('gpcal vis=%s select=%s line=%s refant=8 interval=5 flux=8.3 options=circular,qusolve,noxy,nopass' \
+  print "mfcal vis=%s select=%s line=%s refant=8 interval=5" % (infile,selectString,lineString)
+  p= subprocess.Popen( ( shlex.split('mfcal vis=%s select=%s line=%s refant=8 interval=5' \
      % (infile, selectString, lineString) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  # print "gpcal vis=%s select=%s line=%s refant=8 interval=5 options=circular,qusolve,noxy,nopass" % (infile,selectString,lineString)
+  # p= subprocess.Popen( ( shlex.split('gpcal vis=%s select=%s line=%s refant=8 interval=5 flux=8.3 options=circular,qusolve,noxy,nopass' \
+  #    % (infile, selectString, lineString) ) ), \
+  #    stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
   result = p.communicate()[0]
   print result
 
@@ -175,7 +175,7 @@ class SS :
     frq2 = []
     Stokes = []									# temporary work area
     for lineStr in self.strList :
-      #setGains( visFile, selectStr, lineStr )   # insert amplitude gains for this section
+      # setGains( visFile, selectStr, lineStr )   # insert amplitude gains for this section
       # leakSolve.copytoSStmp( visFile, selectStr ) 
       [fstartLeak,fstopLeak] = leakSolve.restoreLk( LkFile, lineStr, "sstmp" )
          # ... copy leakage for one lineStr from LkFile to sstmp
@@ -663,18 +663,22 @@ def summarizeFits( infile, outfile, plot=False ) :
   # Make list of unique selectStr - may be different sources, time ranges, etc.
   uniqueList = findUniqueStrings( ssList )
   for uniqueStr in uniqueList :
+    src = uniqueStr[ uniqueStr.index('source')+7 : ]
+    src = src[ 0 : src.index(')') ]
+    print " SRC = ",src
     I = []
     V = []
     p0 = []
     pa = []
     rm = []
     frac = []
+    Vf = []
     first = True
     for ss in ssList :
       if ss.selectStr == uniqueStr :
         if first :
-          fout.write("\n#> %s   avgUT = %.3f\n" % (uniqueStr,ss.UT))
-          fout.write("#     S    sigma   poli  sigma     PA  sigma      RM  sigma   frac  sigma   Vfrac sigma  LkFile\n")
+          fout.write("#\n#> %s   avgUT = %.3f\n" % (uniqueStr,ss.UT))
+          fout.write("#      src      S    sigma   poli  sigma     PA  sigma      RM  sigma    frac  sigma   Vfrac sigma  LkFile\n")
           first = False
         [Iavg,Istd] = weightedMeanAndError( ss.I, ss.rmsI )
         [Vavg,Vstd] = weightedMeanAndError( ss.V, ss.rmsV )
@@ -688,15 +692,17 @@ def summarizeFits( infile, outfile, plot=False ) :
         pa.append(ss.pa0)
         rm.append(ss.RM)
         frac.append(ss.frac)
-        Vfrac = Vavg/Iavg
-        Vfracstd = Vfrac * math.sqrt( pow(Istd/Iavg,2.) + pow(Vstd/Vavg,2.) )
-        fout.write(" %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  %s \n" % \
-          ( Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
+        Vfrac = Vavg/Iavg 
+        Vfracstd = abs(Vfrac * math.sqrt( pow(Istd/Iavg,2.) + pow(Vstd/Vavg,2.) ))
+        Vf.append(Vfrac)
+        fout.write("  %8s  %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  %s \n" % \
+          ( src, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
           ss.frac, ss.fracrms, Vfrac, Vfracstd, ss.LkFile) )
   # Print averages and rms; here the rms is from the dispersion in the means!
-    fout.write("#* %6.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  AVG\n" % \
-      ( numpy.mean(I), numpy.std(I), numpy.mean(p0), numpy.std(p0), numpy.mean(pa), numpy.std(pa), \
-      numpy.mean(rm)/1.e5, numpy.std(rm)/1.e5, numpy.mean(frac), numpy.std(frac), numpy.mean(V), numpy.std(V) ) )
+    if (len(I) > 1) :
+      fout.write("#*%8s  %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  AVG\n" % \
+        ( src, numpy.mean(I), numpy.std(I), numpy.mean(p0), numpy.std(p0), numpy.mean(pa), numpy.std(pa), \
+        numpy.mean(rm)/1.e5, numpy.std(rm)/1.e5, numpy.mean(frac), numpy.std(frac), numpy.mean(Vf), numpy.std(Vf) ) )
   # 3D plot of fits
     #print "begin figure"
     #fig = pyplot.figure()
