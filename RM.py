@@ -311,6 +311,12 @@ class SS :
       else :     # fit PA
         x = lambdasq
         y = 0.5 * numpy.arctan2( self.U, self.Q )
+      # This block of code is just for 0359+209 because it flips from -90 to +90
+        for n in range (0,len(y)) :
+          print y[n]
+          if (y[n] > 0.) :
+            y[n] = y[n] - math.pi
+
         variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
            ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
         sigma = numpy.sqrt(variance)   # this is an array
@@ -364,7 +370,7 @@ class SS :
       fig = pyplot.subplot(1,1,1)
       self.plot3( fig, Ymax, sigran2, labelsize=12 )
       pyplot.draw()                 
-      time.sleep(3) 
+      time.sleep(10) 
       
 
 
@@ -474,14 +480,27 @@ class SS :
     freq = 0.5 * (self.f1 + self.f2)
     x = (.30*.30)/(freq*freq) - (.30*.30)/(self.freq0*self.freq0)
     y = 0.5 * numpy.arctan2(self.U,self.Q)  # radians
-    # for n in range (0,len(y)) :
-    #   print y[n]
-    #   if (y[n] > 0.) :
-    #     y[n] = y[n] - math.pi
+  # This block of code is just for 0359+209 because it flips from -90 to +90
+    for n in range (0,len(y)) :
+      print y[n]
+      if (y[n] > 0.) :
+        y[n] = y[n] - math.pi
+  
     variance = 0.25/pow( pow(self.Q,2.) + pow(self.U,2.), 2. ) * \
      ( pow( self.Q*self.rmsU, 2.) + pow( self.U*self.rmsQ, 2. ) )
     sigma = numpy.sqrt(variance)   # this is an array
-  # ---
+
+    textStr = "pol = %.2f (%.2f)%%\nPA = %.1f (%.1f)\nRM = %.1e (%.1e)" % \
+      ( 100.*self.frac, 100*self.fracrms, self.pa0 ,self.pa0rms, self.RM, self.RMrms)
+
+  # Dump data and fits to PAplot for possible use by wip 
+    fout = open( "PAplot.dat", "w" )
+    fout.write("%s\n" % textStr)
+    fout.write("# --------------------------------------------------- #\n") 
+    for freq1, y1, sigma1 in zip (freq,y,sigma) :
+      fout.write(" %9.3f  %9.3f  %9.3f\n" % (freq1, 180.*y1/math.pi, 180.*sigma1/math.pi))
+    fout.write("# --------------------------------------------------- #\n") 
+
     ymin = 180./math.pi * (y.min() - 0.3*(y.max()-y.min()))
     ymax = 180./math.pi * (y.max() + 0.3*(y.max()-y.min()))
 
@@ -492,22 +511,27 @@ class SS :
 
     fx = numpy.arange(fmin,fmax,.1)
     xp = (.30*.30)/(fx*fx) - (.30*.30)/(self.freq0 * self.freq0)
-    yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM)
-    fig.plot( fx, yp, 'r-' )
+    yp0 = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM)
+    fig.plot( fx, yp0, 'r-' )
 
-    yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM-self.RMrms)
-    fig.plot( fx, yp, 'r--' )
-    yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM+self.RMrms)
-    fig.plot( fx, yp, 'r--' )
+    ypminus = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM-self.RMrms)
+    fig.plot( fx, ypminus, 'r--' )
+    ypplus = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM+self.RMrms)
+    fig.plot( fx, ypplus, 'r--' )
 
+  # Optional additional error bars
     if sigran2 != 0. :
-      yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM-sigran2)
-      fig.plot( fx, yp, 'b--' )
-      yp = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM+sigran2)
-      fig.plot( fx, yp, 'b--' )
+      ypminus = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM-sigran2)
+      fig.plot( fx, ypminus, 'b--' )
+      ypplus = (180./math.pi)*self.func2( xp, (math.pi/180.)*self.pa0, self.RM+sigran2)
+      fig.plot( fx, yplus, 'b--' )
 
-    textStr = "pol = %.2f (%.2f)%%\nPA = %.1f (%.1f)\nRM = %.1e (%.1e)" % \
-      ( 100.*self.frac, 100*self.fracrms, self.pa0 ,self.pa0rms, self.RM, self.RMrms)
+  # Write fit +/- errors to wip file
+    for freq1, y0, ym, yp  in zip (fx, yp0, ypminus, ypplus) :
+      fout.write(" %9.3f  %9.3f  %9.3f  %9.3f\n" % (freq1, y0, ym, yp ))
+    fout.write("# --------------------------------------------------- #\n") 
+    fout.close()
+
     props = dict(boxstyle='round', facecolor='wheat', alpha=1 )	# patch.Patch properties
     fig.text( .5, .05, textStr, transform=fig.transAxes, horizontalalignment='center', 
       verticalalignment='bottom', fontsize=0.8*labelsize, bbox=props )
@@ -596,7 +620,7 @@ def findUniqueStrings( ssList ) :
 #   they cover different time ranges, but frequencies must agree!!
 # for each unique selectStr, concatenate all the I,Q,U,V data into one SS, fit p, PA, frac, RM 
 # the hope was that this global fit would be more accurate than individual fits
-def fitAll( infile, outfile, FitEverybody=True, plot=False ) :
+def fitAll( infile, outfile, FitEverybody=True, type='QU', plot=False ) :
   ssList = []
   readSSfile( infile, ssList )
   for ss in ssList :
@@ -633,7 +657,7 @@ def fitAll( infile, outfile, FitEverybody=True, plot=False ) :
           tmp = numpy.append( ssWork.rmsV, ss.rmsV )
           ssWork.rmsV = tmp
     f0 = 225.
-    ssWork.fitPARM( f0 )                 # fits p0, PA, RM, frac
+    ssWork.fitPARM( f0, type=type )                 # fits p0, PA, RM, frac
     ssWork.LkFile = "various"
     fout = open(outfile,"ab")
     pickle.dump( ssWork, fout )
@@ -977,3 +1001,12 @@ def RMsearch( infile, outfile ) :
     fout.write( "%.3e  %11.4e\n" % ( RM, P ) )
   fout.close()
    
+def RMcalc( RM, f1GHz, f2GHz ):
+  phi1 = 180. * RM * pow( 0.3/f1GHz, 2.) / math.pi
+  phi2 = 180. * RM * pow( 0.3/f2GHz, 2.) / math.pi
+  print "RM = %.2e rad/m^2" % RM
+  print "f1 = %6.2f GHz, phi1 = %.1f degrees" % (f1GHz,phi1)
+  print "f2 = %6.2f GHz, phi2 = %.1f degrees" % (f2GHz,phi2)
+  print "phi1 - phi2 = %.1f degrees" % (phi1-phi2)
+  
+  
