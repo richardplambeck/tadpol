@@ -42,21 +42,28 @@ def printArray( array ) :
     for i in range( n-1, -1, -1 ) :
       print " " + numpy.array_str( asq[i], precision=2, suppress_small=True, max_line_width=200 )
        
-def plotArray( array, arcsecBox ) :
+def plotArray( p, array, arcsecBox, vrange=0. ) :
   nsq = int( math.sqrt(len(array)) + .0001 )
-  imgplot = pyplot.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
+  if vrange > 0. :
+    imgplot = p.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
+        extent=[-arcsecBox,arcsecBox,-arcsecBox,arcsecBox], vmin=-10.,vmax=10. )
+  else : 
+    imgplot = p.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
         extent=[-arcsecBox,arcsecBox,-arcsecBox,arcsecBox] )
   #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
   #imgplot.add_patch(circ)
-  pyplot.show()
+  #p.colorbar()
+  #pyplot.show()
  
-def plotHisto( array, wgt ) :
-  n, bins, patches = pyplot.hist( array, bins=100, normed=True, weights=wgt, facecolor='g')
+def plotHisto( p, array, wgt ) :
+  n, bins, patches = p.hist( array, bins=40, range=(-20.,20.), normed=True, weights=wgt, facecolor='g')
   #pyplot.axis( [-10.,10., 0, .1] )
-  pyplot.show()
+  #pyplot.show()
 
 
-def calc( arcsecBox ) :
+# minPoli = minimum polarized intensity in Jy/beam that will be used in the calculation
+
+def calc( arcsecBox, minPoli ) :
   [x,y,U] = readArray( "Mars.U.cm", arcsecBox )
   [x,y,Q] = readArray( "Mars.Q.cm", arcsecBox )
   #[x,y,pa] = readArray( "Mars.pa.cm", arcsecBox )
@@ -90,6 +97,9 @@ def calc( arcsecBox ) :
   print "\nwgt:"
   printArray( wgt )
 
+  wgtMasked = numpy.ma.masked_less(wgt, minPoli)
+    # ... mask off values below threshold
+  
   devDeg = ( PAmeas - PAradial ) * 180./math.pi
   for n in range( 0, len(devDeg) ) :
     if devDeg[n] > 90. :
@@ -102,13 +112,46 @@ def calc( arcsecBox ) :
   print "\ndevDeg:"
   printArray( devDeg )
 
-  #plotArray( x, arcsecBox )
-  #plotArray( y, arcsecBox )
-  plotArray( wgt, arcsecBox )
-  #plotArray( PAradial, arcsecBox )
-  #plotArray( devDeg, arcsecBox )
-  plotArray( wgt*devDeg, arcsecBox )
-  plotHisto( devDeg, wgt )
+  devDegMasked = numpy.ma.masked_array( devDeg, mask=wgtMasked.mask )
+  avgdev = numpy.ma.average(devDegMasked, weights=wgt)
+  print "\nmean deviation = %.2f deg" % avgdev
 
-  
-  print "\nmean deviation = ", numpy.ma.average(devDeg, weights=wgt)
+  p = pyplot.subplot(2, 2, 1)
+  plotArray( p, Q, arcsecBox )
+  p.set_title( 'Stokes Q')
+  #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
+  circ = Circle( (0.,0.), 7.12, color='r', fill=False)
+  p.add_patch(circ)
+  p.set_xlabel( 'arcsec' )
+  p.set_ylabel( 'arcsec' )
+
+  p = pyplot.subplot(2, 2, 2)
+  plotArray( p, U, arcsecBox )
+  p.set_title( 'Stokes U')
+  #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
+  circ = Circle( (0.,0.), 7.12, color='r', fill=False)
+  p.add_patch(circ)
+  p.set_xlabel( 'arcsec' )
+  p.set_ylabel( 'arcsec' )
+
+  p = pyplot.subplot(2, 2, 3)
+  plotArray( p, wgt*devDegMasked, arcsecBox, vrange=10. )
+  p.set_title( 'PA dev from radial')
+  #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
+  circ = Circle( (0.,0.), 7.12, color='r', fill=False)
+  p.add_patch(circ)
+  p.set_xlabel( 'arcsec' )
+  p.set_ylabel( 'arcsec' )
+
+  p = pyplot.subplot(2, 2, 4)
+  plotHisto( p, devDegMasked, wgt )
+  p.grid( True )
+  #p.set_aspect( 'equal' )
+  p.text(.2, .9,  "mean", horizontalalignment='center', transform=p.transAxes)
+  p.text(.2, .8,  "%.2f deg" % avgdev, horizontalalignment='center', transform=p.transAxes)
+  p.set_title( 'PA dev from radial' )
+  p.set_xlabel( 'dev from radial, degrees' )
+  p.set_ylabel( 'probability' )
+
+  pyplot.subplots_adjust( wspace=.4, hspace=.4 )
+  pyplot.show()
