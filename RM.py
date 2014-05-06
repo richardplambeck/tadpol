@@ -212,7 +212,7 @@ class SS :
     self.V = numpy.array(Stokes).transpose()[6]
     self.rmsV = numpy.array(Stokes).transpose()[7]
     self.UT, self.parang, self.HA = paPlot.getUTPAHA( self.visFile, self.selectStr )
-    self.fitPARM( f0, type="PA" )                 # fits p0, PA, RM, frac
+    #self.fitPARM( f0, type="PA" )                 # fits p0, PA, RM, frac
     self.fitPARM( f0, type="QU" )                 # fits p0, PA, RM, frac
     return True
 
@@ -866,7 +866,7 @@ def DSBsummary( paList, outfile ) :
       fout.write("# %s\n" % infile)
       fout.write("#  dechr  parang    HA        S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  col   selectString\n")
       fout.close()
-      readAll( infile, ssList )
+      readSSfile( infile, ssList )
       for ss in ssList : 
         Iavg = numpy.average(ss.I )
         Istd = numpy.average(ss.rmsI)
@@ -900,7 +900,7 @@ def replot( paList, Ymax=0., nrows=2, ncols=1 ) :
     if (len(a) > 0) and (not line.startswith("#")) :
       ssList = []
       paFile = a[0]
-      readAll( paFile, ssList )
+      readSSfile( paFile, ssList )
       pyplot.subplots_adjust( hspace=0.25 )
       for ss in ssList :
         print "plotting file %s, string %s" % (paFile, ss.selectStr)
@@ -940,7 +940,7 @@ def QUtrajectory ( paFile ) :
   pyplot.ion()
   pyplot.clf()
   ssList = []
-  readAll( paFile, ssList )
+  readSSfile( paFile, ssList )
   UT = []
   Q = []
   Qerr = [] 
@@ -960,7 +960,7 @@ def QUtrajectory ( paFile ) :
   fig.axis( [-1.*ymax, ymax, -1.*ymax, ymax], size=3 )
   fig.tick_params(axis='both', which='major', labelsize=10 )
   fig.grid( True )
-  fig.errorbar(Q,U,xerr=Qerr,yerr=Uerr,color="r",alpha=1, fmt=None,capsize=0, ecolor="0.2",linewidth=1,mew=0, zorder=1)
+  #fig.errorbar(Q,U,xerr=Qerr,yerr=Uerr,color="r",alpha=1, fmt=None,capsize=0, ecolor="0.2",linewidth=1,mew=0, zorder=1)
   fig.plot(Q,U,color="blue",alpha=0.3, zorder=2)
   fig.scatter(Q,U, s=80, c=UT, marker="o", linewidths=1, alpha=1, zorder=3, edgecolor="0.6" )
   #pyplot.colorbar(ax=fig,ticks=[min(UT),max(UT)] )
