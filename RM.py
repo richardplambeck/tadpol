@@ -216,6 +216,17 @@ class SS :
     self.fitPARM( f0, type="QU" )                 # fits p0, PA, RM, frac
     return True
 
+  # i is the index
+  def pPA( self, i ) :
+    p0 = math.sqrt( self.Q[i]*self.Q[i] + self.U[i]*self.U[i]) 
+    # is the following formula correct?
+    p0rms =  math.sqrt(pow(self.Q[i]*self.rmsQ[i],2.) + pow(self.rmsU[i]*self.U[i],2.))/p0
+    pa = (180./math.pi) * 0.5 * math.atan2(self.U[i],self.Q[i])
+    variance = 0.25/pow( pow(self.Q[i],2.) + pow(self.U[i],2.), 2. ) * \
+       ( pow( self.Q[i]*self.rmsU[i], 2.) + pow( self.U[i]*self.rmsQ[i], 2. ) )
+    parms = (180./math.pi) * math.sqrt(variance)
+    return [p0, p0rms, pa, parms]
+    
   # -----------------------------------------------------------------------------------------------------------------------#
   # writes to file; if outfile=None, prints to screen
   def dump( self, outfile ) :
@@ -736,60 +747,6 @@ def summarizeFits( infile, outfile, plot=False ) :
     #pyplot.show()
   fout.close()
 
-# read in series of SSs from input file (old style, pre-pickle)
-#def readAll(  infile, ssList ) :
-#  fin = open( infile, "r" )
-#  ss = SS()
-#  f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
-#
-#  for line in fin :
-#    a = line.split()
-#    if line == "# ----------------------------\n" :     # this delimits end of each SS list
-#      ss.f1 = numpy.array(f1)
-#      ss.f2 = numpy.array(f2)
-#      ss.I = numpy.array(I)
-#      ss.rmsI = numpy.array(rmsI)
-#      ss.Q = numpy.array(Q)
-#      ss.rmsQ = numpy.array(rmsQ)
-#      ss.U = numpy.array(U)
-#      ss.rmsU = numpy.array(rmsU)
-#      ss.V = numpy.array(V)
-#      ss.rmsV = numpy.array(rmsV)
-#      ssList.append(ss)       # add completed SS object to the list
-#      ss = SS()               # initialize a new SS object
-#      f1, f2, I, rmsI, Q, rmsQ, U, rmsU, V, rmsV = ( [] for i in range(10) )
-#    elif line.startswith("# visFile") : ss.visFile = a[3]
-#    elif line.startswith("# LkFile") : ss.LkFile = a[3]
-#    elif line.startswith("# selectStr") : ss.selectStr = a[3]
-#    elif line.startswith("# avg UT") : ss.UT = float( a[4] )
-#    elif line.startswith("# avg HA") : ss.HA = float( a[4] )
-#    elif line.startswith("# avg parang") : ss.parang = float( a[4] )
-#    elif line.startswith("# p0") : 
-#      ss.p0 = float( a[3] )
-#      ss.p0rms = float( a[5] )
-#    elif line.startswith("# frac") : 
-#      ss.frac = float( a[3] )
-#      ss.fracrms = float( a[5] )
-#    elif line.startswith("# PAfit") : 
-#      ss.pa0 = float( a[3] )
-#      ss.pa0rms = float( a[5] )
-#    elif line.startswith("# RMfit") : 
-#      ss.RM = float( a[3] ) * 1.e5
-#      ss.RMrms = float( a[5] ) * 1.e5
-#    elif line.startswith("# PAfreq0") : ss.freq0 = float( a[3] )
-#    elif not line.startswith("#") :
-#      f1.append( float( a[0] ) )
-#      f2.append( float( a[1] ) )
-#      I.append( float(a[2]) )
-#      rmsI.append( float( a[3] ) )
-#      Q.append( float( a[4] ) )
-#      rmsQ.append( float( a[5] ) )
-#      U.append( float( a[6] ) )
-#      rmsU.append( float( a[7] ) )
-#      V.append( float( a[8] ) )
-#      rmsV.append( float( a[9] ) )
-#      ss.strList.append( a[10] ) 
-
 # read in one or more PA files, write summary file for wip (this is geared toward vlbi)
 def summary( paList, outfile ) :
   srcList = [ "0234+285", "3c84", "3c111", "0721+713", "0854+201", "OJ287", "3c273", "M87", \
@@ -841,6 +798,68 @@ def summary( paList, outfile ) :
       print "1src %d %d %d %s" % (nstart, nstop, color, srcName )
       nstart = nstop + 1
   fin.close()
+
+# read in one or more PA files, write summary file for wip (this is geared toward vlbi)
+def summary2( SSfile, outfile ) :
+  fout = open( outfile, "a" )
+  color = 0
+  fout.write("#  src     dechr  parang    HA        S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  col   selectString\n")
+  fout.close()
+  fout = open( "QUVsummary", "a" )
+  fout.write("#\n")
+  fout.write("# %s\n" % SSfile)
+  fout.write("#  dechr  parang    HA        S    sigma     Q   sigma      U  sigma      V  sigma    col   selectString\n")
+  fout.close()
+
+  ssList = []
+  readSSfile( SSfile, ssList )
+  for ss in ssList : 
+    Iavg = numpy.average(ss.I )
+    Istd = numpy.std(ss.I, ddof=1)
+    fout = open(outfile, 'a')
+    fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %2d   %s\n" % \
+      (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
+      ss.frac, ss.fracrms, color, ss.selectStr) )
+    fout.close()
+
+    #fout = open("QUVsummary", 'a')
+    #fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.3f %5.3f %7.3f %5.3f  %2d   %s\n" % \
+    #  (ss.UT, ss.parang, ss.HA, Iavg, Istd, numpy.avg(ss.Q), ss.rmsQ, ss.U, ss.rmsU, ss.V, ss.rmsV, color, ss.selectStr) )
+    #fout.close()
+
+def summary3( SSfile, outfile, PAoffLSB, PAoffUSB ) :
+  first = True
+  ssList = []
+  readSSfile( SSfile, ssList )
+  fout = open( outfile, "a" )
+  for ss in ssList : 
+    if first :
+      first = False
+      if len(ss.f1) != 2 :
+        print "error - I am expecting exactly 2 entries per SS"
+        break
+      favg1 = 0.5 * (ss.f1[0] + ss.f2[0])
+      favg2 = 0.5 * (ss.f1[1] + ss.f2[1])
+      if favg1 > favg2 :
+        print "error - I am expecting LSB first"
+        break
+      fout.write("#                                          %.2f GHz     %.2f GHz\n" % (favg1,favg2))
+      fout.write("#  dechr  parang    HA        S    sigma  LSB poli rms  USB pol1 rms     PA1   rms      PA2   rms    selectString\n")
+    Iavg = numpy.average(ss.I )
+    Istd = numpy.average(ss.rmsI)
+    p1, p1rms, pa1, pa1rms = ss.pPA( 0 )
+    p2, p2rms, pa2, pa2rms = ss.pPA( 1 )
+    pa1 = pa1 - PAoffLSB   
+    pa2 = pa2 - PAoffUSB   
+  # ------------------------------
+  # special for 04may data!
+    if pa1 < -20 : pa1 = pa1 + 180.
+    if pa2 < -20 : pa2 = pa2 + 180.
+  # ------------------------------
+    fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.3f %5.3f %8.2f %5.2f %8.2f %5.2f   %s\n" % \
+      (ss.UT, ss.parang, ss.HA, Iavg, Istd, p1, p1rms, p2, p2rms, pa1, pa1rms, pa2, pa2rms, \
+       ss.selectStr) )
+  fout.close()
         
 # read in one or more PA files, write summary file with Q,U for wip
 def DSBsummary( paList, outfile ) :
