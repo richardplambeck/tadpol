@@ -18,6 +18,7 @@ import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from mpl_toolkits.mplot3d import Axes3D
 
+       
 
      
 def parseLine( line ) :
@@ -216,6 +217,12 @@ class SS :
     self.fitPARM( f0, type="QU" )                 # fits p0, PA, RM, frac
     return True
 
+  # returns source name; NOTE: works only if source() is first!
+  def src( self ) :
+    s = self.selectStr[ self.selectStr.find( 'source(')+7 : ]
+    return s.split( ")" )[0]
+     
+
   # i is the index
   def pPA( self, i ) :
     p0 = math.sqrt( self.Q[i]*self.Q[i] + self.U[i]*self.U[i]) 
@@ -368,9 +375,10 @@ class SS :
     self.RM = rm
     self.RMrms = rmrms
     self.freq0 = freq0
-    self.calcFrac()                            # fills in fractional pol
+    Iavg, Istd, p0, p0rms, frac, fracrms = self.calcFrac()
     print "# p0 = %.3f (%.3f)" % (self.p0, self.p0rms)
-    print "# frac = %.3f (%.3f)" % (self.frac, self.fracrms)
+    print "# frac = %.3f (%.3f)" % (frac, fracrms)
+       # ... caution: rms used for p0 does not match self.p0rms!
     print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
     print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
     print ""
@@ -423,14 +431,20 @@ class SS :
     print "# RAN2 result: RM = %.2e (%.2e  %.2e)" % (rm,deltaminus,deltaplus)
     return deltaplus
 
-  def calcFrac( self ) :
+  # return Iavg, Irms, pavg, prms, frac_avg, frac_rms
+  def calcFrac( self, index1=None, index2=None ) :
     'compute fractional polarization and uncertainty'
-    #Iavg = numpy.average(ss.I, weights=ss.rmsI )
     Iavg = numpy.average( self.I )
     Istd = numpy.std( self.I, ddof=1 )/math.sqrt(len(self.I))
-    self.frac = self.p0/Iavg
-    self.fracrms = self.frac * math.sqrt( pow(Istd/Iavg,2.) + pow(self.p0rms/self.p0,2.) )
-    #print "Iavg,Istd,frac,fracrms = %.4f, %.4f, %.4f, %.4f" % (Iavg, Istd, self.frac,self.fracrms)
+    Qavg = numpy.average( self.Q )
+    Uavg = numpy.average( self.U )
+    p0 = math.sqrt( Qavg*Qavg + Uavg*Uavg) 
+    p0rms =  numpy.average( numpy.sqrt(pow(self.Q*self.rmsQ,2.) + pow(self.rmsU*self.U,2.)))/p0
+    frac_avg = p0/Iavg
+    frac_rms = frac_avg * math.sqrt( pow(Istd/Iavg,2.) + pow(p0rms/p0,2.) )
+    #print "Iavg,Istd,p0,p0rms,frac_avg,frac_rms = %.4f, %.4f, %.4f, %.4f, %.4f, %.4f" % \
+    #   (Iavg, Istd, p0, p0rms, frac_avg, frac_rms)
+    return [ Iavg, Istd, p0, p0rms, frac_avg, frac_rms ]
 
   def plot( self ) :
     pyplot.clf()
@@ -827,9 +841,13 @@ def summary2( SSfile, outfile ) :
     #  (ss.UT, ss.parang, ss.HA, Iavg, Istd, numpy.avg(ss.Q), ss.rmsQ, ss.U, ss.rmsU, ss.V, ss.rmsV, color, ss.selectStr) )
     #fout.close()
 
-def summary3( SSfile, outfile, PAoffLSB, PAoffUSB ) :
+def summary2SB( SSfile, outfile, PAoffLSB, PAoffUSB ) :
   first = True
   ssList = []
+  pa1avg = 0.
+  pa2avg = 0.
+  npts = 0
+  source = ""
   readSSfile( SSfile, ssList )
   fout = open( outfile, "a" )
   for ss in ssList : 
@@ -843,10 +861,24 @@ def summary3( SSfile, outfile, PAoffLSB, PAoffUSB ) :
       if favg1 > favg2 :
         print "error - I am expecting LSB first"
         break
-      fout.write("#                                          %.2f GHz     %.2f GHz\n" % (favg1,favg2))
-      fout.write("#  dechr  parang    HA        S    sigma  LSB poli rms  USB pol1 rms     PA1   rms      PA2   rms    selectString\n")
-    Iavg = numpy.average(ss.I )
-    Istd = numpy.average(ss.rmsI)
+      source = ss.src()
+      fout.write("#                                                                       %.2f GHz     %.2f GHz\n" % (favg1,favg2))
+      fout.write("#  dechr  parang    HA        S    sigma    poli rms      frac  rms      PA1   rms      PA2   rms    selectString\n")
+
+    if ss.src() != source :
+      if (npts > 0) :
+        pa1avg = pa1avg/npts
+        pa2avg = pa2avg/npts
+        deltaPA = pa1avg-pa2avg
+        fout.write("# source = %s, PA1avg = %.2f, PA2avg = %.2f, deltaPA = %.2f, RM = %.2e\n" % \
+             (source, pa1avg, pa2avg, deltaPA, RMcalc(deltaPA, favg1, favg2) ) )
+      npts = 0
+      pa1avg = 0
+      pa2avg = 0
+      source = ss.src()
+      print "new source = ", source
+      
+    Iavg, Istd, p0, p0rms, frac, fracrms = ss.calcFrac()
     p1, p1rms, pa1, pa1rms = ss.pPA( 0 )
     p2, p2rms, pa2, pa2rms = ss.pPA( 1 )
     pa1 = pa1 - PAoffLSB   
@@ -856,9 +888,19 @@ def summary3( SSfile, outfile, PAoffLSB, PAoffUSB ) :
     if pa1 < -20 : pa1 = pa1 + 180.
     if pa2 < -20 : pa2 = pa2 + 180.
   # ------------------------------
+    pa1avg = pa1avg + pa1
+    pa2avg = pa2avg + pa2
+    npts = npts + 1
+    print npts, pa1avg, pa2avg
+    
     fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.3f %5.3f %8.2f %5.2f %8.2f %5.2f   %s\n" % \
-      (ss.UT, ss.parang, ss.HA, Iavg, Istd, p1, p1rms, p2, p2rms, pa1, pa1rms, pa2, pa2rms, \
+      (ss.UT, ss.parang, ss.HA, Iavg, Istd, p1, p1rms, frac, fracrms, pa1, pa1rms, pa2, pa2rms, \
        ss.selectStr) )
+  pa1avg = pa1avg/npts
+  pa2avg = pa2avg/npts
+  deltaPA = pa1avg-pa2avg
+  fout.write("# source = %s, PA1avg = %.2f, PA2avg = %.2f, deltaPA = %.2f, RM = %.2e\n" % \
+       (source, pa1avg, pa2avg, deltaPA, RMcalc(deltaPA, favg1, favg2) ) )
   fout.close()
         
 # read in one or more PA files, write summary file with Q,U for wip
@@ -1020,7 +1062,7 @@ def RMsearch( infile, outfile ) :
     fout.write( "%.3e  %11.4e\n" % ( RM, P ) )
   fout.close()
    
-def RMcalc( RM, f1GHz, f2GHz ):
+def dPAcalc( RM, f1GHz, f2GHz ):
   phi1 = 180. * RM * pow( 0.3/f1GHz, 2.) / math.pi
   phi2 = 180. * RM * pow( 0.3/f2GHz, 2.) / math.pi
   print "RM = %.2e rad/m^2" % RM
@@ -1028,4 +1070,15 @@ def RMcalc( RM, f1GHz, f2GHz ):
   print "f2 = %6.2f GHz, phi2 = %.1f degrees" % (f2GHz,phi2)
   print "phi1 - phi2 = %.1f degrees" % (phi1-phi2)
   
-  
+def RMcalc( dPA, f1GHz, f2GHz, unc=0. ) :
+  lambda1 = .3/f1GHz
+  lambda2 = .3/f2GHz
+  RM = math.pi/180. * dPA / (lambda1*lambda1 - lambda2*lambda2)
+  RMunc = 0.
+  if (unc > 0.) :
+    RMplus = math.pi/180. * (dPA+unc) / (lambda1*lambda1 - lambda2*lambda2)
+    RMminus = math.pi/180. * (dPA-unc) / (lambda1*lambda1 - lambda2*lambda2)
+    RMunc = abs(RMplus-RMminus)/2.
+  print "RM = %.2e (%.2e)" % (RM,RMunc)
+  return RM
+     
