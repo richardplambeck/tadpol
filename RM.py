@@ -375,9 +375,9 @@ class SS :
     self.RM = rm
     self.RMrms = rmrms
     self.freq0 = freq0
-    Iavg, Istd, p0, p0rms, frac, fracrms = self.calcFrac()
+    Iavg, Istd, p0, p0rms, self.frac, self.fracrms = self.calcFrac()
     print "# p0 = %.3f (%.3f)" % (self.p0, self.p0rms)
-    print "# frac = %.3f (%.3f)" % (frac, fracrms)
+    print "# frac = %.3f (%.3f)" % (self.frac, self.fracrms)
        # ... caution: rms used for p0 does not match self.p0rms!
     print "# pa0 = %.2f (%.2f)" % (self.pa0, self.pa0rms)
     print "# RM = %.3e (%.3e)" % (self.RM, self.RMrms)
@@ -621,6 +621,8 @@ def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, 
         fout.close()
         if plot : 
           ss.plot()
+
+# -----------------------------------------------------------------------------------------------------------------------#
                                                                                                                    
 # read in series of SSs from input pickle file, append to ssList (was readAll2)
 def readSSfile( infile, ssList ) :
@@ -855,6 +857,7 @@ def summary2SB( SSfile, outfile, PAoffLSB, PAoffUSB ) :
       first = False
       if len(ss.f1) != 2 :
         print "error - I am expecting exactly 2 entries per SS"
+        print ss.f1
         break
       favg1 = 0.5 * (ss.f1[0] + ss.f2[0])
       favg2 = 0.5 * (ss.f1[1] + ss.f2[1])
@@ -1079,6 +1082,6 @@ def RMcalc( dPA, f1GHz, f2GHz, unc=0. ) :
     RMplus = math.pi/180. * (dPA+unc) / (lambda1*lambda1 - lambda2*lambda2)
     RMminus = math.pi/180. * (dPA-unc) / (lambda1*lambda1 - lambda2*lambda2)
     RMunc = abs(RMplus-RMminus)/2.
-  print "RM = %.2e (%.2e)" % (RM,RMunc)
-  return RM
+  #print "RM = %.2e (%.2e)" % (RM,RMunc)
+  return [RM,RMunc]
      
