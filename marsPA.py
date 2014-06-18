@@ -9,6 +9,7 @@ import string
 import sys
 from matplotlib import pyplot
 from matplotlib.patches import Circle 
+from matplotlib.patches import Ellipse 
 
 # figure out deviation from radial of mars PA vectors
 
@@ -55,6 +56,32 @@ def plotArray( p, array, arcsecBox, vrange=0. ) :
   #p.colorbar()
   #pyplot.show()
  
+def getBeam( mapName ) :
+  '''reads image file, returns bmaj,bmin,bpa'''
+  imageFile = mapName+".U.cm"
+  p = subprocess.Popen( ( shlex.split('imlist in=%s' % imageFile ) ), \
+     stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+  result = p.communicate()[0]
+  bmaj = bmin = bpa = 0.
+  n = result.find( "bmaj" ) 
+  if n > 0 :
+    a = result[n:].split()
+    b = a[2].split(":")
+    print "bmaj :", b[2]
+    bmaj = float( b[2] )
+  n = result.find( "bmin" )
+  if n > 0 :
+    a = result[n:].split()
+    b = a[2].split(":")
+    print "bmin:", b[2]
+    bmin = float(b[2])
+  n = result.find( "bpa" )
+  if n > 0 :
+    a = result[n:].split()
+    print "bpa :", a[2]
+    bpa = float(a[2])
+  return [ bmaj, bmin, bpa ]
+
 def plotHisto( p, array, wgt ) :
   n, bins, patches = p.hist( array, bins=40, range=(-20.,20.), normed=True, weights=wgt, facecolor='g')
   #pyplot.axis( [-10.,10., 0, .1] )
@@ -62,10 +89,11 @@ def plotHisto( p, array, wgt ) :
 
 
 # minPoli = minimum polarized intensity in Jy/beam that will be used in the calculation
+# pldiam = mean planet diameter in arcsec
 
-def calc( arcsecBox, minPoli ) :
-  [x,y,U] = readArray( "Mars.U.cm", arcsecBox )
-  [x,y,Q] = readArray( "Mars.Q.cm", arcsecBox )
+def calc( mapName, arcsecBox, minPoli, pldiam=7.76 ) :
+  [x,y,U] = readArray( mapName+".U.cm", arcsecBox )
+  [x,y,Q] = readArray( mapName+".Q.cm", arcsecBox )
   #[x,y,pa] = readArray( "Mars.pa.cm", arcsecBox )
 
   print "\nx:"
@@ -94,6 +122,7 @@ def calc( arcsecBox, minPoli ) :
   printArray( PAmeas * 180./math.pi )
 
   wgt = numpy.sqrt( pow(U,2) + pow(Q,2) )
+  # or should it be wgt =( pow(U,2) + pow(Q,2) )
   print "\nwgt:"
   printArray( wgt )
 
@@ -120,8 +149,12 @@ def calc( arcsecBox, minPoli ) :
   plotArray( p, Q, arcsecBox )
   p.set_title( 'Stokes Q')
   #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
-  circ = Circle( (0.,0.), 7.12, color='r', fill=False)
+  circ = Circle( (0.,0.), pldiam/2., color='r', fill=False)
   p.add_patch(circ)
+  [ bmaj, bmin, bpa ] = getBeam( mapName )
+  ell = Ellipse( (-.75*arcsecBox,-.75*arcsecBox), bmaj, bmin, angle=bpa+90., \
+    edgecolor="m", label="beam", hatch="/", fill=False)
+  p.add_patch(ell)
   p.set_xlabel( 'arcsec' )
   p.set_ylabel( 'arcsec' )
 
@@ -129,7 +162,7 @@ def calc( arcsecBox, minPoli ) :
   plotArray( p, U, arcsecBox )
   p.set_title( 'Stokes U')
   #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
-  circ = Circle( (0.,0.), 7.12, color='r', fill=False)
+  circ = Circle( (0.,0.), pldiam/2., color='r', fill=False)
   p.add_patch(circ)
   p.set_xlabel( 'arcsec' )
   p.set_ylabel( 'arcsec' )
@@ -138,7 +171,7 @@ def calc( arcsecBox, minPoli ) :
   plotArray( p, wgt*devDegMasked, arcsecBox, vrange=10. )
   p.set_title( 'PA dev from radial')
   #circ = Circle( (0.,0.), 4., linestyle='-', color='r', fill=False)
-  circ = Circle( (0.,0.), 7.12, color='r', fill=False)
+  circ = Circle( (0.,0.), pldiam/2., color='r', fill=False)
   p.add_patch(circ)
   p.set_xlabel( 'arcsec' )
   p.set_ylabel( 'arcsec' )
@@ -153,5 +186,6 @@ def calc( arcsecBox, minPoli ) :
   p.set_xlabel( 'dev from radial, degrees' )
   p.set_ylabel( 'probability' )
 
+  pyplot.suptitle(mapName)
   pyplot.subplots_adjust( wspace=.4, hspace=.4 )
   pyplot.show()
