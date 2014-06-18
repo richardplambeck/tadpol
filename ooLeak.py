@@ -79,7 +79,7 @@ class Leak:
             Qpercent = float(a[7])
             Upercent = float(a[8])
             solin.append( [f1,f2,DR,DL,a[9],Qpercent,Upercent] )
-        if (not line.startswith("#")) and (len(a) > 10) :       # old style lk table, one antenna only
+        elif (not line.startswith("#")) and (len(a) > 10) :       # old style lk table, one antenna only
             f1 = min(float(a[0]),float(a[1]))
             f2 = max(float(a[0]),float(a[1]))
             DR = float(a[6]) + 1j * float(a[7])
@@ -184,7 +184,7 @@ class Leak:
             fprev = f
             f2prev = f2
             yprev = y
-    p.legend( loc=0, prop={'size':10} )
+    p.legend( loc=0, prop={'size':6} )
     
 
 # ----------------------------------------------------------------------------------------------------- #
@@ -213,8 +213,12 @@ class LkSet:
 
   def loadAll(self, masterListFile ) :
     """Read in multiple leakage files to LkSet object"""
-    color = [ "black", "red", "blue", "green", "cyan", "magenta", "yellow" ]
-    marker = [ "o", "D", "v", "^", "s", "h", "d" ]
+    color = [ "black", "red", "blue", "green", "chartreuse", "orangered", \
+              "aqua", "fuchsia", "gray", "lime", "maroon", "navy", \
+              "olive", "orange", "silver", "teal" ]
+    marker = [ "o", "D", "v", "^", "s", "h", "d", \
+               "o", "D", "v", "^", "s", "h", "d", \
+               "o", "D" ]
     fin = open( masterListFile, "r" )
     ncolor = 0
     for line in fin :
@@ -486,10 +490,14 @@ class LkSet:
                 DRlist.append( DR1 )
                 DLlist.append( DL1 )
                 print "... ant %d - appending data from %s" % ( ant, Lk.legend )
-        DRmean = numpy.mean(DRlist)
-        DLmean = numpy.mean(DLlist)
-        DRnew = random.gauss(numpy.real(DRmean), sigma) + random.gauss(numpy.imag(DRmean), sigma) * 1j
-        DLnew = random.gauss(numpy.real(DRmean), sigma) + random.gauss(numpy.imag(DRmean), sigma) * 1j
+        if len(DRlist) > 0 :
+          DRmean = numpy.mean(DRlist)
+          DLmean = numpy.mean(DLlist)
+          DRnew = random.gauss(numpy.real(DRmean), sigma) + random.gauss(numpy.imag(DRmean), sigma) * 1j
+          DLnew = random.gauss(numpy.real(DLmean), sigma) + random.gauss(numpy.imag(DLmean), sigma) * 1j
+        else :
+          DRnew = 0. + 0j
+          DLnew = 0. + 0j
         print ant, DRnew, DLnew
         fout.write("C%02d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f    %s\n" % \
             ( ant, f1, f2, DRnew.real, DRnew.imag, DLnew.real, \
@@ -549,9 +557,21 @@ def makeSS( LkFile, SSfile ) :
   ss.rmsU = 0.1 * numpy.ones( nfreqs )
   ss.V = numpy.zeros( nfreqs )
   ss.rmsV = numpy.zeros( nfreqs )
-  ss.fitPARM( 226. )
+  ss.fitPARM( 225. )
   ss.plot()
 #  ss.dump( None )
   fout = open( SSfile, "ab" )
   pickle.dump( ss, fout )
   fout.close()
+
+# opens file with single column of numbers, computes std of it
+def deltaRMS( deltaFile, column=0 ) :
+  delta = []
+  fin = open( deltaFile, "r" )
+  for line in fin :
+    a = line.split()
+    delta.append( float(a[column] ) )
+  fin.close()
+  d = numpy.array(delta)
+  print "average: ", numpy.average(delta)
+  print "std dev: ",  numpy.std(d)
