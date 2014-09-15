@@ -4,7 +4,8 @@
 # unfortunately I chose to make it object-oriented, which turned out not to be particularly useful
 #
 # there are 2 objects:
-# - a Leak object is for a single antenna, source, channel averaging interval, etc.
+# - a Leak object contains the frequency-dependent leakages for a single antenna, derived from
+#     observations of a particular source, with a particular channel averaging interval
 # - a LkSet object is a collection of multiple Leak objects
 #
 # the actual leakage solutions are computed by leakSolve, and are written to disk files with 
@@ -282,6 +283,17 @@ class LkSet:
       pL = pyplot.subplot(2,1,1)    # DL in upper panel
       pL.axis( [f1, f2, ymin, ymax] )
       pL.grid(True)
+
+      f = []
+      y = []
+      fin = open("polfits/C%d.polfit" % ant, "r")
+      for line in fin :
+        if not line.startswith("#") :
+          a = line.split()
+          f.append( float(a[0]) )
+          y.append( float(a[1]) ) 
+      pL.plot( f, y, linestyle="dashed" )
+
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
@@ -290,6 +302,7 @@ class LkSet:
       pR = pyplot.subplot(2,1,2)    # DR in lower panel
       pR.axis( [f1, f2, ymin, ymax] )
       pR.grid(True)
+      pR.plot( f, y, linestyle="dashed" )
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DR for antenna %d" % ant
