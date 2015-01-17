@@ -266,14 +266,14 @@ class LkSet:
   def clear(self) :
     pylab.clf()
 
-  def ampAll(self, f1=0., f2=0., type="amp", amax=.25, antList=allAnts ) :
+  def ampAll(self, f1=0., f2=0., type="amp", amax=.25, antList=allAnts, outfile="AmpLeaks.pdf" ) :
     pyplot.ioff()
     if f1 == 0. :
       [f1, f2] = LkSet.xlimits( self )          # default is to find freq limits in the data
     print "frequency limits: %.3f - %.3f GHz" % (f1,f2)
     ymin = 0.
     ymax = amax
-    pp = PdfPages( 'AmpLeaks.pdf' )
+    pp = PdfPages( outfile )
     if type == "phs" :
       ymin = -180.
       ymax = 180.
@@ -281,34 +281,39 @@ class LkSet:
     for ant in antList :
       pyplot.clf()
       pL = pyplot.subplot(2,1,1)    # DL in upper panel
-      pL.axis( [f1, f2, ymin, ymax] )
+      pL.axis( [f1, f2, ymin, ymax], size=8 )  # adding size does nothing!!
       pL.grid(True)
 
       f = []
       y = []
       fin = open("polfits/C%d.polfit" % ant, "r")
       for line in fin :
+        a = line.split()
         if not line.startswith("#") :
-          a = line.split()
           f.append( float(a[0]) )
           y.append( float(a[1]) ) 
-      pL.plot( f, y, linestyle="dashed" )
+        else :
+          polname = a[1]
+      pL.plot( f, y, linestyle="dashed", label="%s expected" % polname )
+      pL.legend( loc=0, prop={'size':6} )
 
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
           Leak.panel(pL, type, "DL", f1, f2 )
       pyplot.title("C%d DL" % ant)
+
       pR = pyplot.subplot(2,1,2)    # DR in lower panel
       pR.axis( [f1, f2, ymin, ymax] )
       pR.grid(True)
-      pR.plot( f, y, linestyle="dashed" )
+      pR.plot( f, y, linestyle="dashed", label="%s expected" % polname )
+      pR.legend( loc=0, prop={'size':6} )
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DR for antenna %d" % ant
           Leak.panel(pR, type, "DR", f1, f2 )
       pyplot.title("C%d DR" % ant)
-      pyplot.savefig( pp, format='pdf' )
+      pyplot.savefig( pp, format='pdf', bbox_inches='tight'  )
     pp.close()
 
 # for complex plot, f1 and f2 could in principle be used to select range of points
