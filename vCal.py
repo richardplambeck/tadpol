@@ -233,6 +233,18 @@ def sourceFlux( src ) :
            'SGRA'     : 3.50 }
   return flux[src]
  
+# --- convert day to day number --- #
+def getDayNo( day ) :
+  dayno = { '19mar' : '078', \
+            '20mar' : '079', \
+            '21mar' : '080', \
+            '22mar' : '081', \
+            '23mar' : '082', \
+            '24mar' : '083', \
+            '25mar' : '084', \
+            '26mar' : '085', \
+            '27mar' : '086' }
+  return dayno[day]
 
 # --- compare VLBI amps with CARMA amps --- #
 # ... col = 13 for lo-band, col = 14 for hi-band
@@ -357,8 +369,8 @@ def oneday( day, cpList=antList ) :
       fout.write(" %9s  %9s   %8s  %8s  " % (scanname,src,utStart,utStop) ) 
 
       # ... create decimal start and stop times, print tau230, rmspath
-      t1 = dechrs( utStart )
-      t2 = dechrs( utStop )
+      t1 = dechrs( utStart ) - .0028	 # start - 10 sec
+      t2 = dechrs( utStop ) + .0028      # stop + 10 sec
       elevavg = avgVar( t1, t2, t, elev )
       tau230avg = avgVar( t1, t2, t, tau230 )
       rmspathavg = avgVar( t1, t2, t, rmspath )
@@ -456,6 +468,165 @@ def old( ) :
 def doit() :
    
   antList = [2,3,4,5,6,8,9,14]    # use for 21mar and 22mar
+  onedayRbyR( "21mar", cpList=antList ) 
+  onedayRbyR( "22mar", cpList=antList ) 
   antList = [2,4,5,6,8,9,13,14]   # use for 23mar and beyond
-  oneday( ".", cpList=antList ) 
+  onedayRbyR( "23mar", cpList=antList ) 
+  onedayRbyR( "25mar", cpList=antList ) 
+  onedayRbyR( "26mar", cpList=antList ) 
+  onedayRbyR( "27mar", cpList=antList ) 
+  
+
+# --- generate record-by-record gains for one day (e.g., day='day075')--- #
+# ... cpList is list of antennas that are phased 
+# ... tsysL0,tsysR0 are the 'lo-band' systemps (from downconverters 5 and 6)
+# ... tsysL1,tsysR1 are the 'hi-band' systemps (from downconverters 7 and 8)
+
+def onedayRbyR( day, cpList=antList ) :
+
+  # ... retrieve time and gain arrays
+  [time,gain] = getGains( day+"/wide.cal" )
+
+  # ... create decimal time array 
+  t = numpy.empty( len(time), dtype=float )
+  for n in range (0, len(time) ) :
+    t[n] = dechrs( time[n] )
+
+  # ... retrieve tsys, rmspath, tau230, elev arrays
+  tsysL0 = getVar15( day+"/tsys13L.log", t )
+  tsysR0 = getVar15( day+"/tsys13R.log", t )
+  tsysL1 = getVar15( day+"/tsys15L.log", t )
+  tsysR1 = getVar15( day+"/tsys15R.log", t )
+  rmspath = getVar( day+"/rmspath", t )
+  tau230 = getVar( day+"/tau230", t )
+  source = getSource ( day+"/uvindex.log", t )
+  elevarray = getVar15( day+"/elev", t )
+
+  # ... use elev of C1 as the elevation
+  elev = numpy.empty( (len(time)), dtype=float )
+  for n in range (0, len(time) ) :
+    elev[n] = elevarray[n][0]
+
+  # ... all array lengths should match, otherwise this routine will crash!
+  print len(time), len(gain), len(tsysL0), len(tsysR0), len(tsysL1), \
+    len(tsysR1), len(rmspath), len(tau230), len(source), len(elev)
+
+  # ... create absgain and default gain files for future use
+  absgain = numpy.empty( (len(time),15), dtype=complex )
+  defgain = numpy.empty( (len(time),15), dtype=complex )
+  jyperk = numpy.array( [1.10, 1.11, 1.00, 1.17, 1.20, 1.06, 0.93, 0.98, 1.00, 0.99, 1.25, 1.03, 0.95, 0.96, 0.98] )
+    # these are the median values from gplist on 21mar
+
+  for n in range (0, len(time)) : 
+    for i in range (0,14) :
+      absgain[n][i] = numpy.abs( gain[n][i] ) + 1j * 0.
+      defgain[n][i] = jyperk[i] * (1. + 0j)
+  print "\ndefgains:\n",defgain
+
+  # ... make table of gain vs elev for plotting
+  gainVsElev( elevarray, gain, "gainVsElev" )
+
+  # ... process the 'summ' file which lists the schedule
+  fout = open( "RbyR", "a" )
+  fin = open( day+"/summ", "r" )
+
+  for line in fin :
+    if not line.startswith("#") :
+      a = line.split()
+      src = a[0]
+      utStart = a[1]
+      utStop = a[2]
+      scanname = a[7]
+      print " "
+      print scanname, src
+      fout.write("#\n")
+      fout.write("#    day %s, scan %s, source %s, UT %8s -- %8s \n" % \
+           ( getDayNo(day), scanname, src, utStart, utStop) ) 
+      fout.write("#\n#    UT        UThrs     el  tau  path      CL-lo    CR-lo    FL-lo    FL-hi    FR-lo    FR-hi   pheff\n")
+
+      for n in range(0,len(time)) :
+
+        if (t[n] > dechrs( utStart ) - .0028) and (t[n] < dechrs( utStop ) + .0028) :
+          fout.write("  %8s %10.6f    %2d %5.2f %4.0f   " % (time[n],t[n],elev[n],tau230[n],rmspath[n] ) ) 
+
+          sL0c1 = SEFD( defgain[n], tsysL0[n], [1] )
+          fout.write("%8.0f " % (100.*round(sL0c1/100.)) )
+
+          sR0c1 = SEFD( defgain[n], tsysR0[n], [1] )
+          fout.write("%8.0f " % (100.*round(sR0c1/100.)) )
+
+          sL0 = SEFD( gain[n], tsysL0[n], cpList )
+          fout.write("%8.0f " % (100.*round(sL0/100.)) )
+
+          sR0 = SEFD( gain[n], tsysR0[n], cpList )
+          fout.write("%8.0f " % (100.*round(sR0/100.)) )
+
+          sL1 = SEFD( gain[n], tsysL1[n], cpList )
+          fout.write("%8.0f " % (100.*round(sL1/100.)) )
+
+          sR1= SEFD( gain[n], tsysR1[n], cpList )
+          fout.write("%8.0f " % (100.*round(sR1/100.)) )
+
+          sL0_ideal = SEFD( absgain[n], tsysL0[n], cpList ) 
+          fout.write("   %4.2f\n"  % efficiency( sL0, sL0_ideal ) )
+
+      # now print out average values, as before
+      t1 = dechrs( utStart ) - .0028	 # start - 10 sec
+      t2 = dechrs( utStop ) + .0028      # stop + 10 sec
+      elevavg = avgVar( t1, t2, t, elev )
+      tau230avg = avgVar( t1, t2, t, tau230 )
+      rmspathavg = avgVar( t1, t2, t, rmspath )
+      fout.write("# ------- AVG -------   ")
+      fout.write(" %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) ) 
+
+      # ... print SEFD for C1 L and R lo band only (hi not recorded)
+      sL0c1 = scanSEFD( fout, t1-.1, t2+.1, src, t, source, defgain, defgain, tsysL0, [1] ) 
+      sR0c2 = scanSEFD( fout, t1-.1, t2+.1, src, t, source, defgain, defgain, tsysR0, [1] ) 
+
+      # ... print SEFDs for phased array L and phased array R, lo and hi bands
+      sL0 = scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsysL0, cpList ) 
+      sL0_ideal = avgSEFD( t1, t2, src, t, source, absgain, tsysL0, cpList ) 
+
+      sL1 = scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsysL1, cpList ) 
+      #sL1_ideal = avgSEFD( t1, t2, src, t, source, absgain, tsysL1, cpList ) 
+
+      sR0 = scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsysR0, cpList ) 
+      #sR0_ideal = avgSEFD( t1, t2, src, t, source, absgain, tsysR0, cpList ) 
+
+      sR1 = scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsysR1, cpList ) 
+      #sR1_ideal = avgSEFD( t1, t2, src, t, source, absgain, tsysR1, cpList ) 
+
+    # all efficiencies are the same, so only write out the L-lo one
+      fout.write("   %4.2f "  % efficiency( sL0, sL0_ideal ) )
+      fout.write("\n")
+
+  fin.close()  
+  fout.close()
+
+def makeScanList( day ) :
+  scanname = []
+  utStart = []
+  utStop = []
+  fin = open( day+"/summ", "r" )
+  for line in fin :
+    if not line.startswith("#") :
+      a = line.split()
+      utStart.append( a[1l])
+      utStop.append( a[2] )
+      scanname.append( a[7] )
+  fin.close()
+  return [scanname, utStart, utStop ]
+  
+def findscan( t, scanname, utStart, utStop ) :
+  sname = " "
+  ut1 = " "
+  ut2 = " "
+  for n in range(0, len(utStart) ) :
+    print " n = %d" % n
+    if (t > dechrs( utStart[n] ) - .0028) and (t < dechrs( utStop[n] ) + .0028) :
+      sname = scanname[n]
+      ut1 = utStart[n]
+      ut2 = utStop[n]
+      break
+  return [ sname, ut1, ut2 ]
   
