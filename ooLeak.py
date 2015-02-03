@@ -109,12 +109,20 @@ class Leak:
     fmax = self.f2[-1]
     return [fmin,fmax] 
     
-  def plotComplex( self, p, fstart, fstop ) :
+  # --- usually use DRcolor=None, DLcolor=None ---
+  def plotComplex( self, p, fstart, fstop, DRcolor='red', DLcolor='blue' ) :
     """plot DR and DL on the complex plane"""
     first = True
     f2prev = 0.
-    DRmark = "."
-    DLmark = "D"
+    DRmark = "o"
+    DLmark = "o"
+    if not DRcolor :
+      DRcolor = self.color
+      DRmark = "."
+    if not DLcolor :
+      DLcolor = self.color
+      DLmark = "D"
+    p.plot(0.,0.,marker="+", color="green", linewidth=3, markersize=10 )
     for f1,f2,DR,DL in zip( self.f1, self.f2, self.DR, self.DL ) :
       msize = 5
       #if (f2-f1) > 0.24 :
@@ -122,25 +130,32 @@ class Leak:
       favg = 0.5 * (f1 + f2)
       if (favg > fstart) and (favg < fstop) and (numpy.abs(DR) != 0.) :
         if first :     # plot dot and legend
-          p.plot( DR.real, DR.imag, marker=DRmark, color=self.color, markersize=msize, \
-             label=self.legend )
-          p.plot( DL.real, DL.imag, marker=DLmark, color=self.color, markersize=msize )
+          if not DRcolor:
+            p.plot( DR.real, DR.imag, marker=DRmark, color=DRcolor, markersize=msize, \
+              label=self.legend )
+          else :	# skip legend if DR (and presumably DL) color is specified
+            p.plot( DR.real, DR.imag, marker=DRmark, color=DRcolor, markersize=msize)
+          p.plot( DL.real, DL.imag, marker=DLmark, color=DLcolor, markersize=msize )
           first = False
         else :         
           #if f1 == f2prev :			# connect with line
           if True :
-            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker=DRmark, color=self.color, \
+            p.plot( [xRprev,DR.real], [yRprev,DR.imag], marker=DRmark, color=DRcolor, \
              markersize=msize, linestyle='solid', linewidth=1 )
-            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker=DLmark, color=self.color, \
-             markersize=msize, linestyle='dashed', linewidth=1 )
+            p.plot( [xLprev,DL.real], [yLprev,DL.imag], marker=DLmark, color=DLcolor, \
+             markersize=msize, linestyle='solid', linewidth=1 )
           else :                    # don't connect with line  
-            p.plot( DR.real, DR.imag, marker=DRmark, color=self.color, markersize=msize )
-            p.plot( DL.real, DL.imag, marker=DLmark, color=self.color, markersize=msize )
+            p.plot( DR.real, DR.imag, marker=DRmark, color=DRcolor, markersize=msize )
+            p.plot( DL.real, DL.imag, marker=DLmark, color=DLcolor, markersize=msize )
         xRprev = DR.real
         yRprev = DR.imag
         xLprev = DL.real
         yLprev = DL.imag
         f2prev = f2
+    if DRcolor :
+      p.text( .14, .11, "C%d" % self.ant,fontsize=10, horizontalalignment="right" )
+    #p.plot(0.,0.,marker="+", color="green", linewidth=2, markersize=10 )
+
     p.legend( loc=0, prop={'size':6}, numpoints=1 )
          
   def panel(self, p, type, lk, fstart, fstop ) :
@@ -214,9 +229,9 @@ class LkSet:
 
   def loadAll(self, masterListFile ) :
     """Read in multiple leakage files to LkSet object"""
-    color = [ "black", "red", "blue", "green", "chartreuse", "orangered", \
+    color = [ "red", "blue", "green", "chartreuse", "orangered", \
               "aqua", "fuchsia", "gray", "lime", "maroon", "navy", \
-              "olive", "orange", "silver", "teal" ]
+              "olive", "orange", "silver", "teal", "black" ]
     marker = [ "o", "D", "v", "^", "s", "h", "d", \
                "o", "D", "v", "^", "s", "h", "d", \
                "o", "D" ]
@@ -342,7 +357,7 @@ class LkSet:
         if Leak.ant == ant :
           print "plotting DR and DL for antenna %d" % ant
           Leak.plotComplex( p, f1, f2 ) 
-      pyplot.title("C%d DR (circles, solid) and DL (diamonds, dashed)" % ant, fontdict={'fontsize': scale})
+      #pyplot.title("C%d DR (circles, solid) and DL (diamonds, dashed)" % ant, fontdict={'fontsize': scale})
       if (npanel == nrows*ncols) or (ant == antList[-1] ) :
         pyplot.savefig( pp, format='pdf' )
     pp.close()
@@ -538,9 +553,9 @@ class LkSet:
 # ----------------------------------------------------------------------------------------------------- #
 # wrapper routines - all deal with a list of leakages specifed as LkList
 
-def plotAmps( LkList, f1=0., f2=0., amax=0.25, antList=allAnts ) :
+def plotAmps( LkList, f1=0., f2=0., amax=0.25, antList=allAnts, outfile="AmpLeaks.pdf" ) :
   p = LkSet( LkList )
-  p.ampAll( f1=f1, f2=f2, amax=amax, antList=antList ) 
+  p.ampAll( f1=f1, f2=f2, amax=amax, antList=antList, outfile=outfile ) 
 
 def plotPhases( LkList, f1=0., f2=0., antList=allAnts ) :
   p = LkSet( LkList )
