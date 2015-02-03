@@ -465,18 +465,6 @@ def old( ) :
   basicEffic( antList, "day081/s.vis", "day081/s.phEffic" )
   cumEffic( 3, "day081/s.phEffic", "day081cum.wip" ) 
 
-def doit() :
-   
-  antList = [2,3,4,5,6,8,9,14]    # use for 21mar and 22mar
-  onedayRbyR( "21mar", cpList=antList ) 
-  onedayRbyR( "22mar", cpList=antList ) 
-  antList = [2,4,5,6,8,9,13,14]   # use for 23mar and beyond
-  onedayRbyR( "23mar", cpList=antList ) 
-  onedayRbyR( "25mar", cpList=antList ) 
-  onedayRbyR( "26mar", cpList=antList ) 
-  onedayRbyR( "27mar", cpList=antList ) 
-  
-
 # --- generate record-by-record gains for one day (e.g., day='day075')--- #
 # ... cpList is list of antennas that are phased 
 # ... tsysL0,tsysR0 are the 'lo-band' systemps (from downconverters 5 and 6)
@@ -629,4 +617,16 @@ def findscan( t, scanname, utStart, utStop ) :
       ut2 = utStop[n]
       break
   return [ sname, ut1, ut2 ]
+  
+
+def doit() :
+   
+  antList = [2,3,4,5,6,8,9,14]    # use for 21mar and 22mar
+  #onedayRbyR( "21mar", cpList=antList ) 
+  #onedayRbyR( "22mar", cpList=antList ) 
+  antList = [2,4,5,6,8,9,13,14]   # use for 23mar and beyond
+  #onedayRbyR( "23mar", cpList=antList ) 
+  #onedayRbyR( "25mar", cpList=antList ) 
+  #onedayRbyR( "26mar", cpList=antList ) 
+  onedayRbyR( "27mar", cpList=antList ) 
   
