@@ -157,13 +157,14 @@ def addcurve( ax, path, endpoints, color ) :
 def pplot( p1, p2, p3, e1, e2, e3 ) :
   fig = plt.figure()
   ax = Axes3D(fig)
-  ax.set_axis_off()
   ax.set_aspect('equal')
+  ax.set_axis_off()
   makeequator( ax )
   makeaxes( ax )
   addcurve( ax, p1, e1, 'red' )
   addcurve( ax, p2, e2, 'green' )
   addcurve( ax, p3, e3, 'blue' )
+  ax.view_init(elev=15,azim=160)
   plt.show()
 
 def doit( thetadeg ) :
