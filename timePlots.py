@@ -50,13 +50,16 @@ def getdata2(infile,col) :
   return[t,s]
 
 
-def getcsvdata(infile,col) :
+def getcsvdata(infile,col,type=None) :
   s = []
   fin = open(infile,"r")
   for line in fin:
     if not line.startswith("#"):
       a = line.split(',')
-      s.append( a[col] )
+      if type == "Float" :
+        s.append( float(a[col]) )
+      else :
+        s.append( a[col] )
       print a[col]
   fin.close()
   return s
@@ -175,8 +178,49 @@ def RMplot( infile ) :
  
 # convert from dateTime to Julian Day
 # 2011 Jan 1 00:00:00 UT = jd 2455562.50
-def dtToJD( dt ) :
+def dt2JD( dt ) :
   dtref = datetime.datetime.strptime("2011-jan-01-00:00","%Y-%b-%d-%H:%M")
   jdref = 2455562.50
   delt = dt - dtref
   return (jdref + delt.days + delt.seconds/86400.)
+
+# find distance between Jupiter and Ganymede, say
+def separation( ref, source, outfile ) :
+  fout = open( outfile, "w" )
+  for mjdiff in numpy.arange(0.,40.,.1) :
+    p= subprocess.Popen( ( shlex.split('distance ref=%s source=%s mjd=+%.2f'  \
+       % (ref, source, deltamjd) ) ), \
+       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    pout.write("%s\n" % result)
+  fout.close()
+
+def plot4( t, s) :
+  pyplot.clf()
+  pyplot.ion()
+  fig = pyplot.subplot(1,1,1)
+  tt = mpdates.date2num(t)
+  pyplot.ylim(0,10.)
+  fig.plot_date( tt, s, "r." )
+  #fig.xaxis.set_major_locator(mpdates.MinuteLocator(interval=10))
+  fig.grid()
+  pyplot.ylabel("angular offset (arcmin)")
+  pyplot.xlabel("date")
+  #fig.xaxis.set_major_locator(mpdates.AutoDateLocator())
+  #fig.xaxis.set_major_formatter(mpdates.AutoDateFormatter())
+  fig.xaxis.set_major_formatter(mpdates.DateFormatter( "%m/%d" ) )
+  pyplot.draw()
+
+def plotsep( infile ) :
+  t = []
+  s = []
+  fin = open( infile, "r" )
+  for line in fin:
+    if line.startswith("2015") :
+      a = line.split()
+      elev = float(a[2])
+      if elev > 10. :
+        t.append(datetime.datetime.strptime( a[0][0:16], "%Y-%m-%dT%H:%M") )
+        s.append(60.*float(a[5]))
+  plot4( t,s )
+  fin.close()
