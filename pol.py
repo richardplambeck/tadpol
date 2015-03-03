@@ -2,11 +2,12 @@
 # pol.py
 
 #from Numeric import *
-from numpy import *
+import numpy 
 import math
 import cmath
 import random
-import matplotlib.pyplot as py
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 from mpl_toolkits.mplot3d import Axes3D
 
 # ---------------------------------------------------------------------------------------------------------- #
@@ -15,10 +16,10 @@ from mpl_toolkits.mplot3d import Axes3D
 # R and L propagate in +Z direction according to right hand rule
 # note: x.conjugate() gives complex conjugate of a number
 # ---------------------------------------------------------------------------------------------------------- #
-X = array( [1,0], dtype=complex )
-Y = array( [0,1], dtype=complex )
-R = array( [1./sqrt(2.), -1j*(1./sqrt(2.))] ) 
-L = array( [1./sqrt(2.), +1j*(1./sqrt(2.))] ) 
+X = numpy.array( [1,0], dtype=complex )
+Y = numpy.array( [0,1], dtype=complex )
+R = numpy.array( [1./math.sqrt(2.), -1j*(1./math.sqrt(2.))] ) 
+L = numpy.array( [1./math.sqrt(2.), +1j*(1./math.sqrt(2.))] ) 
 clight = 29.9792458	# speed of light, cm/nanosec
 
 # ---------------------------------------------------------------------------------------------------------- #
@@ -26,8 +27,8 @@ clight = 29.9792458	# speed of light, cm/nanosec
 # ---------------------------------------------------------------------------------------------------------- #
 def Jrot ( vec, thetaDegrees ) :
   rad = math.pi * thetaDegrees/180.
-  rotmat = array( [[cos(rad),sin(rad)],[-sin(rad),cos(rad)]] )
-  return dot(rotmat,vec)
+  rotmat = numpy.array( [[math.cos(rad),math.sin(rad)],[-math.sin(rad),math.cos(rad)]] )
+  return numpy.dot(rotmat,vec)
 
 # ---------------------------------------------------------------------------------------------------------- #
 # returns basis vector after passing through polarizer section
@@ -35,14 +36,14 @@ def Jrot ( vec, thetaDegrees ) :
 # ---------------------------------------------------------------------------------------------------------- #
 def Jdelay ( vec, delayDegrees ) :
   rad = math.pi * delayDegrees/180.
-  rotmat = array( [ [1, 0], [0, cmath.exp(-1.j * rad)] ] )
-  return dot( rotmat,vec )
+  rotmat = numpy.array( [ [1, 0], [0, cmath.exp(-1.j * rad)] ] )
+  return numpy.dot( rotmat,vec )
 
 # --- delays both components --- #
 def J2delay ( vec, delayDegrees ) :
   rad = math.pi * delayDegrees/180.
-  rotmat = array( [ [cmath.exp(-1.j * rad), 0], [0, cmath.exp(-1.j * rad)] ] )
-  return dot( rotmat,vec )
+  rotmat = numpy.array( [ [cmath.exp(-1.j * rad), 0], [0, cmath.exp(-1.j * rad)] ] )
+  return numpy.dot( rotmat,vec )
 
 # ---------------------------------------------------------------------------------------------------------- #
 # returns basis vector after transmission through a beamsplitter
@@ -53,8 +54,8 @@ def J2delay ( vec, delayDegrees ) :
 # ---------------------------------------------------------------------------------------------------------- #
 def Jbsplit ( vec, tpel=.001, angI=45., fGHz=230. ) :
    [tpar,tperp,Rpar,Rperp] = pellicle( tpel=tpel, angI=angI, fGHz=fGHz)
-   rotmat = array( [ [tpar, 0.], [0., tperp] ] )
-   return dot( rotmat,vec ) 
+   rotmat = numpy.array( [ [tpar, 0.], [0., tperp] ] )
+   return numpy.dot( rotmat,vec ) 
 
 # ---------------------------------------------------------------------------------------------------------- #
 # returns cutoff freqs [fcX, fcY], in GHz, for faceted circular waveguide that is squeezed along Y-direction
@@ -83,7 +84,7 @@ def length( r=0.0235, f=0.006, dphi0=90., fGHz=230., fcX=0., fcY=0. ) :
   if (f == 0.) : return 0.
   if ( (fcX == 0.) or (fcY == 0.) ) :
     [fcX,fcY] = cutoff( r, f/r, source='HFSS' )
-  length = clight * dphi0 / (2.54 * 360.* (sqrt(fGHz*fGHz-fcY*fcY) - sqrt(fGHz*fGHz-fcX*fcX)))
+  length = clight * dphi0 / (2.54 * 360.* (math.sqrt(fGHz*fGHz-fcY*fcY) - math.sqrt(fGHz*fGHz-fcX*fcX)))
   return length
 
 # --- L90 retarder lengths in table 1 are from the actual HFSS freqs, not the polynomial fit --- #
@@ -110,7 +111,7 @@ def fig4() :
 def dphi( r=0.0235, f=0.006, L=0.001, fGHz=230., fcX=0., fcY=0. ) :
   if ( (fcX == 0.) or (fcY == 0.) ) :
     [fcX,fcY] = cutoff( r, f/r, source='HFSS' )
-  dphi = 360. * L * 2.54 * (sqrt(fGHz*fGHz-fcY*fcY) - sqrt(fGHz*fGHz-fcX*fcX)) / clight
+  dphi = 360. * L * 2.54 * (math.sqrt(fGHz*fGHz-fcY*fcY) - math.sqrt(fGHz*fGHz-fcX*fcX)) / clight
   return dphi
 
 # ---------------------------------------------------------------------------------------------------------- #
@@ -143,7 +144,7 @@ def fig8ab () :
 
 def fig8c () :
   ofile = open("KbandCurved.dat","w")
-  for f in arange(19.,30.05,.05) :
+  for f in numpy.arange(19.,30.05,.05) :
     [x2, ph] = dphitaper2( r=0.2275, f=.05675, Rc=1.210, fGHz=f )    # min gap is 0.3415"
     ofile.write("%6.2f %8.4f \n" % (f, 2.*ph))
   ofile.close()
@@ -154,8 +155,8 @@ def fig8c () :
 def reflect( fGHz, r1, r2 ) :
   fc1 = clight/(3.4126 * r1 * 2.54)
   fc2 = clight/(3.4126 * r2 * 2.54)
-  Z1 = fGHz * 377./sqrt(fGHz*fGHz - fc1*fc1)
-  Z2 = fGHz * 377./sqrt(fGHz*fGHz - fc2*fc2)
+  Z1 = fGHz * 377./math.sqrt(fGHz*fGHz - fc1*fc1)
+  Z2 = fGHz * 377./math.sqrt(fGHz*fGHz - fc2*fc2)
   vR = (Z1 - Z2)/(Z1 + Z2)
   print "voltage, power reflection coefficients: %.3e %.3e" % (vR, vR*vR)
 
@@ -170,8 +171,8 @@ def example() :
   print v4
   rad = math.pi/4
   print cmath.exp(+1.j * rad) * v4
-  print "D_L ", dot(v4,L), abs(dot(v4,L))	# note: R* = L
-  print "D_R ", dot(v4,R), abs(dot(v4,R))	# note: L* = R
+  print "D_L ", numpy.dot(v4,L), abs(numpy.dot(v4,L))	# note: R* = L
+  print "D_R ", numpy.dot(v4,R), abs(numpy.dot(v4,R))	# note: L* = R
 
 # ---------------------------------------------------------------------------------------------------------- #
 # writes out dimensions of a single polarizer to 1 line of output file; 
@@ -259,9 +260,9 @@ def computeLeakage( dimfile, leakfile, apfile=None, apel=0., tpel=0., aIpel=0., 
   infile.close()
     
   # --- compute leakage array for each set of polarizer dimensions --- #
-  freq = arange(200.,271.)
-  leakage = zeros([len(freq),ntrials],Float)    # create array to hold leakages
-  effic = zeros([len(freq),ntrials],Float)      # create array to hold correlation efficiencies
+  freq = numpy.arange(200.,271.)
+  leakage = numpy.zeros([len(freq),ntrials],Float)    # create array to hold leakages
+  effic = numpy.zeros([len(freq),ntrials],Float)      # create array to hold correlation efficiencies
   for n in range(ntrials) :
     m = 0                                       # freq index
     for fGHz in freq :
@@ -290,14 +291,14 @@ def computeLeakage( dimfile, leakfile, apfile=None, apel=0., tpel=0., aIpel=0., 
 
       vout = Jrot( v1, aeval )			# evaluate leakage at angle aeval
 
-      if (n == 0) : vsave = array( [vout[0].conjugate(), vout[1].conjugate() ] )
+      if (n == 0) : vsave = numpy.array( [vout[0].conjugate(), vout[1].conjugate() ] )
         # save polarization vector of 1st trial for optional efficiency calculations
 
       # --- assume RCP out (true for positive angles a1,a2,a3) --- #
-      cleak = dot(vout, R)                      # single complex number; note R = L*
+      cleak = numpy.dot(vout, R)                      # single complex number; note R = L*
       leakage[m,n] = abs(cleak)	                # magnitude of the leakage 
 
-      if (efficfile) : effic[m,n] = abs(dot(vsave,vout))
+      if (efficfile) : effic[m,n] = abs(numpy.dot(vsave,vout))
       if (apfile) :
         [ampX, phsX, ampY, phsY, phdif ] = ampPhs( vout )
         ofile2.write("%6.1f  %8.4f %8.4f %8.4f %8.4f %8.4f\n" % (fGHz, ampX, phsX, ampY, phsY, leakage[m,n]))
@@ -341,7 +342,7 @@ def computeLeakage( dimfile, leakfile, apfile=None, apel=0., tpel=0., aIpel=0., 
       var = var + dif*dif
     if (ntrials > 1) :
       var = var/(ntrials-1)
-    ofile.write("   %6.4f %6.4f\n" % (avg,sqrt(var)))
+    ofile.write("   %6.4f %6.4f\n" % (avg,math.sqrt(var)))
     if (efficfile) : ofile3.write("\n")
     m = m + 1
   ofile.close()     
@@ -496,10 +497,10 @@ def fig12b() :
 # Fresnel formulae, transmission and reflection amplitude coeff, 1.5.2, eqn 20,21 (p. 40); for 1 surface
 # ---------------------------------------------------------------------------------------------------------- #
 def fresnel( n1, thetaI, n2, thetaT ) :
-  tpar = 2. * n1 * cos(thetaI) / (n2 * cos(thetaI) + n1 * cos(thetaT))
-  tperp = 2. * n1 * cos(thetaI) / (n1 * cos(thetaI) + n2 * cos(thetaT))
-  rpar = (n2 * cos(thetaI) - n1 * cos(thetaT)) / (n2 * cos(thetaI) + n1 * cos(thetaT))
-  rperp = (n1 * cos(thetaI) - n2 * cos(thetaT)) / (n1 * cos(thetaI) + n2 * cos(thetaT))
+  tpar = 2. * n1 * math.cos(thetaI) / (n2 * math.cos(thetaI) + n1 * math.cos(thetaT))
+  tperp = 2. * n1 * math.cos(thetaI) / (n1 * math.cos(thetaI) + n2 * math.cos(thetaT))
+  rpar = (n2 * math.cos(thetaI) - n1 * math.cos(thetaT)) / (n2 * math.cos(thetaI) + n1 * math.cos(thetaT))
+  rperp = (n1 * math.cos(thetaI) - n2 * math.cos(thetaT)) / (n1 * math.cos(thetaI) + n2 * math.cos(thetaT))
   return [tpar, tperp, rpar, rperp]
 
 # ---------------------------------------------------------------------------------------------------------- #
@@ -514,10 +515,10 @@ def fresnel( n1, thetaI, n2, thetaT ) :
 def pellicle( tpel=.001, angI=45, nn=1.83, fGHz=230. ) :
   if (tpel == 0.00) : return [1.,1.,0.,0.]
   thetaI = math.pi * angI / 180.	                        # convert to radians 
-  thetaT = math.asin((sin(thetaI))/nn)	                        # Snell's law, eqn 8 (p. 38)
+  thetaT = math.asin((math.sin(thetaI))/nn)	                        # Snell's law, eqn 8 (p. 38)
   [tpar,tperp,rpar,rperp] = fresnel( 1., thetaI, nn, thetaT )                        # entering dielectric
   [tprimepar,tprimeperp,rprimepar,rprimeperp] = fresnel( nn, thetaT, 1., thetaI )    # leaving dielectric
-  delta = 4. * math.pi * 2.54 * tpel * nn * cos(thetaT) / (clight/fGHz)	  
+  delta = 4. * math.pi * 2.54 * tpel * nn * math.cos(thetaT) / (clight/fGHz)	  
     # phase shift of signal propagating once through the pellicle; eqn (1), p. 324
   result = []
   result.append(tpar*tprimepar/(1.-rpar*rpar*cmath.exp(1.j * delta)))
@@ -525,7 +526,7 @@ def pellicle( tpel=.001, angI=45, nn=1.83, fGHz=230. ) :
     # amplitude transmission coefficient, eqn (11), p. 325
   Fpar = 4.*rpar*rpar/pow((1. - rpar*rpar),2.)  
   Fperp = 4.*rperp*rperp/pow((1.-rperp*rperp),2.)
-  sinsq = pow( sin(delta/2.), 2. )
+  sinsq = pow( math.sin(delta/2.), 2. )
   result.append( Fpar * sinsq/(1. + Fpar * sinsq) )	
   result.append( Fperp * sinsq/(1. + Fperp * sinsq) )
     # power reflection coefficients, eqn (15,16) p. 327 
@@ -535,7 +536,7 @@ def pellicle( tpel=.001, angI=45, nn=1.83, fGHz=230. ) :
 def fig18( outfile='pelR.dat' ) :
   ofile = open( outfile, "w" )
   ofile.write("# tpel  Rpar35  Rperp35  Rpar45  Rperp45\n")
-  for tpel in arange(0.00002,.00202,.00002) :
+  for tpel in numpy.arange(0.00002,.00202,.00002) :
     [tpar,tperp,Rpar,Rperp] = pellicle( tpel=tpel, angI=35, fGHz=230.)
     ofile.write("%7.5f %10.4f %10.4f" % (tpel, 10.*math.log10(Rpar), 10.*math.log10(Rperp)))
     [tpar,tperp,Rpar,Rperp] = pellicle( tpel=tpel, angI=45, fGHz=230.)
@@ -576,11 +577,11 @@ def HFSSleak( infile, leakfile ) :
       phsX = math.pi * float(a[2]) / 180.	      # convert phs to RADIANS
       ampY = math.sqrt(pow(10.,float(a[3])/10.))
       phsY = math.pi * float(a[4]) / 180.
-      vec = array( [ (ampX*math.cos(phsX) + 1j*ampX*math.sin(phsX)),
+      vec = numpy.array( [ (ampX*math.cos(phsX) + 1j*ampX*math.sin(phsX)),
                      (ampY*math.cos(phsY) + 1j*ampY*math.sin(phsY)) ] )
-      print vec, dot(vec,R), dot(vec,L)
-      Rleak = abs(dot(vec, R)) 		# amplitude of single complex number 
-      Lleak = abs(dot(vec, L))
+      print vec, numpy.dot(vec,R), numpy.dot(vec,L)
+      Rleak = abs(numpy.dot(vec, R)) 		# amplitude of single complex number 
+      Lleak = abs(numpy.dot(vec, L))
       ofile.write("%8.3f %8.3f %8.3f %8.3f %8.3f %10.5f %10.5f\n" %
         (fGHz, ampX, float(a[2]), ampY, float(a[4]), Rleak, Lleak))
   ofile.close()
@@ -590,7 +591,7 @@ def HFSSleak( infile, leakfile ) :
 # ---------------------------------------------------------------------------------------------------------- #
 def fig16( outfile='fullsim1.dat' ) :
   ofile = open( outfile, "w")
-  for freq in arange(200.,271.,1.) :
+  for freq in numpy.arange(200.,271.,1.) :
     v1 = Y
     v2 = Jrot( v1, -15. )
     [dx, ph] = dphitaper2 ( r=0.0235, f=0.006, Rc=0.125, fGHz=freq, nsteps=1000 ) 
@@ -601,8 +602,8 @@ def fig16( outfile='fullsim1.dat' ) :
     v3 = Jdelay( v2, phshift )
     v2 = Jrot( v3, 74.5 )
     vout = v2
-    Rleak = abs(dot(vout, R)) 		# amplitude of single complex number 
-    Lleak = abs(dot(vout, L))
+    Rleak = abs(numpy.dot(vout, R)) 		# amplitude of single complex number 
+    Lleak = abs(numpy.dot(vout, L))
     ofile.write("%6.1f %8.5f %8.5f\n" % (freq, Rleak, Lleak ) )
   ofile.close()
 
@@ -610,7 +611,7 @@ def fig16( outfile='fullsim1.dat' ) :
 
 def finalcheck3( outfile='reversed.dat' ) :
   ofile = open( outfile, "w")
-  for freq in arange(200.,271.,1.) :
+  for freq in numpy.arange(200.,271.,1.) :
     v1 = L
     v2 = Jrot( v1, 74.5 )
     phshift = dphi( r=0.0235, f=0.006, L=0.0752, fGHz=freq ) 
@@ -619,7 +620,7 @@ def finalcheck3( outfile='reversed.dat' ) :
     phshift = dphi( r=0.0235, f=0.006, L=0.1504, fGHz=freq ) 
     v3 = Jdelay( v2, phshift )
     vout = Jrot( v3, -15. )
-    cleak = dot(vout, Y) 		# single complex number 
+    cleak = numpy.dot(vout, Y) 		# single complex number 
     ofile.write("%6.1f %6.4f\n" % (freq, abs(cleak)) )
   ofile.close()
 
@@ -662,9 +663,9 @@ def perflist( dimfile, outfile ) :
   infile.close()
     
   # --- compute power from OMT X and Y ports for each polarizer in the list --- #
-  freq = arange(205.,271.)
-  powX = zeros([len(freq),ntrials],Float)
-  powY = zeros([len(freq),ntrials],Float)
+  freq = numpy.arange(205.,271.)
+  powX = numpy.zeros([len(freq),ntrials],Float)
+  powY = numpy.zeros([len(freq),ntrials],Float)
   for n in range(ntrials) :
     m = 0									# freq index
     for fGHz in freq :
@@ -674,8 +675,8 @@ def perflist( dimfile, outfile ) :
       v2 = Jrot( v3, a2[n] )
       v3 = Jdelay( v2, dphi( r[n], f1[n], L1[n], fGHz ) )
       v2 = Jrot( v3, a1[n] )
-      powX[m,n] = pow(abs(dot(v2,X)),2.)
-      powY[m,n] = pow(abs(dot(v2,Y)),2.)
+      powX[m,n] = pow(abs(numpy.dot(v2,X)),2.)
+      powY[m,n] = pow(abs(numpy.dot(v2,Y)),2.)
       m = m + 1
 
   # --- write dimensions to output file --- #
@@ -703,7 +704,7 @@ def perflist( dimfile, outfile ) :
       var = var + dif*dif
     if (ntrials > 1) :
       var = var/(ntrials-1)
-    ofile.write("  %6.4f %6.4f\n" % (avg,sqrt(var)))
+    ofile.write("  %6.4f %6.4f\n" % (avg,math.sqrt(var)))
     m = m + 1
   ofile.close()     
 
@@ -716,7 +717,7 @@ def perf( angle1=15.5, angle2=59.5, angle3=15., fdepth=.006, outfile='perf.dat' 
   ofile.write("# angle2 = %.2f  # quarter wave to halfwave\n" % angle2)
   ofile.write("# angle3 = %.2f  # halfwave to OMT\n" % angle3)
   ofile.write("# fdepth = %.4f  # facet depth\n" % fdepth)
-  for freq in arange(205.,271.,1.) :
+  for freq in numpy.arange(205.,271.,1.) :
     v1 = Y
     v2 = Jrot( v1, angle1 )
     [dx, ph] = dphitaper2 ( r=0.0235, f=fdepth, Rc=0.0625, fGHz=freq, nsteps=100 ) 
@@ -726,8 +727,8 @@ def perf( angle1=15.5, angle2=59.5, angle3=15., fdepth=.006, outfile='perf.dat' 
     phshift2 = 2.*ph + dphi( r=0.0235, f=fdepth, L=0.1196, fGHz=freq ) 
     v3 = Jdelay( v2, phshift2 )
     v2 = Jrot( v3, angle3 )
-    magX = abs(dot(v2,X))
-    magY = abs(dot(v2,Y))
+    magX = abs(numpy.dot(v2,X))
+    magY = abs(numpy.dot(v2,Y))
     # --- also compute leakage --- #
     v1 = R
     v2 = Jrot( v1, angle1 )
@@ -735,7 +736,7 @@ def perf( angle1=15.5, angle2=59.5, angle3=15., fdepth=.006, outfile='perf.dat' 
     v2 = Jrot( v3, angle2 )
     v3 = Jdelay( v2, phshift2 )
     v2 = Jrot( v3, angle3 )
-    cleak = dot(v2, X) 		# single complex number 
+    cleak = numpy.dot(v2, X) 		# single complex number 
    
     ofile.write("%6.1f %6.4f %6.4f %6.4f\n" % (freq, pow(magX,2.), pow(magY,2.), abs(cleak)) )
   ofile.close()
@@ -743,7 +744,7 @@ def perf( angle1=15.5, angle2=59.5, angle3=15., fdepth=.006, outfile='perf.dat' 
 
 def fig2 ( ) :
   ofile = open("fig2.dat","w")
-  for f1 in arange(0.0020, 0.0071, .0001):
+  for f1 in numpy.arange(0.0020, 0.0071, .0001):
     L1 = length( f=f1 )
     ofile.write("%6.4f %6.4f %6.2f\n" % ( f1, L1, dphi( f=(f1+.0001), L=L1 ) ))
   ofile.close()
@@ -771,28 +772,28 @@ def lindim( ntrials=1, dimfile='dims.txt', rtarg=0.0235, rstep=0.0, ftarg=0.006,
 
   # --- now write out one line per step for variables with step .ne. 0 --- #
   if (rstep != 0.) :
-    for r in arange( rtarg-nn*rstep, rtarg+(nn+1)*rstep, rstep ) :
+    for r in numpy.arange( rtarg-nn*rstep, rtarg+(nn+1)*rstep, rstep ) :
       dumpDimensions( dimfile, r, a1targ, ftarg, L1targ, a2targ, ftarg, L2targ, a3targ, ftarg, L3targ )
   if (fstep != 0.) :
-    for f in arange( ftarg-nn*fstep, ftarg+(nn+1)*fstep, fstep ) :
+    for f in numpy.arange( ftarg-nn*fstep, ftarg+(nn+1)*fstep, fstep ) :
       dumpDimensions( dimfile, rtarg, a1targ, f, L1targ, a2targ, f, L2targ, a3targ, f, L3targ, a4targ )
   if (a1step != 0.) :
-    for a1 in arange( a1targ-nn*a1step, a1targ+(nn+1)*a1step, a1step ) :
+    for a1 in numpy.arange( a1targ-nn*a1step, a1targ+(nn+1)*a1step, a1step ) :
       dumpDimensions( dimfile, rtarg, a1, ftarg, L1targ, a2targ, ftarg, L2targ, a3targ, ftarg, L3targ )
   if (L1step != 0.) :
-    for L1 in arange( L1targ-nn*L1step, L1targ+(nn+1)*L1step, L1step ) :
+    for L1 in numpy.arange( L1targ-nn*L1step, L1targ+(nn+1)*L1step, L1step ) :
       dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1, a2targ, ftarg, L2targ, a3targ, ftarg, L3targ )
   if (a2step != 0.) :
-    for a2 in arange( a2targ-nn*a2step, a2targ+(nn+1)*a2step, a2step ) :
+    for a2 in numpy.arange( a2targ-nn*a2step, a2targ+(nn+1)*a2step, a2step ) :
       dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2, ftarg, L2targ, a3targ, ftarg, L3targ )
   if (L2step != 0.) :
-    for L2 in arange( L2targ-nn*L2step, L2targ+(nn+1)*L2step, L2step ) :
+    for L2 in numpy.arange( L2targ-nn*L2step, L2targ+(nn+1)*L2step, L2step ) :
       dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2targ, ftarg, L2, a3targ, ftarg, L3targ )
   if (a3step != 0.) :
-    for a3 in arange( a3targ-nn*a3step, a3targ+(nn+1)*a3step, a3step ) :
+    for a3 in numpy.arange( a3targ-nn*a3step, a3targ+(nn+1)*a3step, a3step ) :
       dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2targ, ftarg, L2targ, a3, ftarg, L3targ )
   if (L3step != 0.) :
-    for L3 in arange( L3targ-nn*L3step, L3targ+(nn+1)*L3step, L3step ) :
+    for L3 in numpy.arange( L3targ-nn*L3step, L3targ+(nn+1)*L3step, L3step ) :
       dumpDimensions( dimfile, rtarg, a1targ, ftarg, L1targ, a2targ, ftarg, L2targ, a3targ, ftarg, L3 )
 
 # ---------------------------------------------------------
@@ -855,7 +856,7 @@ def perfplots() :
 # --- emulate tests of CP11 done at Agilent on 29jan2010 --- #
 def Agilentcheck( outfile='Agilent1.dat' ) :
   ofile = open( outfile, "w")
-  for freq in arange(200.,271.,1.) :
+  for freq in numpy.arange(200.,271.,1.) :
     v1 = Y
     v2 = Jrot( v1, -15. )
     [dx, ph] = dphitaper2 ( r=0.0235, f=0.006, Rc=0.0625, fGHz=freq, nsteps=100 ) 
@@ -866,8 +867,8 @@ def Agilentcheck( outfile='Agilent1.dat' ) :
     phshift = 2.*ph + dphi( r=0.0235, f=0.006, L=0.0444, fGHz=freq ) 
     v3 = Jdelay( v2, phshift )
     v2 = Jrot( v3, 74.5 )
-    Xout = dot(v2, X) 		# single complex number 
-    Yout = dot(v2, Y)
+    Xout = numpy.dot(v2, X) 		# single complex number 
+    Yout = numpy.dot(v2, Y)
     phsX = 180. * math.atan2(Xout.imag,Xout.real) / math.pi
     phsY = 180. * math.atan2(Yout.imag,Yout.real) / math.pi
     ofile.write("%6.1f %6.4f %8.4f %6.4f %8.4f %10.4f\n" % (freq, abs(Xout), phsX, abs(Yout), phsY, phsX-phsY)) 
@@ -895,26 +896,26 @@ def stepmatch(dfacet=.006, r=0.0235, fGHz=230., outfile="match.dat" ) :
   ofile = open(outfile,"w")
   [fcx0,fcy0] = cutoff( r, 0. )
   [fcx1,fcy1] = cutoff( r, dfacet/r )
-  Zx0 = fGHz * 377. / sqrt(fGHz*fGHz - fcx0*fcx0)
-  Zy0 = fGHz * 377. / sqrt(fGHz*fGHz - fcy0*fcy0)
-  Zx1 = fGHz * 377. / sqrt(fGHz*fGHz - fcx1*fcx1)
-  Zy1 = fGHz * 377. / sqrt(fGHz*fGHz - fcy1*fcy1)
+  Zx0 = fGHz * 377. / math.sqrt(fGHz*fGHz - fcx0*fcx0)
+  Zy0 = fGHz * 377. / math.sqrt(fGHz*fGHz - fcy0*fcy0)
+  Zx1 = fGHz * 377. / math.sqrt(fGHz*fGHz - fcx1*fcx1)
+  Zy1 = fGHz * 377. / math.sqrt(fGHz*fGHz - fcy1*fcy1)
   vRx = (Zx1 - Zx0) / (Zx1 + Zx0)
   vRy = (Zy1 - Zy0) / (Zy1 + Zy0)
   print "voltage, power reflection coeff with no matching section"
   print " .. x: %.3e %.2f" % (vRx, -20.*log(abs(vRx))/2.30259 )
   print " .. y: %.3e %.2f" % (vRy, -20.*log(abs(vRy))/2.30259 )
   ofile.write("# dmatch   fcutoffX    Zx-Zxm    fcutoffY    Zy-Zym\n") 
-  Zxm = sqrt(Zx0*Zx1)
-  Zym = sqrt(Zy0*Zy1)
+  Zxm = math.sqrt(Zx0*Zx1)
+  Zym = math.sqrt(Zy0*Zy1)
   dmatchx = 0.
   dmatchy = 0.
   Zdifxleast = 100000.
   Zdifyleast = 100000.
-  for d in arange (0., dfacet, .00001) :
+  for d in numpy.arange (0., dfacet, .00001) :
     [fcxm,fcym] = cutoff( r, d/r )
-    Zx = fGHz * 377. / sqrt(fGHz*fGHz - fcxm*fcxm)
-    Zy = fGHz * 377. / sqrt(fGHz*fGHz - fcym*fcym)
+    Zx = fGHz * 377. / math.sqrt(fGHz*fGHz - fcxm*fcxm)
+    Zy = fGHz * 377. / math.sqrt(fGHz*fGHz - fcym*fcym)
     ofile.write("%8.5f  %10.3f %10.6f  %10.3f %10.6f\n" % (d, fcxm,(Zx-Zxm),fcym,(Zy-Zym))) 
     if (abs(Zx-Zxm) < Zdifxleast) :
        dmatchx = d
@@ -923,10 +924,10 @@ def stepmatch(dfacet=.006, r=0.0235, fGHz=230., outfile="match.dat" ) :
        dmatchy = d
        Zdifyleast = abs(Zy-Zym)
   [fcxm,fcym] = cutoff( r, dmatchx/r )
-  lmatch = clight/(2.54 * 4. * sqrt(fGHz*fGHz - fcxm*fcxm)) 		# lambda_guide/4.
+  lmatch = clight/(2.54 * 4. * math.sqrt(fGHz*fGHz - fcxm*fcxm)) 		# lambda_guide/4.
   print "best X match is depth %.5f, length %.4f" % (dmatchx,lmatch)
   [fcxm,fcym] = cutoff( r, dmatchy/r )
-  lmatch = clight/(2.54 * 4. * sqrt(fGHz*fGHz - fcym*fcym)) 
+  lmatch = clight/(2.54 * 4. * math.sqrt(fGHz*fGHz - fcym*fcym)) 
   print "best Y match is depth %.5f, length %.4f" % (dmatchy,lmatch)
   ofile.close()
 
@@ -934,16 +935,16 @@ def stepmatch(dfacet=.006, r=0.0235, fGHz=230., outfile="match.dat" ) :
 def BWfig12():
   ofile = open( "BWfig12.dat", "w" )
   nn = 1.52
-  for angI in arange(0., 90., .5) :
+  for angI in numpy.arange(0., 90., .5) :
     thetaI = math.pi * angI / 180.	  
-    thetaT = math.asin((sin(thetaI))/nn)
+    thetaT = math.asin((math.sin(thetaI))/nn)
     [tpar,tperp,rpar,rperp] = fresnel( 1., thetaI, nn, thetaT ) 
     ofile.write("%.2f %.4f %.4f\n" % (angI, rpar*rpar, rperp*rperp))
   ofile.close()
     
 def testpellicle(ang) :
   ofile = open("testpellicle", "w")
-  for tp in arange(0.,.05,.0001) :
+  for tp in numpy.arange(0.,.05,.0001) :
       [tpar,tperp,rpar,rperp] = pellicle( tpel=tp, angI=ang )
       ofile.write("%6.4f %8.5f %8.5f\n" % (tp,rpar,rperp))
   ofile.close()
@@ -956,16 +957,16 @@ def LeakageRealityCheck() :
   v2 = Jrot(v3, -60.)
   v3 = Jdelay(v2, 180)
   v2 = Jrot(v3, -15.)
-  print "D_L ", dot(v2,X), abs(dot(v2,X))   # note: R* = L
-  print "D_R ", dot(v2,Y), abs(dot(v2,Y))   # note: L* = R
+  print "D_L ", numpy.dot(v2,X), abs(numpy.dot(v2,X))   # note: R* = L
+  print "D_R ", numpy.dot(v2,Y), abs(numpy.dot(v2,Y))   # note: L* = R
   v1 = L
   v2 = Jrot(v1, -15.5)
   v3 = Jdelay(v2, 85)
   v2 = Jrot(v3, -60.)
   v3 = Jdelay(v2, 180)
   v2 = Jrot(v3, -15.)
-  print "D_L ", dot(v2,X), abs(dot(v2,X))   # note: R* = L
-  print "D_R ", dot(v2,Y), abs(dot(v2,Y))   # note: L* = R
+  print "D_L ", numpy.dot(v2,X), abs(numpy.dot(v2,X))   # note: R* = L
+  print "D_R ", numpy.dot(v2,Y), abs(numpy.dot(v2,Y))   # note: L* = R
 
 # --- added 21jan2015 - test whether DL = DR* for simple pol
 def LeakageRealityCheck2() :
@@ -973,14 +974,14 @@ def LeakageRealityCheck2() :
   v2 = Jrot(v1, -45)
   v3 = Jdelay(v2, 85)
   v2 = Jrot(v3, 45.)
-  print "D_L ", dot(v2,X), abs(dot(v2,X))   # note: R* = L
-  print "D_R ", dot(v2,Y), abs(dot(v2,Y))   # note: L* = R
+  print "D_L ", numpy.dot(v2,X), abs(numpy.dot(v2,X))   # note: R* = L
+  print "D_R ", numpy.dot(v2,Y), abs(numpy.dot(v2,Y))   # note: L* = R
   v1 = L
   v2 = Jrot(v1, -45)
   v3 = Jdelay(v2, 85)
   v2 = Jrot(v3, 45.)
-  print "D_L ", dot(v2,X), abs(dot(v2,X))   # note: R* = L
-  print "D_R ", dot(v2,Y), abs(dot(v2,Y))   # note: L* = R
+  print "D_L ", numpy.dot(v2,X), abs(numpy.dot(v2,X))   # note: R* = L
+  print "D_R ", numpy.dot(v2,Y), abs(numpy.dot(v2,Y))   # note: L* = R
 
 
 def plotVecs( infile ) :
@@ -1000,8 +1001,8 @@ def plotVecs( infile ) :
       DLy.append(  a[3] )
       DRx.append(  a[5] )
       DRy.append(  a[6] )
-      py.plot( array(DLx), array(DLy), 'rD', markersize=6., linewidth=4 )
-      py.plot( array(DRx), array(DRy), 'b+', markersize=6., linewidth=4 )
+      py.plot( numpy.array(DLx), numpy.array(DLy), 'rD', markersize=6., linewidth=4 )
+      py.plot( numpy.array(DRx), numpy.array(DRy), 'b+', markersize=6., linewidth=4 )
   fin.close() 
   py.xlabel('real')
   py.ylabel('imag')
@@ -1049,7 +1050,7 @@ def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.
   ofile.write("# angle of quarterwave section relative to halfwave section a2 = %.2f\n" % a2)
   ofile.write("#  fGHz  R_mag  R_real  R_imag    L_mag  L_real L_imag   XampA  XphsA  XampB  XphsB   phsdifAB\n" )
   veclist = [X,R,L]
-  for fGHz in arange(200.,271.,1.) :
+  for fGHz in numpy.arange(200.,271.,1.) :
     print " "
     ofile.write("%6.1f" % fGHz)
     phshift1 = dphi( r=0.0235, f=fdepth, L=L180, fGHz=fGHz )
@@ -1075,9 +1076,9 @@ def computeLeakage2( tpel=0., aIpel=30., aPpel=90., fdepth=0.006, a1=15., a2=59.
         freqsave.append(fGHz)
         phdifsave.append(phsdif)
       else :
-        leak = dot(v1,X)
-        if (abs(leak) > abs(dot(v1,Y))) :
-          leak = dot(v1,Y)
+        leak = numpy.dot(v1,X)
+        if (abs(leak) > abs(numpy.dot(v1,Y))) :
+          leak = numpy.dot(v1,Y)
         ofile.write("     %7.5f %8.5f %8.5f" % (abs(leak),leak.real,leak.imag))
         if (nvec == 2 ) :							# print noise source values at end of line
           ofile.write("    %7.5f %7.2f %7.5f %7.2f  %7.2f" % (ampX,phsX,ampY,phsY,phsdif))
@@ -1167,10 +1168,10 @@ def makepath( fGHz, vin, stack ) :
     print v1
     v2 = Jrot( v1, plate[0] )                   # v2 is rotated starting point for this segment
     for t in numpy.arange( 0., plate[1], .005 ) :
-      v3 = Jdelay( v2, dphi(t, fGHz) )      
+      v3 = Jdelay( v2, dphi(L=t, fGHz=fGHz) )      # for sapphire put in different dphi!
       v4 = Jrot( v3, -plate[0] )	            # v4 is endpoint for thickness t
       path.append( stokes( v4 ) )
-    v3 = Jdelay( v2, dphi( plate[1], fGHz ) )  	
+    v3 = Jdelay( v2, dphi( L=plate[1], fGHz=fGHz ) )  	
     v1 = Jrot( v3, -plate[0] )                  # v1 is endpoint for thickness tplate[1]
   path.append( stokes( v1 ) )				    # endpoint of entire stack
   return numpy.array(path)
@@ -1180,12 +1181,12 @@ def makeendpoints( fGHz, vin, stack ) :
   v1 = vin
   for plate in stack :
     v2 = Jrot( v1, plate[0] )                   # v2 is rotated starting point for this segment
-    v3 = Jdelay( v2, dphi( plate[1], fGHz ) )  	
+    v3 = Jdelay( v2, dphi(L=plate[1], fGHz=fGHz) )      # for sapphire put in different dphi!
     v1 = Jrot( v3, -plate[0] )                  # v1 is endpoint for thickness tplate[1]
     path.append( stokes( v1 ) )				    # endpoint of entire stack
   return numpy.array(path)
 
-def makeequator( ax ) :
+def makeequator( ax, viewEl, viewAz ) :
   npts = 256
   x = numpy.zeros( npts )
   y = numpy.zeros( npts )
@@ -1196,8 +1197,19 @@ def makeequator( ax ) :
     y[n] = math.sin(phi)
     n = n+1
   q = Axes3D.plot(ax, x, y, zs=z, c='gray' )
-  q = Axes3D.plot(ax, x, z, zs=y, c='gray' )
-  q = Axes3D.plot(ax, z, y, zs=x, c='gray' )
+  #q = Axes3D.plot(ax, x, z, zs=y, c='gray' )
+  #q = Axes3D.plot(ax, z, y, zs=x, c='gray' )
+
+  # -- also plot circle that normal to viewing axis -- #
+  alpha = math.pi * (90.-viewEl) / 180. 
+  xp = x
+  yp = math.cos(alpha) * y + math.sin(alpha) * z
+  zp = -1.*math.sin(alpha) * y + math.cos(alpha) * z  
+  beta = math.pi * (90.-viewAz)/180.
+  x = math.cos(beta)*xp + math.sin(beta)*yp 
+  y = -1.*math.sin(beta)*xp + math.cos(beta)*yp
+  z = zp
+  q = Axes3D.plot(ax, x, y, zs=z, c='gray' )
 
 def makeaxes( ax ) :
   x = numpy.array( [-1, 1] )
@@ -1211,30 +1223,31 @@ def addcurve( ax, path, endpoints, color ) :
   py = path[ :,1 ]
   pz = path[ :,2 ]
   n = len(px) - 1
-  q = Axes3D.plot(ax, px, py, zs=pz, c=color, linewidth=2 )
+  q = Axes3D.plot(ax, px, py, '--', zs=pz, c=color, linewidth=2 )
   px = endpoints[ :,0 ]
   py = endpoints[ :,1 ]
   pz = endpoints[ :,2 ]
   print px, py, pz
-  q = Axes3D.scatter(ax, px,py, zs=pz, c=color, marker='o', s=60)
+  q = Axes3D.scatter3D(ax, px,py, zs=pz, c=color, marker='o', s=60 )
      
-def pplot( p1, p2, p3, e1, e2, e3 ) :
+def pplot( p1, p2, p3, e1, e2, e3, viewEl, viewAz ) :
   fig = plt.figure()
   ax = Axes3D(fig)
   ax.set_aspect('equal')
   ax.set_axis_off()
-  makeequator( ax )
+  makeequator( ax, viewEl, viewAz )
   makeaxes( ax )
   addcurve( ax, p1, e1, 'red' )
   addcurve( ax, p2, e2, 'green' )
   addcurve( ax, p3, e3, 'blue' )
-  ax.view_init(elev=15,azim=160)
+  #circle = plt.Circle( (0,0), 1.)
+  #fig.add_artist(circle)
+  ax.view_init(elev=viewEl,azim=viewAz)
   plt.show()
 
 def doit7( thetadeg ) :
   theta = thetadeg * math.pi/180.
   vin = numpy.array( [math.cos(theta),math.sin(theta)], dtype=complex )
-   = .37
   stack1 = [ [45.,tt] ]
   stack2 = [ [22.5,tt], [67.5,tt] ]
   stack3 = [ [15.,tt],  [75.,tt],   [15.,tt] ]
@@ -1248,6 +1261,7 @@ def doit7( thetadeg ) :
   e3 = makeendpoints( 170., vin, which )
   pplot( p1, p2, p3, e1, e2, e3 )
   
+# shows Faraday rotation
 def drawcylinder( ax ) :
   npts = 2048 
   xa = numpy.array( [-1, 1] )
@@ -1303,6 +1317,7 @@ def drawcylinder( ax ) :
   q = Axes3D.plot(ax, xxxx, yyyy, zs=zzzz, c='black' )
   
 
+# this shows Faraday rotation!!
 def cylinder() :
   fig = plt.figure()
   ax = Axes3D(fig)
@@ -1316,3 +1331,21 @@ def cylinder() :
   #q = fig.gca(projection='3d')
   #q._axis3don=False
   plt.show()
+
+# make Poincare plots for 1mm polarizer
+# start at theta=0
+# specify projections
+def doit9( viewEl=30, viewAz=30 ) :
+  vin = R
+  freq1 = 210.
+  freq2 = 230.
+  freq3 = 260.
+  #stack = [ [45., length() ] ] 
+  stack = [ [ -15.5, length() ], [ -75., 2.*length() ]  ] 
+  p1 = makepath( freq1, vin, stack )
+  e1 = makeendpoints( freq1, vin, stack )
+  p2 = makepath( freq2, vin, stack )
+  e2 = makeendpoints( freq2, vin, stack )
+  p3 = makepath( freq3, vin, stack )
+  e3 = makeendpoints( freq3, vin, stack )
+  pplot( p1, p2, p3, e1, e2, e3, viewEl, viewAz )
