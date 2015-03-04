@@ -8,6 +8,7 @@ import cmath
 import random
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+from matplotlib.backends.backend_pdf import PdfPages
 from mpl_toolkits.mplot3d import Axes3D
 
 # ---------------------------------------------------------------------------------------------------------- #
@@ -1177,7 +1178,7 @@ def makepath( fGHz, vin, stack ) :
   return numpy.array(path)
 
 def makeendpoints( fGHz, vin, stack ) :
-  path = []
+  path = [ stokes( vin) ]
   v1 = vin
   for plate in stack :
     v2 = Jrot( v1, plate[0] )                   # v2 is rotated starting point for this segment
@@ -1218,33 +1219,18 @@ def makeaxes( ax ) :
   q = Axes3D.plot(ax, y, x, zs=y, c='black' )
   q = Axes3D.plot(ax, y, y, zs=x, c='black' )
   
-def addcurve( ax, path, endpoints, color ) :
+def addcurve( ax, path, color ) :
   px = path[ :,0 ]
   py = path[ :,1 ]
   pz = path[ :,2 ]
-  n = len(px) - 1
   q = Axes3D.plot(ax, px, py, '--', zs=pz, c=color, linewidth=2 )
+
+def addpoints( ax, endpoints, color ) :
   px = endpoints[ :,0 ]
   py = endpoints[ :,1 ]
   pz = endpoints[ :,2 ]
-  print px, py, pz
-  q = Axes3D.scatter3D(ax, px,py, zs=pz, c=color, marker='o', s=60 )
+  q = Axes3D.scatter3D(ax, px,py, zs=pz, c=color, marker='o', s=60, depthshade=False )
      
-def pplot( p1, p2, p3, e1, e2, e3, viewEl, viewAz ) :
-  fig = plt.figure()
-  ax = Axes3D(fig)
-  ax.set_aspect('equal')
-  ax.set_axis_off()
-  makeequator( ax, viewEl, viewAz )
-  makeaxes( ax )
-  addcurve( ax, p1, e1, 'red' )
-  addcurve( ax, p2, e2, 'green' )
-  addcurve( ax, p3, e3, 'blue' )
-  #circle = plt.Circle( (0,0), 1.)
-  #fig.add_artist(circle)
-  ax.view_init(elev=viewEl,azim=viewAz)
-  plt.show()
-
 def doit7( thetadeg ) :
   theta = thetadeg * math.pi/180.
   vin = numpy.array( [math.cos(theta),math.sin(theta)], dtype=complex )
@@ -1259,7 +1245,6 @@ def doit7( thetadeg ) :
   e2 = makeendpoints( 150., vin, which )
   p3 = makepath( 170., vin, which )
   e3 = makeendpoints( 170., vin, which )
-  pplot( p1, p2, p3, e1, e2, e3 )
   
 # shows Faraday rotation
 def drawcylinder( ax ) :
@@ -1335,17 +1320,51 @@ def cylinder() :
 # make Poincare plots for 1mm polarizer
 # start at theta=0
 # specify projections
-def doit9( viewEl=30, viewAz=30 ) :
+def doit9( viewEl=8, viewAz=200 ) :
   vin = R
-  freq1 = 210.
-  freq2 = 230.
-  freq3 = 260.
-  #stack = [ [45., length() ] ] 
+  freqlist = [210.,230.,260.]
+  colorlist = ['red','green','blue']
+  plt.ion()
+  #pp = PdfPages( "Poincare.pdf" )
+  stack = [ [-45., length() ] ] 
+  #stack = [ [ -15.5, length() ], [ -75., 2.*length() ]  ] 
+  fig = plt.figure( figsize=(20,10), facecolor='white', tight_layout=True )
+  ax = fig.add_subplot( 1, 2, 1, projection='3d', title="1-section" )
+  ax.set_aspect('equal')
+  ax.set_axis_off()
+  makeequator( ax, viewEl, viewAz )
+     # draws equator plus outline of sphere as seen from viewEl and viewAz
+     # figure can be rotated on screen, but outline of sphere will then be incorrect,
+     # so determine optimum viewEl and viewAz before making final plot
+  makeaxes( ax )
+     # adds x, y, z axes
+  for freq, color in zip( freqlist, colorlist ) :
+    p1 = makepath( freq, vin, stack )
+    addcurve( ax, p1, color )
+  for freq, color in zip( freqlist, colorlist ) :
+    e1 = makeendpoints( freq, vin, stack )
+    addpoints( ax, e1, color )
+  ax.view_init(elev=viewEl,azim=viewAz)
+
   stack = [ [ -15.5, length() ], [ -75., 2.*length() ]  ] 
-  p1 = makepath( freq1, vin, stack )
-  e1 = makeendpoints( freq1, vin, stack )
-  p2 = makepath( freq2, vin, stack )
-  e2 = makeendpoints( freq2, vin, stack )
-  p3 = makepath( freq3, vin, stack )
-  e3 = makeendpoints( freq3, vin, stack )
-  pplot( p1, p2, p3, e1, e2, e3, viewEl, viewAz )
+  ax = fig.add_subplot( 1, 2, 2, projection='3d', title="2-section" )
+  ax.set_aspect('equal')
+  ax.set_axis_off()
+  makeequator( ax, viewEl, viewAz )
+     # draws equator plus outline of sphere as seen from viewEl and viewAz
+     # figure can be rotated on screen, but outline of sphere will then be incorrect,
+     # so determine optimum viewEl and viewAz before making final plot
+  makeaxes( ax )
+     # adds x, y, z axes
+  for freq, color in zip( freqlist, colorlist ) :
+    p1 = makepath( freq, vin, stack )
+    #p1 = makepath( 210., vin, [[-75., 1.5*length() ]] )  example of how to do shorter paths
+    addcurve( ax, p1, color )
+  for freq, color in zip( freqlist, colorlist ) :
+    e1 = makeendpoints( freq, vin, stack )
+    addpoints( ax, e1, color )
+  ax.view_init(elev=viewEl,azim=viewAz)
+  #plt.tight_layout()
+  plt.show()
+  #plt.savefig( pp, format='pdf', bbox_inches='tight' )
+
