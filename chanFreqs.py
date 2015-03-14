@@ -16,13 +16,18 @@ from matplotlib.patches import Rectangle
 # fLO1MHz = 222100.00000004997
    # this is the value closest to 222.100 GHz; synth = 1175.449735450
 
-fLO1MHz = 222099.999915   
+#fLO1MHz = 222099.999915   
    # this is the value that gives closest integer Hz; synth = 1175.449735000
 
+fLO1MHz = 221099.9999700000
+   # this is closest integer Hz freq to 221.1 GHz (for 5-7 filter);
+   # synth = 1170.1587300000
+
 # --- specify center freq of lowest CARMA band --- #
-# win1center = 4240.
-win1center = 4245
+#win1center = 4245
    # note that 4242.5, 4241.25 etc will work also
+
+win1center=5320.
 
 # --- specify CARMA band centers in MHz --- #
 #wincenters = [ win1center, win1center+480., win1center+480.+590., win1center+480.+590.+480. ] 
@@ -30,8 +35,10 @@ win1center = 4245
   # however, chans above and below 5 GHz are on different 32 MHz grids
 #wincenters = [ win1center, win1center+480., win1center+480.+640., win1center+480.+640.+480. ] 
   # case B: keeps all DBE chans on one 32 MHz ladder
-wincenters = [ win1center, win1center+480., win1center+2*480.+100., win1center+3*480.+100. ] 
-  # case C: this is the correct answer! 
+#wincenters = [ win1center, win1center+480., win1center+2*480.+100., win1center+3*480.+100. ] 
+  # case C: this is the correct answer for 4-6 GHz IF ! 
+wincenters = [ win1center, win1center+480., win1center+2*480., win1center+3*480. ] 
+  # case D: use for 5-7 GHz
 
 def computeLO1( fsynthMHz=1175.449735450, nharm=9, mharm=7 ) :
 #def computeLO1( fsynthMHz=1175.449735000, nharm=9, mharm=7 ) :
@@ -49,7 +56,7 @@ def computeLO1( fsynthMHz=1175.449735450, nharm=9, mharm=7 ) :
 def exactLO2( targetLO2MHz ) :
   multiplier = round(targetLO2MHz*1.e6/(1.e7/pow(2,18)))
   LO2actual = (multiplier * 1.e7/pow(2,18))/1.e6
-  print "... LO2 target = %.9f, actual = %.9f MHz" % (targetLO2MHz, LO2actual )
+  print "... LO2 target = %.9f, actual = %.11f MHz" % (targetLO2MHz, LO2actual )
   return LO2actual
 
 def doit() :
@@ -57,6 +64,7 @@ def doit() :
 
 # given MIDBAND sky freq (as used at CARMA)  and LO1 frequencies, return fLO2, etc. 
 def findLO2( fskyMHzMidband, fLO1=fLO1MHz ) :
+  print " "
   print "... fsky = %.9f MHz" % fskyMHzMidband
   print "... fLO1 = %.9f MHz" % fLO1
   if fskyMHzMidband > fLO1 : nsb = 1
@@ -72,7 +80,9 @@ def findLO2( fskyMHzMidband, fLO1=fLO1MHz ) :
     fblock = 10000.
   print "... fIF2 = %.3f" % fIF2
   print "... fblock = %.1f MHz" % fblock
-  if fIF2 > 3500. : 
+# NOTE: this should be 3500, but I want to use override USB option for IF=3250.
+  #if fIF2 > 3500. :                               
+  if fIF2 > 3000. :                               
     fLO2 = fIF2 - 750.
     nsb2 = 1   # postiive nsb2 means fIF2 = fLO2 + base
   else : 
