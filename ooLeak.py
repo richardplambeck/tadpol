@@ -1,4 +1,5 @@
 # ooLeak.py
+
 #
 # this is a collection of routines to plot, list, compare, or average leakages
 # unfortunately I chose to make it object-oriented, which turned out not to be particularly useful
@@ -60,7 +61,7 @@ class Leak:
     except :
       print "... can't open file %s" % self.file
     else :
-      print "... reading data from file %s" % self.file
+      print "... reading leakages for antenna %d from file %s" % (antenna,self.file)
       lastf2 = 0.
       for line in fin :
         a = line.split()
@@ -87,7 +88,7 @@ class Leak:
             DL = float(a[8]) + 1j * float(a[9])
             chanfacts = a[12].split(",")
             self.avgchan = chanfacts[3]
-            solin.append( [f1,f2,DR,DL,a[12]],0.,0. )
+            solin.append( [f1,f2,DR,DL,a[12],0.,0.] )
       fin.close()
 
     # it would be smarter to store values as self.sol = sorted..., but I am temporarily breaking
@@ -158,7 +159,7 @@ class Leak:
 
     p.legend( loc=0, prop={'size':6}, numpoints=1 )
          
-  def panel(self, p, type, lk, fstart, fstop ) :
+  def panel(self, p, type, lk, fstart, fstop, ShowLegends=True ) :
     """add to one panel of a plot; p = plot handle; type = amp,phs,complex; lk = DR or DL"""
     if lk == "DL" :  
       yc = self.DL
@@ -176,7 +177,7 @@ class Leak:
         if (abs(f1-f2) > .24) or (self.avgchan == "0") :
           if first :
             p.plot( [f1,f2], [y,y] , color=self.color, \
-              linestyle='solid', linewidth=2, label=self.legend )
+              linestyle='solid', linewidth=4, label=self.legend )
             first = False
           else :
             p.plot( [f1,f2], [y,y] , color=self.color, \
@@ -184,13 +185,14 @@ class Leak:
         else :  
           f = (f1+f2)/2.              # mean freq
         # Plot dots for phase
-          if type == "phs" :
+          if type == "phs" : #or type == "amp" :
             p.plot( f, y, marker='o', color=self.color, markersize=3 )    # make dot
         # draw lines for amp
           else :
             if ((f1 > fstart) and (f1 < fstop)) or ((f2 > fstart) and (f2 < fstop)) :
               if f1 == f2prev :
                 if first :
+                  print self.legend
                   p.plot( [fprev,f], [yprev,y] , color=self.color, \
                     linestyle='solid', linewidth=1, label=self.legend )
                   first = False
@@ -200,7 +202,8 @@ class Leak:
             fprev = f
             f2prev = f2
             yprev = y
-    p.legend( loc=0, prop={'size':6} )
+    if ShowLegends :
+      p.legend( loc=0, prop={'size':6} )
     
 
 # ----------------------------------------------------------------------------------------------------- #
@@ -232,6 +235,10 @@ class LkSet:
     color = [ "red", "blue", "green", "chartreuse", "orangered", \
               "aqua", "fuchsia", "gray", "lime", "maroon", "navy", \
               "olive", "orange", "silver", "teal", "black" ]
+  # --- used these colors for mxrbias leakage figure --- #
+    # color = [ "red", "MediumAquamarine", "LightSeaGreen", "Aqua", "DarkCyan", \
+    #           "Teal", "DarkTurquoise", "gray", "lime", "maroon", "navy", \
+    #           "olive", "orange", "silver", "teal", "black" ]
     marker = [ "o", "D", "v", "^", "s", "h", "d", \
                "o", "D", "v", "^", "s", "h", "d", \
                "o", "D" ]
@@ -241,7 +248,11 @@ class LkSet:
       if len(line) > 0 :                    # skip blank lines
         truncate = line.find("#")           # skip anything after "#"
         a = line[0:truncate].split()
-        if len(a) > 0 :
+        b = []
+        if len(a) > 1 :
+          b = a[1].split(",")
+          print "skip ants: ", b
+        if len(a) > 0 :  
           for nant in range(1,16) :
             if a[0][-1] == "*" :            # old style lk files, one per antenna
               filename = a[0][0:-1] + str(nant)
@@ -249,8 +260,11 @@ class LkSet:
               filename = a[0]
             legend = ""
             if len(a) > 1 : legend = a[1]
-            LkSet.addLeak(self, filename, nant, legend, color[ncolor], marker[ncolor] )
-              # addLeak opens disk file, reads data into Leak object
+            if "%d" % nant in b :
+              print "SKIPPING ANT %d" % nant
+            else :
+              LkSet.addLeak(self, filename, nant, legend, color[ncolor], marker[ncolor] )
+                # addLeak opens disk file, reads data into Leak object
           ncolor = ncolor + 1
           if (ncolor > (len(color)-1) ) : ncolor = 0
 
@@ -282,6 +296,10 @@ class LkSet:
     pylab.clf()
 
   def ampAll(self, f1=0., f2=0., type="amp", amax=.25, antList=allAnts, outfile="AmpLeaks.pdf" ) :
+
+    ShowPolfits = True
+    ShowLegends = True
+
     pyplot.ioff()
     if f1 == 0. :
       [f1, f2] = LkSet.xlimits( self )          # default is to find freq limits in the data
@@ -293,42 +311,55 @@ class LkSet:
       ymin = -180.
       ymax = 180.
       pp = PdfPages( 'PhsLeaks.pdf' )
+    pyplot.clf()
+
     for ant in antList :
-      pyplot.clf()
-      pL = pyplot.subplot(2,1,1)    # DL in upper panel
+      pL = pyplot.subplot(2, 1, 1)    # DL in upper panel
       pL.axis( [f1, f2, ymin, ymax], size=8 )  # adding size does nothing!!
       pL.grid(True)
+      pL.set_ylabel('leakage amplitude', fontsize=10)
 
-      f = []
-      y = []
-      fin = open("polfits/C%d.polfit" % ant, "r")
-      for line in fin :
-        a = line.split()
-        if not line.startswith("#") :
-          f.append( float(a[0]) )
-          y.append( float(a[1]) ) 
-        else :
-          polname = a[1]
-      pL.plot( f, y, linestyle="dashed", label="%s expected" % polname )
-      pL.legend( loc=0, prop={'size':6} )
+      if ShowPolfits : 
+        f = []
+        y = []
+        fin = open("/o/plambeck/pol/LkLib/polfits/C%d.polfit" % ant, "r")
+        for line in fin :
+          a = line.split()
+          if not line.startswith("#") :
+            f.append( float(a[0]) )
+            y.append( float(a[1]) ) 
+          else :
+            polname = a[1]
+        labeltext = None
+        #if ShowLegends : 
+        #  labeltext = "%s expected" % polname
+        pL.plot( f, y, linestyle="dashed", label=labeltext )
 
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DL for antenna %d" % ant
-          Leak.panel(pL, type, "DL", f1, f2 )
+          Leak.panel(pL, type, "DL", f1, f2, ShowLegends=ShowLegends )
       pyplot.title("C%d DL" % ant)
 
-      pR = pyplot.subplot(2,1,2)    # DR in lower panel
+      pR = pyplot.subplot(2, 1, 2)    # DR in lower panel
       pR.axis( [f1, f2, ymin, ymax] )
       pR.grid(True)
-      pR.plot( f, y, linestyle="dashed", label="%s expected" % polname )
-      pR.legend( loc=0, prop={'size':6} )
+      pR.set_ylabel('leakage amplitude', fontsize=10)
+      pR.set_xlabel('frequency (GHz)', fontsize=10)
+      if ShowPolfits :
+        labeltext = None
+        #if ShowLegends : 
+        #  labeltext = "%s expected" % polname
+        pR.plot( f, y, linestyle="dashed", label=labeltext )
+        pR.legend( loc=0, prop={'size':6} )
       for Leak in self.LeakList :
         if Leak.ant == ant :
           print "plotting DR for antenna %d" % ant
-          Leak.panel(pR, type, "DR", f1, f2 )
+          Leak.panel(pR, type, "DR", f1, f2, ShowLegends=False )
       pyplot.title("C%d DR" % ant)
       pyplot.savefig( pp, format='pdf', bbox_inches='tight'  )
+      pyplot.clf()
+      #pyplot.savefig( pp, format='pdf', bbox_inches='tight'  )
     pp.close()
 
 # for complex plot, f1 and f2 could in principle be used to select range of points
@@ -549,6 +580,121 @@ class LkSet:
       VLmeas = numpy.angle( 1. + Lk.DL[0], deg=True)
       #print Lk.ant, VRmeas, VLmeas 
       print "ant %d  %.2f  %.2f  XYphsOffset = %.2f" % (Lk.ant, VLmeas, VRmeas, VLmeas-VRmeas)
+
+# ==== special to make JAI figure ==== #
+  def ampJAI2(self, f1=0., f2=0., type="amp", amax=.25, antList=allAnts, outfile="AmpLeaks.pdf" ) :
+    ShowPolFits = True
+    if f1 == 0. :
+      [f1, f2] = LkSet.xlimits( self )          # default is to find freq limits in the data
+    fig = pyplot.figure( figsize=(10,10), facecolor='white' )
+    xstart = .05
+    ystart = .05 
+    delx = .14
+    dely = 0.10
+    ymin = 0.0001
+    ymax = amax - .0001
+
+    for ant in antList :
+
+      f = []
+      y = []
+      fin = open("polfits/C%d.polfit" % ant, "r")
+      for line in fin :
+        a = line.split()
+        if not line.startswith("#") :
+          f.append( float(a[0]) )
+          y.append( float(a[1]) ) 
+        else :
+          polname = a[1]
+
+      pR = fig.add_axes( [xstart, ystart, delx, dely], autoscale_on=True )
+      pR.tick_params( labelsize=6 )
+      pR.axis( [f1, f2, ymin, ymax], size=8 )  # adding size does nothing!!
+      pR.grid(True)
+      pR.text( 257, .2, "C%d DR" % ant, horizontalalignment='right', fontsize=10 )
+      for Leak in self.LeakList :
+        if Leak.ant == ant :
+          print "plotting DR for antenna %d" % ant
+          Leak.panel(pR, type, "DR", f1, f2, ShowLegends=False )
+
+      pL = fig.add_axes( [xstart, ystart+dely, delx, dely], autoscale_on=True )
+      pL.tick_params( labelsize=6 )
+      pL.axis( [f1, f2, ymin, ymax], size=8 )  # adding size does nothing!!
+      pL.grid(True)
+      pL.set_xticklabels( [] )
+      pL.plot( f, y, linestyle="dashed" ) # , label="%s expected" % polname )
+      pL.text( 257, .2, "C%d DL" % ant, horizontalalignment='right', fontsize=10 )
+      for Leak in self.LeakList :
+        if Leak.ant == ant :
+          print "plotting DL for antenna %d" % ant
+          Leak.panel(pL, type, "DL", f1, f2, ShowLegends=False )
+      pR.plot( f, y, linestyle="dashed" ) # , label="%s expected" % polname )
+
+      xstart = xstart + .17 
+      ystart = ystart + 0.
+      if (xstart+delx) > 1. :
+        xstart = 0.05
+        ystart = ystart + .25
+
+    pyplot.show() 
+
+# ==== special to make JAI figure, plotting R and L on same panel ====  #
+
+  def ampJAI(self, f1=205., f2=259., type="amp", amax=.2, antList=allAnts, outfile="AmpLeaks.pdf" ) :
+    ShowPolFits = True
+    if f1 == 0. :
+      [f1, f2] = LkSet.xlimits( self )          # default is to find freq limits in the data
+    fig = pyplot.figure( figsize=(10,10), facecolor='white' )
+    xstart = .1
+    ystart = .05 + 4.* 0.18
+    delx = .25
+    dely = 0.15
+    ymin = 0.0
+    ymax = amax 
+
+    for ant in antList :
+
+      f = []
+      y = []
+      fin = open("polfits/C%d.polfit" % ant, "r")
+      for line in fin :
+        a = line.split()
+        if not line.startswith("#") :
+          f.append( float(a[0]) )
+          y.append( float(a[1]) ) 
+        else :
+          polname = a[1]
+
+      pR = fig.add_axes( [xstart, ystart, delx, dely], autoscale_on=True )
+      pR.tick_params( labelsize=10, width=0.5 )
+      pR.axis( [f1, f2, ymin, ymax] )  # adding size does nothing!!
+      pR.grid(True)
+      pR.text( 254.5, .175, "C%d" % ant, horizontalalignment='center', verticalalignment='center', fontsize=12 )
+      for Leak in self.LeakList :
+        if Leak.ant == ant :
+          print "plotting DR for antenna %d" % ant
+          Leak.color = 'red'
+          Leak.panel(pR, type, "DR", f1, f2, ShowLegends=False )
+          print "plotting DL for antenna %d" % ant
+          Leak.color = 'blue'
+          Leak.panel(pR, type, "DL", f1, f2, ShowLegends=False )
+      pR.plot( f, y, linestyle="dashed", color='black' ) # , label="%s expected" % polname )
+
+    # this is a lame way of adding labels, but I couldn't manage to turn off the dumb frame when
+    #   I generated a separate axes to cover the entire figure and labeled it
+      if ant == 14 :
+        pR.set_xlabel( "frequency (GHz)", fontsize=10)
+      if ant == 7 :
+        pR.set_ylabel( "leakage amplitude", fontsize=10)
+
+
+      xstart = xstart + .3 
+      ystart = ystart + 0.
+      if (xstart+delx) > 1. :
+        xstart = 0.1
+        ystart = ystart - .18
+
+    pyplot.show() 
 
 # ----------------------------------------------------------------------------------------------------- #
 # wrapper routines - all deal with a list of leakages specifed as LkList
