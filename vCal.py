@@ -54,8 +54,8 @@ def getVar15( infile, t ) :
     if ( not line.startswith("#") ) :
       a = line.split()
       if ( len(a) == 6) : 
-        print a[1], t[nline]
-        if ( (nline > len(t)) or (abs(dechrs(a[1]) - t[nline]) > .0003)) :
+        # print a[1], t[nline]
+        if ( (nline > len(t)) or (abs(dechrs(a[1]) - t[nline]) > .0008)) :
           print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
         else :
           nline = nline + 1
@@ -82,8 +82,8 @@ def getVar( infile, t ) :
   for line in fin:
     if ( not line.startswith("#") ) :
       a = line.split()
-      if ( abs(dechrs(a[1]) - t[nline]) > .0003) :
-        print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
+      if ( abs(dechrs(a[1]) - t[nline]) > .0008) :
+        print "skipping %s record at UT %s = %.5f; next gains time = %.5f" % (infile,a[1],dechrs(a[1]),t[nline])
       else :
         var.append( a[2] )
         nline = nline + 1
@@ -107,7 +107,7 @@ def getSource( infile, t ) :
         date,hr,min,sec = a[0].split(":")
         dtime = float(hr) + float(min)/60. + float(sec)/3600.
         if ( abs(dtime - t[nline]) > .0003) :
-          print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
+          print "skipping %s record at UT %s - time not in gains array" % (infile,a[0])
         else :
           source.append( a[1] )
           nline = nline + 1
@@ -630,3 +630,57 @@ def doit() :
   #onedayRbyR( "26mar", cpList=antList ) 
   onedayRbyR( "27mar", cpList=antList ) 
   
+# ========== added 24feb2015 ========= #
+
+# run from subdirectory of vlbi/2011
+def flux2011( ) :
+  time = []
+  flux = []
+  fin = open( "fluxes.txt", "r" )
+  fout = open( "fluxVsTime", "w" )
+
+  for line in fin :
+    a = line.split()
+    if len(a) == 2 :
+      time.append( 24.*float(a[0]) )  # dechrs
+      flux.append( float(a[1]) )      # flux
+
+  # ... create decimal time array 
+  t = numpy.array( time, dtype=float )
+  print t
+
+  # ... retrieve tsys, rmspath, tau230, elev arrays
+  rmspath = getVar( "rmspath", t )
+  tau230 = getVar( "tau230", t )
+  source = getSource ( "uvindex.log", t )
+  elevarray = getVar15( "elev", t )
+
+  # ... use elev of C1 as the elevation
+  elev = numpy.empty( (len(time)), dtype=float )
+  for n in range (0, len(time) ) :
+    elev[n] = elevarray[n][0]
+
+  # ... all array lengths should match, otherwise this routine will crash!
+  print len(time), len(flux), len(rmspath), len(tau230), len(source), len(elev)
+
+  fout.write("#   UThrs     S(Jy)    el    tau   path   source\n")
+  for n in range (0, len(time)) : 
+    fout.write("%10.5f   %6.3f   %4.1f   %4.2f  %4.0f   %s\n" % (t[n], flux[n], elev[n], tau230[n], rmspath[n], source[n] ))
+  fin.close()
+  fout.close()
+
+# try to understand what time points are missing from flux list
+def diagnose() :
+  fin = open( "fluxes.txt", "r" )
+  fout = open( "junk", "w" )
+  for line in fin :
+    a = line.split()
+    if len(a) == 2 :
+      time = 24.*float(a[0])   # dechrs
+      h = int(time) 
+      m = int( 60.*(time-float(h) ) )
+      s = int( 60.*(60.*(time-float(h)) - float(m)))
+      print h, m, s
+      fout.write("%3d:%2d:%2d\n" % (h,m,s) )
+  fin.close()
+  fout.close()
