@@ -1368,3 +1368,70 @@ def doit9( viewEl=8, viewAz=200 ) :
   plt.show()
   #plt.savefig( pp, format='pdf', bbox_inches='tight' )
 
+# ======================== 4/23/2015 =========================== #
+
+# want to compute transmission through a sapphire plate for beam incident at thetaI
+# apparently this is best done with the use of transfer matrices, but I am going to do
+#   it with a simple brute force calculation first
+# use subroutine sapphire to compute extraordinary and ordinary index of refraction
+#   for sapphire
+# thetaI is angle of incidence to the plate
+# tcm is thickness of plate in cm
+# thetaE is angle of extraordinary axis relative to plane of incidence
+# tanDelta = loss tangent
+
+def plateTrans( fGHz, angIdeg=10., tcm=1., tanDelta=5.e-4, thetaE=0. ) :
+  no,ne = nsapphire(fGHz)
+  thetaI = math.pi * angIdeg / 180.	                                # convert to radians 
+  alpha = 2. * math.pi * no * tanDelta * fGHz/clight   				# loss per cm; use no for simplicity
+  print "... alpha = %.3f cm^-1" % alpha
+  refDelay = 2. * math.pi * fGHz/clight * tcm/math.cos(thetaI)    # delay in radians without plate
+  print "... refDelay = %.3f radians" % refDelay
+  
+  # polarization parallel to plane of incidence (assume ne)    
+  thetaT = math.asin((math.sin(thetaI))/ne)	                                         # Snell's law, eqn 8 (p. 38)
+  loss = alpha * tcm / math.cos(thetaT) 					# loss in 1 pass through plate
+  [tpar,tperp,rpar,rperp] = fresnel( 1., thetaI, ne, thetaT )                        # entering dielectric
+  [tprimepar,tprimeperp,rprimepar,rprimeperp] = fresnel( ne, thetaT, 1., thetaI )    # leaving dielectric
+  delta0 = 2 * math.pi * ne * fGHz/clight * tcm / math.cos(thetaT)      # phase shift per single pass through plate
+  ampTpar = tpar * tprimepar * numpy.exp( -1.*loss + 1.j * delta0 )      # 1st pass (no reflections)
+  delta2 = 4 * math.pi * ne * fGHz/clight * tcm * math.cos(thetaT)      # extra phase shift from double pass through plate
+  for m in range(1,11) :
+    ampTpar = ampTpar + tpar * tprimepar * pow(rprimepar*rprimepar,m) * numpy.exp(-2.*m*loss + 1.j*(delta0 + m*delta2))
+      # each additional pass through the plate
+    #print ".. %d  %.4f" % (m, ampTpar*ampTpar.conjugate() )
+
+  # polarization perpendicular to plane of incidence  
+  thetaT = math.asin((math.sin(thetaI))/no)	                                         # Snell's law, eqn 8 (p. 38)
+  loss = alpha * tcm / math.cos(thetaT) 					# loss in 1 pass through plate
+  [tpar,tperp,rpar,rperp] = fresnel( 1., thetaI, no, thetaT )                        # entering dielectric
+  [tprimepar,tprimeperp,rprimepar,rprimeperp] = fresnel( no, thetaT, 1., thetaI )    # leaving dielectric
+  delta0 = 2. * math.pi * no * fGHz/clight * tcm / math.cos(thetaT)      # phase shift from single pass through plate
+  ampTperp = tperp * tprimeperp * numpy.exp( -1.*loss + 1.j * delta0 )    # 1st pass (no reflections)
+  delta2 = 4 * math.pi * no * fGHz/clight * tcm * math.cos(thetaT)       # extra phase shift from double pass through plate
+  for m in range(1,11) :
+    #print ampTperp*ampTperp.conjugate()
+    ampTperp = ampTperp + tperp * tprimeperp * pow(rprimeperp*rprimeperp,m) * numpy.exp(-2.*m*loss + 1.j*(delta0 + m*delta2))
+  return [ ampTpar * numpy.exp(-1.j * refDelay), ampTperp * numpy.exp(-1.j * refDelay) ]
+  #return [ ampTpar, ampTperp ]
+  #return [ ampTpar*ampTpar.conjugate(), ampTperp*ampTperp.conjugate() ]
+
+def doit2() :
+  fout = open("plateTrans", "w" )
+  for fGHz in numpy.arange(210.,230.,.005) :
+     ampTpar,ampTperp = plateTrans( fGHz )
+     fout.write("%.3f   %.4f  %.4f  %.4f  %7.2f  %6.4f  %7.2f\n" % (fGHz, ampTpar*ampTpar.conjugate(), ampTperp*ampTperp.conjugate(), \
+        abs(ampTpar), numpy.angle(ampTpar, deg=True), abs(ampTperp), numpy.angle(ampTperp, deg=True) ) )
+  fout.close()
+
+def doit3( LOGHz = 250. ) :
+  fout = open("ifTrans", "w" )
+  for fIF in numpy.arange(0.5, 10., .01 ):
+     TparLSB,TperpLSB = plateTrans( LOGHz - fIF )
+     TparUSB,TperpUSB = plateTrans( LOGHz + fIF )
+     fout.write("%.3f    %.4f\n" % (fIF, (TparLSB+TparUSB+TperpLSB+TperpUSB)/4. ) )
+  fout.close()
+    
+    
+  
+     
