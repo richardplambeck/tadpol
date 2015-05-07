@@ -1,3 +1,7 @@
+# optics.py
+# used to visualize Gaussian beams on front-fed or side-fed Dragone reflectors
+# the reflector parameters are calculated using formulae from Chang and Prata 2004, 
+#    IEEE Trans Antennas Prop., 52, 12
 # ---------------------------------------------------------------------------------------------------------- #
 
 #from Numeric import *
@@ -96,30 +100,85 @@ def gCrossSection( fGHz=70., w0in=0.3 ) :
     #fout.write("%8.3f  %8.3f  %8.3f\n" % (z, w, -1.*w) )    
   fout.close()
   
-def gBeam( ax, x, y, theta, curve, w0in=0.23, fGHz=90. ) :
+def gBeam( ax, x, y, theta, surf1, surf2, w0in=0.23, fGHz=220. ) :
   lambdain = (29.98/fGHz)/2.54
-  gx = numpy.array( numpy.arange(0.,10.,1) )
+  gx = numpy.array( numpy.arange(0.,25.,.01) )
+
   gy = w0in * numpy.sqrt( 1. + pow( lambdain*gx/(math.pi * pow(w0in,2.)),2. ) )
-  beam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
-  print "beam = ",beam
-  trunc( beam, curve )
-  ax.plot( beam[0], beam[1], color='red', linestyle='--')
+  tiltbeam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
+    # rotate the beam by angle theta
+  beam = numpy.array( [tiltbeam[0]+x, tiltbeam[1]+y] )
+    # offset the beam by x,y
+  plotRay( ax, beam, surf1, surf2, color="red" )
+
   gy = -gy
-  beam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
-  ax.plot( beam[0]+x, beam[1]+y, color='red', linestyle='--')
+  tiltbeam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
+  beam = numpy.array( [tiltbeam[0]+x, tiltbeam[1]+y] )
+  plotRay( ax, beam, surf1, surf2, color="red" )
+
   gy = -2.*gy
-  beam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
-  ax.plot( beam[0]+x, beam[1]+y, color='blue', linestyle='--')
+  tiltbeam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
+  beam = numpy.array( [tiltbeam[0]+x, tiltbeam[1]+y] )
+  plotRay( ax, beam, surf1, surf2, color="blue" )
+
   gy = -gy
-  beam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
-  ax.plot( beam[0]+x, beam[1]+y, color='blue', linestyle='--')
+  tiltbeam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
+  beam = numpy.array( [tiltbeam[0]+x, tiltbeam[1]+y] )
+  plotRay( ax, beam, surf1, surf2, color="blue" )
+
+# plot ray reflecting off 2 surfaces (or truncated at 2nd surface)
+def plotRay( ax, ray, surf1, surf2, color='black', truncate=True ) :
+  nmin,imin = trunc( ray, surf1 )
+    # figure out where ray intersects surface1; nmin is ray index, imin is surface index
+  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--')
+    # draw the ray up to the first surface
+  if (len(ray[0])-nmin) < 2 :
+    print "ray too short"
+    return
+  normal = norm( None, surf1, imin )
+    # norm is angle normal to the surface at point of intersection
+  ray = reflected( ax, ray, nmin, normal ) 
+    # new ray is the reflected ray from surface1
+  nmin,imin = trunc( ray, surf2 )
+    # figure out where ray intersects surface2
+  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--')
+    # plot ray from surface1 to surface2
+  if truncate or (len(ray[0])-nmin) < 2 :
+    return
+  normal = norm( None, surf2, imin )
+    # norm is angle normal to surf2 at point of intersection with ray
+  ray = reflected( ax, ray, nmin, normal ) 
+    # new ray is the reflected ray from surface2
+  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--')
+  
+
+def reflected( ax, beam, nmin, normal ) :
+  bm = numpy.array( [beam[0][nmin:]-beam[0][nmin], beam[1][nmin:]-beam[1][nmin]] )
+    # this is the reflected part of the ray, with point of reflection as the origin
+  bmrot = pol.Jrot( bm, 180./math.pi*normal-90. )
+    # rotate into the frame of the normal to the surface
+  bm2 = pol.Jrot( numpy.array( [bmrot[0],-bmrot[1]] ), -180./math.pi*normal+90. ) 
+  return numpy.array( [ bm2[0]+beam[0][nmin], bm2[1]+beam[1][nmin]] ) 
+    # rotate back into plot frame, move origin to point of reflection on surface
 
 def trunc( beam, surf ) :
   # for each point in beam, compute dsq to every point on surface
+  nmin = 0
+  imin = 0
+  dsqmin = 1000.
   for n in range(0, len(beam[0])) :
     dsq = pow( surf[0] - beam[0][n], 2 ) + pow( surf[1] - beam[1][n], 2 )
-    dsqmin = numpy.amin(dsq)
-    print dsqmin
+      # distance from each point on surface to this point on beam
+    i = numpy.argmin(dsq)
+      # return index of minimum; this is the point on surface that is closest
+    if (dsq[i] < dsqmin ) :
+      dsqmin = dsq[i]
+      nmin = n 
+      imin = i
+      #print nmin, dsqmin
+  #print "returning nmin = ", nmin
+  return nmin,imin
+  
  
 # draw optics for test setup in 2D
 # F2F is spacing between foci of transmitting and receiving paraboloids
@@ -139,12 +198,11 @@ def layout2D( F2F=15. ) :
   theta1 = 2. * math.atan( (d0 - D/2.)/(2.*F) ) 
   theta2 = 2. * math.atan( (d0 + D/2.)/(2.*F) ) 
   print "theta1,2 = ",theta1,theta2
-  parab2D( ax, F, theta1, theta2, F2F ) 
+  pcurve = parab2D( ax, F, theta1, theta2, F2F ) 
   hcurve = hyperb2D( ax, alpha, thetaE, e, c, beta, F2F )
-  print "hcurve = ",hcurve
   focus( ax, c, beta, F2F )
   hornOutline( ax, 2.*c*math.cos(math.pi-beta), 2.*c*math.sin(math.pi+beta), 180.+thetaCdeg, F2F )
-  gBeam( ax, 2.*c*math.cos(math.pi-beta), 2.*c*math.sin(math.pi+beta), thetaCdeg, hcurve )
+  gBeam( ax, 2.*c*math.cos(math.pi-beta), 2.*c*math.sin(math.pi+beta), thetaCdeg, hcurve, pcurve )
   #test( ax, c, e )
   #plt.grid( which='both' )
   plt.grid( True )
@@ -166,8 +224,11 @@ def parab2D( ax, F, theta1, theta2, F2F ) :
   #print "rho = ",rho
   x = rho * numpy.cos( math.pi - theta)
   y = rho * numpy.sin( math.pi - theta) 
-  dx = -.4
-  dy = .4
+  surf = numpy.array( [x,y] )
+  nmidpoint = len(x)/2
+     # note: points evenly spaced in thetaS, so this may not be true midpoint
+  dx = 0.7 * math.cos( math.pi + norm( None, surf, nmidpoint ) )
+  dy = 0.7 * math.sin( math.pi + norm( None, surf, nmidpoint ) )
   mbx = numpy.array( [x[-1]+dx, x[0]+dx] )
   mby = numpy.array( [y[-1]+dy, y[0]+dy] )
   mirrorx = numpy.concatenate( (x, mbx) )
@@ -176,16 +237,20 @@ def parab2D( ax, F, theta1, theta2, F2F ) :
   #print "mby = ",mirrory  
   ax.fill( mirrorx, mirrory, alpha=0.5, color="blue" )
   ax.plot( x, y, color='black' )
+  pcurve = numpy.array( [x,y] )
   mirrorx = F2F - mirrorx
+  x = F2F - x
+  surf = numpy.array( [x,y] )
+  ax.plot( x, y, color='black' )
   ax.fill( mirrorx, mirrory, alpha=0.5, color="blue" )
+  return pcurve
   
-
 def hyperb2D( ax, alpha, thetaE, e, c, beta, F2F ) :
-  dTheta=0.05   # radians 
+  dTheta=0.005   # radians 
   thetaBeta =  numpy.arange( alpha-thetaE, alpha+thetaE+dTheta, dTheta ) 
  	 # from Fig 3, this spans the complete subreflector
   #thetaS = 2. * numpy.arctan( (1-e)/(1+e) * numpy.tan(thetaBeta/2.) ) 
-     # this is Chang and Prata version of eqn 30
+     # this is Chang and Prata version of eqn 30; it doesn't work
   thetaS =  math.pi - 2. * numpy.arctan( (1-e)/(1+e) * numpy.tan(thetaBeta/2.) )
      # this is my version of eqn 30
   rhoS = ((1 - pow(e,2.))*c/e) / (e * numpy.cos(thetaS)+ 1. )  
@@ -194,21 +259,50 @@ def hyperb2D( ax, alpha, thetaE, e, c, beta, F2F ) :
   #print "thetaS = ",(180/math.pi * thetaS)
   #print "rhoS = ",rhoS
   angFrame = -1.*(math.pi + beta - thetaS)
-	 # angle relative to paraboloid axis
+	 # angle relative to paraboloid axis = x-axis of my plot
   x = -1. * rhoS * numpy.cos( angFrame )
   y = rhoS * numpy.sin( angFrame ) 
-  dx = -.3
-  dy = .4
+     # coordinates of surface in x-y frame
+  ax.plot( x, y, color='black' )
+  surf = numpy.array( [x,y] )
+  nmidpoint = len(x)/2
+     # note: points evenly spaced in thetaS, so this is not the true midpoint
+  dx = 0.7 * math.cos( math.pi + norm( None, surf, nmidpoint ) )
+  dy = 0.7 * math.sin( math.pi + norm( None, surf, nmidpoint ) )
   mbx = numpy.array( [x[-1]+dx, x[0]+dx] )
-  mby = numpy.array( [y[-1]-dy, y[0]-dy] )
+  mby = numpy.array( [y[-1]+dy, y[0]+dy] )
   mirrorx = numpy.concatenate( (x, mbx) )
   mirrory = numpy.concatenate( (y, mby) )
   ax.fill( mirrorx, mirrory, alpha=0.5, color="blue" )
-  ax.plot( x, y, color='black' )
-  surf = numpy.array( [x,y] )
   mirrorx = F2F - mirrorx
   ax.fill( mirrorx, mirrory, alpha=0.5, color="blue" )
+    # draw the receiving mirror
   return surf
+
+# finds normal to curve[n] in radians, pointing toward concave side
+def norm( ax, curve, n ) :
+  x = curve[0]
+  y = curve[1]
+  slope1 = math.atan( (y[n]-y[n-1])/(x[n]-x[n-1]) )
+  slope2 = math.atan( (y[n+1]-y[n])/(x[n+1]-x[n]) )
+  # sign of 2nd derivative determines concave direction
+  if (slope2 -slope1)/(x[n+1]-x[n]) > 0. :
+    normal = (slope1+slope2)/2. + math.pi/2.
+  else :
+    normal = (slope1+slope2)/2. - math.pi/2.
+  #print " "
+  #print "x = ",x[n-1],x[n],x[n+1]
+  #print "y = ",y[n-1],y[n],y[n+1]
+  #print "slope1 = ", 180./math.pi * slope1
+  #print "slope2 = ", 180./math.pi * slope2
+  #print "normal = ", 180./math.pi * normal
+  xp = [ x[n], x[n] + math.cos(normal) ] 
+  yp = [ y[n], y[n] + math.sin(normal) ] 
+  if ax :
+    ax.plot( xp, yp, color='red' )
+  print "normal = ", 180./math.pi * normal
+  return normal
+
 
 # draw outline of horn and waveguide flange
 # x,y are center of horn aperture
