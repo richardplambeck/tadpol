@@ -992,7 +992,7 @@ def plotVecs( infile ) :
   DRy = []
   max = 0.1
   #py.ion()
-  #py.clf()
+  #py.c4lf()
   py.axis( [-max,max,-max,max] )
   fin = open( infile, "r" )
   for line in fin:
@@ -1122,9 +1122,22 @@ def doit() :
 # 5plates: 7, 36, 102, 36, 7 degrees
   
 def nsapphire( fGHz ) :
-  no = 3.053 + (4.7e-4 * fGHz) + (2.2e-10 * pow(fGHz,2.)) + (1.1e-12 * pow(fGHz,3.))
-  ne = 3.387 + 1.3e-5 * fGHz
+  # equations from Savini et al. 2006, Appl Optics, p 8912 do not recover numbers
+  #   that they give in Fig 4
+  # no = 3.053 + (4.7e-4 * fGHz) + (2.2e-10 * pow(fGHz,2.)) + (1.1e-12 * pow(fGHz,3.))
+  # ne = 3.387 + 1.3e-5 * fGHz
+  # instead, use values from Afsar 1987, IEEE-MTT, Fig. 3
+  no = 3.0647
+  ne = 3.4037
   return [no,ne]
+
+# effective index for sapphire with polarization at angle theta to ordinary axis
+# e.g., if polarization is perpendicular to theta, neff = no; if parallel, neff = ne
+def neff( thetaDeg ) :
+  theta = math.pi*thetaDeg/180.
+  no,ne = nsapphire( 150. )    # take 150 GHz as center freq; it doesn't matter!
+  nsq = pow( no*ne, 2. ) / ( pow(no*math.cos(theta),2.) + pow(ne*math.sin(theta),2.) )
+  return math.sqrt(nsq)
 
 def doit6() :
   stack2 = [ [22.5, .37], [22.5, .37] ]
@@ -1423,11 +1436,15 @@ def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., tanDelta=5.e-4 ) :
   return [ ampTpar, ampTperp, ampRpar, ampRperp ]
   #return [ ampTpar*ampTpar.conjugate(), ampTperp*ampTperp.conjugate() ]
 
-def doit2( angIdeg=45. ) :
+def doit2( angIdeg=45., npar=0., nperp=0., fGHz0=100. ) :
   fout = open("plateTrans", "w" )
-  for fGHz in numpy.arange(215.,235.,.005) :
-     no,ne = nsapphire( fGHz )
-     ampTpar,ampTperp,ampRpar,ampRperp = plateTrans( fGHz, ne, no, angIdeg=angIdeg  )
+  if npar==0. :
+    npar,nperp = nsapphire( fGHz0 )
+  print "using npar = %.3f, nperp = %.3f" % (npar,nperp)
+  fout.write("# using npar = %.3f, nperp = %.3f\n" % (npar,nperp))
+  fout.write("# fGHz     Tpar    Rpar   Apar    Tperp   Rperp   Aperp\n")
+  for fGHz in numpy.arange(fGHz0-10.,fGHz0+10.005,.005) :
+     ampTpar,ampTperp,ampRpar,ampRperp = plateTrans( fGHz, npar, nperp, angIdeg=angIdeg  )
      Tpar = ampTpar*ampTpar.conjugate()
      Tperp = ampTperp*ampTperp.conjugate()
      Rpar = ampRpar*ampRpar.conjugate()
@@ -1438,34 +1455,74 @@ def doit2( angIdeg=45. ) :
   fout.close()
 
     
-def doit3( LOGHz=225., n1=0., n2=0.,angIdeg=45. ) :
+def doit3( LOGHz=110., n1=0., n2=0., angIdeg=45., thetaDeg=0., tanDelta=1.e-4, dataFile='junk.dat' ) :
   Thot = 290
   Tcold = 77
+  IF = []
+  T3 = []
+  T4 = []
+  T5 = []
   if n1 == 0. : 
-    n1,n2 = nsapphire( LOGHz )
+    n1 = neff( thetaDeg )
+    n2 = neff( 90.+thetaDeg )
+  npar = n1
+  nperp = n2
   fout = open("ifTrans", "w" )
   fout.write("# ifTrans for LOGHz = %.3f\n" % LOGHz)
   fout.write("# created with pol.doit3()\n")
-  fout.write("# IF  trans  refl  loss      P3     P4     P5\n")
-  for fIF in numpy.arange(0.5, 10., .01 ):
-     TparLSB,TperpLSB,RparLSB,RperpLSB = plateTrans( LOGHz-fIF, n1, n2, angIdeg=angIdeg )
-     TparUSB,TperpUSB,RparUSB,RperpUSB = plateTrans( LOGHz+fIF, n1, n2, angIdeg=angIdeg )
-     trans = (TparLSB*TparLSB.conjugate() + TperpLSB*TperpLSB.conjugate() \
-               + TparUSB*TparUSB.conjugate() + TperpUSB*TperpUSB.conjugate())/4.
-     refl = (RparLSB*RparLSB.conjugate() + RperpLSB*RperpLSB.conjugate() \
-               + RparUSB*RparUSB.conjugate() + RperpUSB*RperpUSB.conjugate())/4.
+  fout.write("# plate angle of incidence = %.0f degrees\n" % angIdeg)
+  fout.write("# n_parallel = %.2f, n_perpendicular = %.2f\n" % (npar,nperp) )
+  fout.write("# IF    trans   refl   loss      T3      T4       T5\n")
+  for fIF in numpy.arange(0.2, 10.0, .05 ):
+     TparLSB,TperpLSB,RparLSB,RperpLSB = plateTrans( LOGHz-fIF, npar, nperp, angIdeg=angIdeg, tanDelta=tanDelta )
+     TparUSB,TperpUSB,RparUSB,RperpUSB = plateTrans( LOGHz+fIF, npar, nperp, angIdeg=angIdeg, tanDelta=tanDelta )
+     trans = (TperpLSB*TperpLSB.conjugate() \
+               + TperpUSB*TperpUSB.conjugate())/2.
+     refl = ( RperpLSB*RperpLSB.conjugate() \
+               + RperpUSB*RperpUSB.conjugate())/2.
+     #trans = (TparLSB*TparLSB.conjugate() + TperpLSB*TperpLSB.conjugate() \
+     #          + TparUSB*TparUSB.conjugate() + TperpUSB*TperpUSB.conjugate())/4.
+     #refl = (RparLSB*RparLSB.conjugate() + RperpLSB*RperpLSB.conjugate() \
+     #          + RparUSB*RparUSB.conjugate() + RperpUSB*RperpUSB.conjugate())/4.
      loss = 1.-trans-refl
      #print fIF, trans, refl, 1.-trans-refl
      P3 = trans*Thot + refl*Tcold + loss*Thot
      P4 = trans*Tcold + refl*Thot + loss*Thot
      P5 = trans*Tcold + refl*Tcold + loss*Thot
      fout.write("%.3f  %6.4f %6.4f %6.4f   %6.1f  %6.1f  %6.1f\n" % (fIF, trans, refl, loss, P3, P4, P5 ) )
+     IF.append( fIF )
+     T3.append( P3 )
+     T4.append( P4 )
+     T5.append( P5 )
   fout.close()
+  fin = open( dataFile, "r" )
+  fdat = []
+  T3dat = []
+  T4dat = []
+  T5dat = []
+  for line in fin :
+    if not line.startswith('#') :
+      a = line.split()
+      fdat.append( float(a[0]) )
+      T3dat.append( float(a[1]) )
+      T4dat.append( float(a[2]) )
+      T5dat.append( float(a[3]) )
+  fin.close() 
+  plt.ioff()
+  fig = plt.subplot(1,1,1)
+  fig.plot( IF, T3, color='red' )
+  fig.plot( fdat, T3dat, color='red' )
+  fig.plot( IF, T4, color='blue' )
+  fig.plot( fdat, T4dat, color='blue' )
+  fig.plot( IF, T5, color='purple' )
+  fig.plot( fdat, T5dat, color='purple' )
+  fig.grid( True )
+  plt.show()
 
 # compute average power P3,P4,P5 and use it to compute R,T,Abs for a range of tanDelta;
 # the idea is to compare the plate absorption with tanDelta
 
-def doit4( nrefrac, LOGHz=225., angIdeg=45., tcm=1. ) :
+def doit4( nrefrac, LOGHz=220., angIdeg=45., tcm=1. ) :
   Thot = 290
   Tcold = 77
   fout = open("plateLoss", "w" )
