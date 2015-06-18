@@ -1398,7 +1398,7 @@ def doit9( viewEl=8, viewAz=200 ) :
 
 def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., tanDelta=5.e-4 ) :
   alpha = 2. * math.pi * (n1+n2)/2. * tanDelta * fGHz/clight   	  # POWER loss per cm; use avg index for simplicity
-  # print "... alpha = %.3f cm^-1" % alpha
+  #print "... alpha = %.3f cm^-1" % alpha
   thetaI = math.pi * angIdeg / 180.	                              # convert to radians 
   refDelay = 2. * math.pi * fGHz/clight * tcm/math.cos(thetaI)    # delay in radians without plate
   # print "... refDelay = %.3f radians" % refDelay
@@ -1522,7 +1522,7 @@ def doit3( LOGHz=110., n1=0., n2=0., angIdeg=45., thetaDeg=0., tanDelta=1.e-4, d
 # compute average power P3,P4,P5 and use it to compute R,T,Abs for a range of tanDelta;
 # the idea is to compare the plate absorption with tanDelta
 
-def doit4( nrefrac, LOGHz=220., angIdeg=45., tcm=1. ) :
+def doit4( nrefrac, LOGHz=220., angIdeg=0., tcm=1. ) :
   Thot = 290
   Tcold = 77
   fout = open("plateLoss", "w" )
@@ -1576,34 +1576,50 @@ def readDataFile( dataFile ) :
       fdat.append( float(a[0]) )
       T3dat.append( float(a[1]) )
       T4dat.append( float(a[2]) )
-      T5dat.append( float(a[3]) )
+      T5dat.append( float(a[3]) ) 
   fin.close() 
   return [ numpy.array(fdat), numpy.array(T3dat), numpy.array(T4dat), numpy.array(T5dat) ]
    
     
+def smArray( x, nsm=10 ) :
+  smx = []
+  i = 0
+  while (i + nsm) < len(x) :
+    smx.append( numpy.mean( x[i:i+nsm] ) )
+    i = i + nsm
+  return( numpy.array( smx ) )
+    
 # doit5 tries to FIT the data
-def doit5( dataFile, angIdeg=45., thetaDeg=0., tanDelta=1.e-4, dI=1., dtheta=1. ) :
+# angIrange is angle of incidence of the plate (nominally 45 degrees)
+# thetaRange is angle of ordinary axis relative to plane of incidence, in the frame of the plate
+
+def doit5( dataFile, tanDelta=1.e-4, angIrange=[43.,48.,2.], thetaRange=[-5.,6.,2.] ) :
   Thot = 295
   Tcold = 77
   varsave = 1.e6
   LOGHz = float( dataFile.split("_")[0] )
   print "LOGHz = %0f" % LOGHz
   fdat, T3dat, T4dat, T5dat = readDataFile( dataFile )
-  print T3dat
-  
-  for theta in numpy.arange( thetaDeg-5., thetaDeg+5+dtheta, dtheta ) :
-    for angI in numpy.arange( angIdeg-5., angIdeg+5.+dI, dI ) :
-      T3,T4,T5 = Tfit( LOGHz, fdat, angI, theta, tanDelta )  
-      variance = numpy.mean( pow( T3-T3dat, 2. )) + \
-         numpy.mean( pow( T4-T4dat, 2. ))
+
+  # to save time in fitting, boxcar average to shorter arrays
+  fsm = smArray( fdat )
+  print fsm
+  T3sm = smArray( T3dat )
+  T4sm = smArray( T4dat )
+  for theta in numpy.arange( thetaRange[0], thetaRange[1], thetaRange[2] ) :
+    for angI in numpy.arange( angIrange[0], angIrange[1], angIrange[2] ) :
+      T3,T4,T5 = Tfit( LOGHz, fsm, angI, theta, tanDelta=tanDelta )  
+      variance = numpy.mean( pow( T3-T3sm, 2. )) + \
+         numpy.mean( pow( T4-T4sm, 2. ))
       print "theta = %.1f, angI = %.1f, variance = %.1f" % (theta, angI, variance)
       if variance < varsave :
         angIbest = angI
         thetabest = theta
         varsave = variance
+
+  # once best fit is found, model all the points
   print "lowest variance for theta = %.1f, angI = %.1f" % (thetabest, angIbest)
   T3,T4,T5 = Tfit( LOGHz, fdat, angIbest, thetabest, tanDelta )  
-  print len(fdat),len(T3)
   plt.ioff()
   fig = plt.subplot(1,1,1)
   fig.plot( fdat, T3, color='red' )
@@ -1613,14 +1629,19 @@ def doit5( dataFile, angIdeg=45., thetaDeg=0., tanDelta=1.e-4, dI=1., dtheta=1. 
   fig.plot( fdat, T5, color='purple' )
   fig.plot( fdat, T5dat, color='purple' )
   fig.grid( True )
+  plt.title( dataFile )
+  fig.text( .05, .05, "angI = %.1f, theta = %.1f, tanDelta = %.2e" % (angIbest,thetabest,tanDelta), \
+     transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", size="medium" )
   plt.show( )
 
 
 def Tfit( LOGHz, fdat, angI, theta, tanDelta ) :
   Thot = 295.
   Tcold = 77.
+  print "using tanDelta = ",tanDelta
   npar = neff( theta )
   nperp = neff( theta + 90. )
+  print "using npar = %.3f, nperp = %.3f" % (npar,nperp)
   T3 = []
   T4 = []
   T5 = []
