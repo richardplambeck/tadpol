@@ -46,6 +46,13 @@ def J2delay ( vec, delayDegrees ) :
   rotmat = numpy.array( [ [cmath.exp(-1.j * rad), 0], [0, cmath.exp(-1.j * rad)] ] )
   return numpy.dot( rotmat,vec )
 
+# --- delays by different amounts --- #
+def J3delay (vec, delay1Deg, delay2Deg ) :
+  rad1 = math.pi * delay1Deg/180.
+  rad2 = math.pi * delay2Deg/180.
+  rotmat = numpy.array( [ [cmath.exp(-1.j * rad1), 0], [0, cmath.exp(-1.j * rad2)] ] )
+  return numpy.dot( rotmat,vec )
+
 # ---------------------------------------------------------------------------------------------------------- #
 # returns basis vector after transmission through a beamsplitter
 # tpel is thickness in inches, angI is angle of incidence in degrees
@@ -1396,8 +1403,11 @@ def doit9( viewEl=8, viewAz=200 ) :
 # n2 = index of refractoin perpendicular to plane of incidence
 # ... note: can use n1,n2 = nsapphire( fGHz ) where n1=ordinary, n2=extraordinary axis
 
-def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., tanDelta=5.e-4 ) :
-  alpha = 2. * math.pi * (n1+n2)/2. * tanDelta * fGHz/clight   	  # POWER loss per cm; use avg index for simplicity
+#def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., tanDelta=5.e-4 ) :   this is the old def
+
+def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., alphaO=0., alphaE=0. ) :
+  #alpha = 2. * math.pi * (n1+n2)/2. * tanDelta * fGHz/clight   	  # POWER loss per cm; use avg index for simplicity
+  alpha = math.sqrt(alphaO*alphaE)  # temporary, 6/22/2015
   #print "... alpha = %.3f cm^-1" % alpha
   thetaI = math.pi * angIdeg / 180.	                              # convert to radians 
   refDelay = 2. * math.pi * fGHz/clight * tcm/math.cos(thetaI)    # delay in radians without plate
@@ -1414,7 +1424,7 @@ def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., tanDelta=5.e-4 ) :
   ampRpar = rpar                                                        # 1st reflected ray
   delta2 = 4 * math.pi * n1 * fGHz/clight * tcm * math.cos(thetaT)      # extra phase shift for each double pass through plate
   for m in range(1,11) :
-    #print ".. par  T,R:  %d  %.4f  %.4f" % (m, ampTpar*ampTpar.conjugate(), ampRpar*ampRpar.conjugate() )
+    # print ".. par  T,R:  %d  %.4f  %.4f" % (m, ampTpar*ampTpar.conjugate(), ampRpar*ampRpar.conjugate() )
     ampTpar = ampTpar + tpar * tprimepar * pow(rprimepar*rprimepar,m) * numpy.exp(-2.*m*attn + 1.j*(delta0 + m*delta2))
     ampRpar = ampRpar + tpar * tprimepar * rprimepar * pow(rprimepar*rprimepar,m-1) * numpy.exp(-2.*m*attn+ 1.j*m*delta2 )
       # each additional pass through the plate
@@ -1434,17 +1444,18 @@ def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., tanDelta=5.e-4 ) :
     ampRperp = ampRperp + tperp * tprimeperp * rprimeperp * pow(rprimeperp*rprimeperp,m-1) * numpy.exp(-2.*m*attn + 1.j*m*delta2 )
   #return [ ampTpar * numpy.exp(-1.j * refDelay), ampTperp * numpy.exp(-1.j * refDelay), ampRpar, ampRperp ]
   return [ ampTpar, ampTperp, ampRpar, ampRperp ]
-  #return [ ampTpar*ampTpar.conjugate(), ampTperp*ampTperp.conjugate() ]
 
-def doit2( angIdeg=45., npar=0., nperp=0., fGHz0=100. ) :
+def doit2( angIdeg=45., npar=0., nperp=0., fGHz0=220. ) :
   fout = open("plateTrans", "w" )
   if npar==0. :
     npar,nperp = nsapphire( fGHz0 )
-  print "using npar = %.3f, nperp = %.3f" % (npar,nperp)
+  # print "using npar = %.3f, nperp = %.3f" % (npar,nperp)
+
+  fout.write("# angIdeg = %.2f\n" % angIdeg )
   fout.write("# using npar = %.3f, nperp = %.3f\n" % (npar,nperp))
   fout.write("# fGHz     Tpar    Rpar   Apar    Tperp   Rperp   Aperp\n")
   for fGHz in numpy.arange(fGHz0-10.,fGHz0+10.005,.005) :
-     ampTpar,ampTperp,ampRpar,ampRperp = plateTrans( fGHz, npar, nperp, angIdeg=angIdeg  )
+     ampTpar,ampTperp,ampRpar,ampRperp = plateTrans( fGHz, npar, nperp, angIdeg=angIdeg, alphaO=0.1, alphaE=0.1  )
      Tpar = ampTpar*ampTpar.conjugate()
      Tperp = ampTperp*ampTperp.conjugate()
      Rpar = ampRpar*ampRpar.conjugate()
@@ -1522,7 +1533,7 @@ def doit3( LOGHz=110., n1=0., n2=0., angIdeg=45., thetaDeg=0., tanDelta=1.e-4, d
 # compute average power P3,P4,P5 and use it to compute R,T,Abs for a range of tanDelta;
 # the idea is to compare the plate absorption with tanDelta
 
-def doit4( nrefrac, LOGHz=220., angIdeg=0., tcm=1. ) :
+def doit4( nrefrac, LOGHz=220., angIdeg=45., tcm=1. ) :
   Thot = 290
   Tcold = 77
   fout = open("plateLoss", "w" )
@@ -1532,35 +1543,37 @@ def doit4( nrefrac, LOGHz=220., angIdeg=0., tcm=1. ) :
   #fout.write("# thetaE = %.2f deg\n" % thetaE )
   fout.write("# nrefrac = %.2f\n" % nrefrac )
   fout.write("# tanDelta     P3     P4     P5       T       R       Abs   tanD_est\n")
-  for tanDelta in numpy.arange( 0., 2.05e-3, 2.e-4 ) :
+  for tanDelta in numpy.arange( 0., 2.05e-3, 2.e-2 ) :
     print "processing tanDelta = %.5f" % tanDelta
-    P3avg = 0.
-    P4avg = 0.
-    P5avg = 0.
-    numpts = 0.
-    for fIF in numpy.arange(0.5, 10., .01 ):
-      TparLSB,TperpLSB,RparLSB,RperpLSB = plateTrans( LOGHz-fIF, nrefrac, nrefrac, angIdeg=angIdeg, tanDelta=tanDelta, tcm=tcm )
-      TparUSB,TperpUSB,RparUSB,RperpUSB = plateTrans( LOGHz+fIF, nrefrac, nrefrac, angIdeg=angIdeg, tanDelta=tanDelta, tcm=tcm )
-      trans = (TparLSB*TparLSB.conjugate() + TperpLSB*TperpLSB.conjugate() \
-               + TparUSB*TparUSB.conjugate() + TperpUSB*TperpUSB.conjugate())/4.
-      refl = (RparLSB*RparLSB.conjugate() + RperpLSB*RperpLSB.conjugate() \
-               + RparUSB*RparUSB.conjugate() + RperpUSB*RperpUSB.conjugate())/4.
-      loss = 1.-trans-refl
-      #print "tanDelta, trans, refl, loss = ", tanDelta, trans, refl, loss    
-      P3avg = P3avg + trans*Thot + refl*Tcold + loss*Thot
-      P4avg = P4avg + trans*Tcold + refl*Thot + loss*Thot
-      P5avg = P5avg + trans*Tcold + refl*Tcold + loss*Thot
-      numpts =numpts + 1   
-    P3avg = P3avg/numpts
-    P4avg = P4avg/numpts
-    P5avg = P5avg/numpts
-    R = (Thot - P3avg)/(Thot - Tcold)
-    T = (Thot - P4avg)/(Thot - Tcold)
-    L = (P5avg - Tcold)/(Thot - Tcold)
-    thetaT = math.asin((math.sin(angIdeg*math.pi/180.))/nrefrac)	                                         # Snell's law, eqn 8 (p. 38)
-    computedAlpha = -1.*math.log(1 - L) * math.cos(thetaT)/tcm
-    computedtanDelta = clight*computedAlpha/(LOGHz * 2. * math.pi * nrefrac)
-    fout.write("  %8.5f  %6.1f %6.1f %6.1f  %7.3f %7.3f %7.3f   %7.5f\n" % (tanDelta, P3avg, P4avg, P5avg, T, R, L, computedtanDelta) )
+    for pp in [ [0.,1.], [1.,0.], [.5,.5] ] :		# [par,perp]
+      P3avg = 0.
+      P4avg = 0.
+      P5avg = 0.
+      numpts = 0.
+      for fIF in numpy.arange(0.5, 20., .01 ):
+        TparLSB,TperpLSB,RparLSB,RperpLSB = plateTrans( LOGHz-fIF, nrefrac, nrefrac, angIdeg=angIdeg, tanDelta=tanDelta, tcm=tcm )
+        TparUSB,TperpUSB,RparUSB,RperpUSB = plateTrans( LOGHz+fIF, nrefrac, nrefrac, angIdeg=angIdeg, tanDelta=tanDelta, tcm=tcm )
+        trans = (pp[0]*TparLSB*TparLSB.conjugate() + pp[1]*TperpLSB*TperpLSB.conjugate() \
+               + pp[0]*TparUSB*TparUSB.conjugate() + pp[1]*TperpUSB*TperpUSB.conjugate())/2.
+        refl = (pp[0]*RparLSB*RparLSB.conjugate() + pp[1]*RperpLSB*RperpLSB.conjugate() \
+               + pp[0]*RparUSB*RparUSB.conjugate() + pp[1]*RperpUSB*RperpUSB.conjugate())/2.
+        loss = 1.-trans-refl
+        #print "tanDelta, trans, refl, loss = ", tanDelta, trans, refl, loss    
+        P3avg = P3avg + trans*Thot + refl*Tcold + loss*Thot
+        P4avg = P4avg + trans*Tcold + refl*Thot + loss*Thot
+        P5avg = P5avg + trans*Tcold + refl*Tcold + loss*Thot
+        numpts =numpts + 1   
+      P3avg = P3avg/numpts
+      P4avg = P4avg/numpts
+      P5avg = P5avg/numpts
+      R = (Thot - P3avg)/(Thot - Tcold)
+      T = (Thot - P4avg)/(Thot - Tcold)
+      L = (P5avg - Tcold)/(Thot - Tcold)
+      thetaT = math.asin((math.sin(angIdeg*math.pi/180.))/nrefrac)	                                         # Snell's law, eqn 8 (p. 38)
+      computedAlpha = -1.*math.log(1 - L) * math.cos(thetaT)/tcm
+      computedtanDelta = clight*computedAlpha/(LOGHz * 2. * math.pi * nrefrac)
+      fout.write("  par %.1f  perp %.1f   %8.5f  %6.1f %6.1f %6.1f  %7.3f %7.3f %7.3f  %7.5f   %7.5f\n" % \
+         (pp[0],pp[1],tanDelta, P3avg, P4avg, P5avg, T, R, L, computedAlpha, computedtanDelta) )
   fout.close()
 
 # reads file produced by pb.calcT
@@ -1593,7 +1606,7 @@ def smArray( x, nsm=10 ) :
 # angIrange is angle of incidence of the plate (nominally 45 degrees)
 # thetaRange is angle of ordinary axis relative to plane of incidence, in the frame of the plate
 
-def doit5( dataFile, tanDelta=1.e-4, angIrange=[43.,48.,2.], thetaRange=[-5.,6.,2.] ) :
+def doit5( dataFile, angIrange=[43.,48.,2.], phiRange=[-5.,6.,2.], alphaO=.05, alphaE=.03 ) :
   Thot = 295
   Tcold = 77
   varsave = 1.e6
@@ -1606,20 +1619,20 @@ def doit5( dataFile, tanDelta=1.e-4, angIrange=[43.,48.,2.], thetaRange=[-5.,6.,
   print fsm
   T3sm = smArray( T3dat )
   T4sm = smArray( T4dat )
-  for theta in numpy.arange( thetaRange[0], thetaRange[1], thetaRange[2] ) :
+  for phi in numpy.arange( phiRange[0], phiRange[1], phiRange[2] ) :
     for angI in numpy.arange( angIrange[0], angIrange[1], angIrange[2] ) :
-      T3,T4,T5 = Tfit( LOGHz, fsm, angI, theta, tanDelta=tanDelta )  
+      T3,T4,T5 = Tfit( LOGHz, fsm, angI, phi, alphaO, alphaE )  
       variance = numpy.mean( pow( T3-T3sm, 2. )) + \
          numpy.mean( pow( T4-T4sm, 2. ))
-      print "theta = %.1f, angI = %.1f, variance = %.1f" % (theta, angI, variance)
+      print "phi = %.1f, angI = %.1f, variance = %.1f" % (phi, angI, variance)
       if variance < varsave :
         angIbest = angI
-        thetabest = theta
+        phibest = phi 
         varsave = variance
 
   # once best fit is found, model all the points
-  print "lowest variance for theta = %.1f, angI = %.1f" % (thetabest, angIbest)
-  T3,T4,T5 = Tfit( LOGHz, fdat, angIbest, thetabest, tanDelta )  
+  print "lowest variance for phi  = %.1f, angI = %.1f" % (phibest, angIbest)
+  T3,T4,T5 = Tfit( LOGHz, fdat, angIbest, phibest, alphaO, alphaE )  
   plt.ioff()
   fig = plt.subplot(1,1,1)
   fig.plot( fdat, T3, color='red' )
@@ -1630,37 +1643,216 @@ def doit5( dataFile, tanDelta=1.e-4, angIrange=[43.,48.,2.], thetaRange=[-5.,6.,
   fig.plot( fdat, T5dat, color='purple' )
   fig.grid( True )
   plt.title( dataFile )
-  fig.text( .05, .05, "angI = %.1f, theta = %.1f, tanDelta = %.2e" % (angIbest,thetabest,tanDelta), \
+  fig.text( .05, .05, "phi = %.1f, angI = %.1f, alphaO = %.3f, alphaE = %.3f" % (phibest,angIbest,alphaO,alphaE), \
      transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", size="medium" )
   plt.show( )
 
-
-def Tfit( LOGHz, fdat, angI, theta, tanDelta ) :
+def Tfit( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
   Thot = 295.
   Tcold = 77.
-  print "using tanDelta = ",tanDelta
-  npar = neff( theta )
-  nperp = neff( theta + 90. )
-  print "using npar = %.3f, nperp = %.3f" % (npar,nperp)
   T3 = []
   T4 = []
   T5 = []
+  inpolList = [ X ]
+  if LOGHz > 180. :
+    inpolList = [ X, Y ]
+
   for fIF in fdat : 
-    TparLSB,TperpLSB,RparLSB,RperpLSB = plateTrans( LOGHz-fIF, npar, nperp, angIdeg=angI, tanDelta=tanDelta )
-    TparUSB,TperpUSB,RparUSB,RperpUSB = plateTrans( LOGHz+fIF, npar, nperp, angIdeg=angI, tanDelta=tanDelta )
-    if ( LOGHz < 200. ) :    # single polarization perp to plane of incidence
-      trans = (TperpLSB*TperpLSB.conjugate() \
-         + TperpUSB*TperpUSB.conjugate())/2.
-      refl = ( RperpLSB*RperpLSB.conjugate() \
-         + RperpUSB*RperpUSB.conjugate())/2.
-    else :                   # circular pol
-      trans = (TparLSB*TparLSB.conjugate() + TperpLSB*TperpLSB.conjugate() \
-         + TparUSB*TparUSB.conjugate() + TperpUSB*TperpUSB.conjugate())/4.
-      refl = (RparLSB*RparLSB.conjugate() + RperpLSB*RperpLSB.conjugate() \
-         + RparUSB*RparUSB.conjugate() + RperpUSB*RperpUSB.conjugate())/4.
+    trans = 0.
+    refl = 0.
+    for fGHz in [ LOGHz - fIF, LOGHz + fIF ] :
+      for inpol in inpolList :
+        Tpar,Tperp,Rpar,Rperp = plateTrans2( inpol, fGHz, angIdeg, phiDeg, alphaO, alphaE )
+        trans = trans + Tpar*Tpar.conjugate() + Tperp*Tperp.conjugate()
+        refl = refl + Rpar*Rpar.conjugate() + Rperp*Rperp.conjugate()
+    for j in range(0,len(inpolList)) :      # divide by 2 or by 4
+      trans = trans/2. 
+      refl = refl/2.
     loss = 1.-trans-refl
+    print "T,R,L =", trans, refl, loss
     T3.append( trans*Thot + refl*Tcold + loss*Thot )
     T4.append( trans*Tcold + refl*Thot + loss*Thot )
     T5.append( trans*Tcold + refl*Tcold + loss*Thot )
   return [ numpy.array(T3,dtype=float), numpy.array(T4,dtype=float), numpy.array(T5,dtype=float ) ]
 
+# return refractive indices for polarizations parallel to x-axis and normal to x and ray direction,
+#   for a ray propagating through a uniaxial dielectric 
+# the ordinary axis of the dielectric is in the x-y plane, at angle phiDeg to the x-axis
+# the ray propagates in the y-z plane at angle thetaDeg to z-axis
+
+def effindex( phiDeg, thetaDeg, no=3.05, ne=3.40 ) :
+  theta = math.pi/180. * thetaDeg
+  phi = math.pi/180. * phiDeg
+  #vecOrdinary = numpy.array( [ math.cos(phi), math.sin(phi), 0. ], dtype=float )
+	# this is unit vector in direction of the ordinary axis
+  #vecRay = numpy.array( [ 0., math.sin(theta), math.cos(theta) ] )
+    # this is unit vector in the direction of the ray
+  #cosA = numpy.dot( vecOrdinary, vecRay )  # law of cosines
+    # this is the angle between the ray direction and the ordinary axis
+  cosphi = math.cos( phi )
+  sinphi = math.sin( phi )
+  npar = 1./ math.sqrt( pow(sinphi/no, 2.) + pow( cosphi/ne, 2. ) )
+  nperp = 1./ math.sqrt( pow(cosphi/no, 2.) + pow( sinphi/ne, 2.) ) 
+  return npar,nperp
+  
+# propagate signal through anisotropic dielectric, at angle phiDeg to ordinary axis
+# break wave into components along principal axes, demonstrate that there is an effective
+#   index of refraction for this wave
+def dumbtest( phiDeg, no=1.5, ne=3.) :
+  fout = open( "dumbtest", "w" )
+  v1 = X  
+  v2 = Jrot( v1, phiDeg )
+  for delay1Deg in numpy.arange(0.,3602.,2.) :
+    delay2Deg = delay1Deg/1.1
+    v3 = J3delay( v2, delay1Deg, delay2Deg )
+    v4 = Jrot( v3, -1.*phiDeg)
+    fout.write("%.2f  %8.3f  %8.3f  %8.3f  %8.3f  %8.3f %8.3f\n" % (delay1Deg, abs(v3[0]), numpy.angle(v3[0], deg=True), \
+       abs(v3[1]), numpy.angle(v3[1],deg=True), abs(v4[0]), numpy.angle(v4[0],deg=True)))
+  fout.close()
+
+def dumbtest2( no=3.05, ne=3.40 ) :
+  fout = open( "dumbtest2", "w" )
+  v1 = X  
+  tcm = 28.
+  for phiDeg in numpy.arange(0.,91.,1.) :
+    print "\nv1: ",v1
+    v2 = Jrot( v1, phiDeg )
+    print "v2: ",v2
+    delay1Deg = 360.*220.e9 * no * tcm/3.e10   
+    #delay1Deg = 360090.
+    print "delay1Deg =", delay1Deg
+    delay2Deg = 360.*220.e9 * ne * tcm/3.e10
+    #delay2Deg = 360180.
+    print "delay2Deg =", delay2Deg
+    v3 = J3delay( v2, delay1Deg, delay2Deg )
+    print "v3: ",v3
+    v4 = Jrot( v3, -1.*phiDeg)
+    print "v4: ",v4
+    phi = phiDeg * math.pi/180.
+    sq = pow( math.cos(phi)/no,2.) + pow(math.sin(phi)/ne,2.) 
+    neff = 1./math.sqrt(sq)
+    #phpredict = numpy.mod( 360.*220.e9 * neff * 1./3.e10, 360.)
+    phpredict =  360.*220.e9 * neff * tcm/3.e10
+    fout.write("%.1f  %8.3f  %8.3f  %8.3f  %8.3f  %8.3f  %8.3f\n" % \
+       (phiDeg, abs(v4[0]), numpy.angle(v4[0], deg=True), neff, phpredict, delay1Deg, delay2Deg))
+  fout.close()
+
+def dumbtest3( ) :
+  fout = open("dumbtest3", "w")
+  x = numpy.arange(0.,50.,.01)
+  v1 = numpy.cos( 3*x )
+  v2 = numpy.cos( 2*x )
+  v3 = v1 + v2
+  v4 = numpy.cos( 2.5 * x)
+  v5 = numpy.cos( 2.353394 * x)
+  for xx,vv1,vv2,vv3,vv4,vv5 in zip(x,v1,v2,v3,v4,v5) :
+    fout.write( "%8.3f  %8.3f  %8.3f  %8.3f  %8.3f  %8.3f\n" % (xx,vv1,vv2,vv3,vv4,vv5) )
+  fout.close
+
+# compute amplitude transmission and reflection through surface
+# the input Jones vector v1 = [ Epar, Eperp ] where par and perp are relative to the plane of incidence
+# return trans and refl Jones vectors
+def surf( vec, tpar, tperp, rpar, rperp ) :
+  Tmat = numpy.array( [[ tpar, 0.],[ 0., tperp]] )
+  Rmat = numpy.array( [[ rpar, 0.],[ 0., rperp]] )
+  return [ numpy.dot(Tmat,vec), numpy.dot(Rmat,vec) ]
+  
+
+# want to compute transmission through a sapphire plate for beam incident at thetaI
+# use subroutine sapphire to compute extraordinary and ordinary index of refraction
+#   for sapphire
+# thetaI is angle of incidence to the plate
+# tcm is thickness of plate in cm
+# thetaE is angle of extraordinary axis relative to plane of incidence
+# tanDelta = loss tangent
+# n1 = index of refraction parallel to plane of incidence
+# n2 = index of refractoin perpendicular to plane of incidence
+# ... note: can use n1,n2 = nsapphire( fGHz ) where n1=ordinary, n2=extraordinary axis
+
+# here's the plan:
+#  - use usual Fresnel coefficients to compute transmission and reflection coefficients, but
+#     do this calculation twice, computing parallel coeff for one index of refraction, perp
+#     for the other
+#  - compute Jones vector just inside 1st surface of plate; rotate into principal axes,
+#     compute wave at far side of plate, rotate back
+#  - again use Fresnel coefficients to compute trans and refl for this wave; once
+#     back inside the plate, compute reflected wave back to first surface
+
+# phi is rotation of fast axis relative to plane of incidence?
+
+def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=.037, alphaE=.023,  nO=3.05, nE=3.40, tcm=1. ) :
+  angI = math.pi * angIdeg / 180.	                              # convert to radians 
+  refDelay = 2. * math.pi * fGHz/clight * tcm/math.cos(angI)    # delay in radians without plate
+  # print "... refDelay = %.3f radians" % refDelay
+  #neffpar,neffperp = effindex( phiDeg, angIdeg )	            # these indices used only to compute Fresnel coeff at the surface
+  neffpar = nO
+  neffperp = nE
+  # print "neff par, perp = %.3f, %.3f" % (neffpar,neffperp)
+
+  # compute Fresnel coefficients for polarization parallel to plane of incidence     
+  angTpar = math.asin((math.sin(angI))/neffpar)	                          # Snell's law, eqn 8 (p. 38)
+  [tpar,dummy1,rpar,dummy2] = fresnel( 1., angI, neffpar, angTpar )              # entering dielectric
+  [tprimepar,dummy1,rprimepar,dummy2] = fresnel( neffpar, angTpar, 1., angI )    # leaving dielectric
+  
+  # compute Fresnel coefficients for polarization perpendicular to plane of incidence
+  angTperp = math.asin((math.sin(angI))/neffperp)                             # Snell's law, eqn 8 (p. 38)
+  [dummy1,tperp,dummy2,rperp] = fresnel( 1., angI, neffperp, angTperp )                 # entering dielectric
+  [dummy1,tprimeperp,dummy2,rprimeperp] = fresnel( neffperp, angTperp, 1., angI )       # leaving dielectric
+  avAngT = math.sqrt( angTpar*angTperp )
+  # print "angTpar = %.2f, angTperp = %.2f" % (180./math.pi * angTpar, 180./math.pi * angTperp)
+
+  # compute atten and delays through the plate
+  attnO = alphaO/2. * tcm / math.cos(avAngT) 					#  AMPLITUDE attenuation per pass through plate
+  attnE = alphaE/2. * tcm / math.cos(avAngT) 					#  AMPLITUDE attenuation per pass through plate
+  deltaO = 2 * math.pi * nO * fGHz/clight * tcm / math.cos(avAngT)     
+  deltaE = 2 * math.pi * nE * fGHz/clight * tcm / math.cos(avAngT)    
+  delaymat = numpy.array( [ [cmath.exp(-attnO-1j*deltaO), 0], [0, cmath.exp(-attnE - 1j * deltaE)] ] )
+  # print attnO,deltaO,attnE,deltaE
+  # print delaymat
+  extraphase = math.sin(angI) * 2. * tcm * math.tan(avAngT) * 2. * math.pi * fGHz/clight
+    # this is the phase delay SAVED on each pass due to geometry
+
+  # beginning signal: Jones vector with amp 1 for each pol
+  #v1 = numpy.array( [1,1], dtype=complex )
+  v1 = inpol 
+  v2,R = surf( v1, tpar, tperp, rpar, rperp )                # v2 is transmitted amp, R is reflected amp
+  T = 0. + 0j
+
+  # now let signal rattle back and forth inside the plate 
+  for npass in range(0, 8) :  
+    v3 = Jrot( v2, phiDeg )                     # inside the plate, rotate into frame of principal axes
+    v4 = numpy.dot( delaymat, v3 )                # complex delays include attenuation
+    v5 = Jrot( v4, -phiDeg )                    # rotate back to plane of incidence frame
+    t,v2 = surf( v5, tprimepar, tprimeperp, rprimepar, rprimeperp)    # compute transmission, reflection from 2nd surface
+    t = t * numpy.exp( 1j * npass * extraphase )         
+        
+    T = T + t
+    v3 = Jrot( v2, -phiDeg )                    # direction is reversed, so I am reversing phi
+    v4 = numpy.dot( delaymat, v3 )                # complex delays include attenuation
+    v5 = Jrot( v4, phiDeg )
+    t,v2 = surf( v5, tprimepar, tprimeperp, rprimepar, rprimeperp)    # compute transmission, reflection from 2nd surface
+    t = t * numpy.exp( 1j * (npass+1) * extraphase )         
+
+    R = R + t 								    # at the first surface, transmitted signals add to R
+    #print "reflected amps after %d passes: %.4f, %.4f" % ( npass, abs(v2[0]), abs(v2[1]) )
+    T0tmp = T[0]*T[0].conjugate()
+    T1tmp = T[1]*T[1].conjugate()
+    R0tmp = R[0]*R[0].conjugate()
+    R1tmp = R[1]*R[1].conjugate()
+    A0tmp = 1. - T0tmp - R0tmp 
+    A1tmp = 1. - T1tmp - R1tmp
+    #print "... after %d passes, T = %.3f,%.3f, R = %.3f,%.3f, A = %.3f,%.3f" % \
+    #   (npass, T0tmp,T1tmp,R0tmp,R1tmp,A0tmp,A1tmp) 
+
+  return [ T[0], T[1], R[0], R[1] ]             # [ ampTpar, ampTperp, ampRpar, ampRperp ]
+
+def ptcompare( LOGHz, angIdeg, alphaO=0., alphaE=0. ) :
+  phiDeg = 45.
+  no = 3.05
+  ne = 3.40
+  Tpar,Tperp,Rpar,Rperp = plateTrans( LOGHz, no, ne, angIdeg=angIdeg, alphaO=alphaO, alphaE=alphaE )
+  print "%8.4f %8.4f   %8.4f %8.4f   %8.4f %8.4f   %8.4f %8.4f   %5.3f %5.3f %5.3f %5.3f" % (Tpar.real,Tpar.imag, \
+    Tperp.real,Tperp.imag,Rpar.real,Rpar.imag,Rperp.real,Rperp.imag, abs(Tpar), abs(Tperp), abs(Rpar), abs(Rperp) )
+  Tpar,Tperp,Rpar,Rperp = plateTrans2( LOGHz, angIdeg, phiDeg, alphaO, alphaE, no, ne )
+  print "%8.4f %8.4f   %8.4f %8.4f   %8.4f %8.4f   %8.4f %8.4f   %5.3f %5.3f %5.3f %5.3f" % (Tpar.real,Tpar.imag, \
+    Tperp.real,Tperp.imag,Rpar.real,Rpar.imag,Rperp.real,Rperp.imag, abs(Tpar), abs(Tperp), abs(Rpar), abs(Rperp) )
