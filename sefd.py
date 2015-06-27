@@ -28,7 +28,6 @@ def calcSEFD( gains, tsys ) :
   antsort = antsort + 1
   return [antsort,sefdsort]
 
-
 def doall( ):
   band = [ "5.L", "6.L", "7.L", "8.L", "5.R", "6.R", "7.R", "8.R" ] 
   antsort = numpy.zeros( (8,15), dtype=int )
@@ -51,5 +50,29 @@ def doall( ):
        antsort[5][n],sefdsort[5][n], \
        antsort[6][n],sefdsort[6][n], \
        antsort[7][n],sefdsort[7][n] )
+
+
+
+def doall2( ):
+  band = [ "4.L", "5.L", "6.L", "4.R", "5.R", "6.R" ] 
+  antsort = numpy.zeros( (6,15), dtype=int )
+  sefdsort = numpy.zeros( (6,15), dtype=float )
+  # outfile = "sefdSummary.dat"
+  [t, gainComplex] = vlbiCal.getGains( "wide.av" )
+  gain = numpy.abs(gainComplex)
+  print gain, len(gain)
+  for i in range(0,6) :
+    tsys = vlbiCal.getVar15( "tsys%s" % band[i], t )
+    [antsort[i],sefdsort[i]] = calcSEFD( gain, tsys ) 
+  print "%7s %15s %15s %15s %15s %15s" % (band[0],band[1],band[2],band[3],band[4],band[5])
+  for n in range(0,15) :
+    print "%4d %8.0f   %4d %8.0f    %4d %8.0f    %4d %8.0f   %4d %8.0f    %4d %8.0f" % \
+      ( antsort[0][n],sefdsort[0][n], \
+       antsort[1][n],sefdsort[1][n], \
+       antsort[2][n],sefdsort[2][n], \
+       antsort[3][n],sefdsort[3][n], \
+       antsort[4][n],sefdsort[4][n], \
+       antsort[5][n],sefdsort[5][n]) 
+
 
 

@@ -250,14 +250,18 @@ def avgVar( t1, t2, t, var ) :
   else :
     return 0.
 
-# --- wrapper for avgSEFD that uses default gains if no pre- or post-scan data --- #
-def scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsys, antList ) :
-  s = avgSEFD( t1, t2, src, t, source, gain, tsys, antList ) 
+# --- wrapper for avgSEFD that uses default gains if there are no pre- or post-scan data --- #
+# ... this should no longer be necessary, since SgrGain interpolates all gains, but
+# ...    I will keep using it just in case
+
+def scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gain, defgain, tsys, antList ) :
+  s = avgSEFD( foutCalc, t1, t2, src, t, source, gain, tsys, antList ) 
   if (s > 0.) :
-    fout.write("%8.0f " % (100.*round(s/100.)) )
+    foutRbyR.write("%8.0f " % (100.*round(s/100.)) )
   else :
+    foutCalc.write("\n\n**** RECALCULATING using default gains because no valid gains ****\n"
     s = avgSEFD( t1, t2, src, t, source, defgain, tsys, antList )  
-    fout.write("%8.0f*" % (100.*round(s/100.)) )
+    foutRbyR.write("%8.0f*" % (100.*round(s/100.)) )
   return s
 
 # --- compute SEFD averaged over a scan --- #
@@ -266,55 +270,55 @@ def scanSEFD( fout, t1, t2, src, t, source, gain, defgain, tsys, antList ) :
 # ... source is (npts x 1) list of source names
 # ... gain is (npts x 15) complex array
 # ... tsys is (npts x 15) real array
-def avgSEFD( t1, t2, src, t, source, gain, tsys, antList ) : 
-  fout = open( "calcSEFD.log", "a" )
-  fout.write("\nt1,t2,src,antList = %.3f, %.3f, %s, %s\n" % (t1,t2,src,antList))
+# ... 5/25/15 - writes out gains and tsys for each ant to foutCalc, pointer to e.g. "SEFD_calc.30mar"
+# 
+def avgSEFD( foutCalc, t1, t2, src, t, source, gain, tsys, antList ) : 
+  foutCalc.write("\nt1,t2,src,antList = %.3f, %.3f, %s, %s\n" % (t1,t2,src,antList))
   navg = 0
   avg = 0.
+  # --- process each integration within the time interval --- #
   for n in range( 0, len(t) ) :
     if ( (t[n] >= t1) and (t[n] <= t2) and (src == source[n]) ) :
       s = SEFD( gain[n], tsys[n], antList )
         # ... note that gain[n] and tsys[n] are (1 x 15) arrays
-      if len(antList) == 1 :
-        ant = antList[0]
-        fout.write("%8.4f %6.3f %6.0f %9.0f\n" % (t[n], abs(gain[n][ant-1]), tsys[n][ant-1], s) )
-      else :
-        str = "%8.4f " % t[n]
-        for ant in antList :
-          str = str + "%8.3f" % abs(gain[n][ant-1]) 
-        fout.write( "%s\n" % str )
-        str = "         "
-        for ant in antList :
-          str = str + "%8.0f" % tsys[n][ant-1] 
-        str = str + " %9.0f" % s
-        fout.write( "%s\n" % str )
+
+      # --- write 1 line with gains and scan SEFD --- #
+      str = "%8.4f " % t[n]
+      for ant in antList :
+        str = str + "%8.3f %5.0f" % ( abs(gain[n][ant-1], numpy.angle( gain[n]]ant-1], deg=True ) )
+      str = str + " %9.0f" % s
+      foutCalc.write( "%s\n" % str )
+
+      # --- write 2nd line with tsys values --- #
+      str = "         "
+      for ant in antList :
+        str = str + "%8.0f      " % tsys[n][ant-1] 
+
+      # --- if SEFD was nonzero, include it into the sum --- #
       if (s > 0) :
         avg += 1./s
         navg += 1
+  avgSEFD = 0.
   if (navg > 0) :
-    fout.write(" AVG = %9.0f\n" % (1./(avg/navg)) )
-    print "t1,t2,src,antList = %.3f, %.3f, %s, %s   AVG = %9.0f" % (t1,t2,src,antList,1./(avg/navg))
-    fout.close()
-    return 1./(avg/navg)
-  else :
-    fout.write(" AVG = 0\n")
-    print "t1,t2,src,antList = %.3f, %.3f, %s, %s   AVG = 0.0" % (t1,t2,src,antList)
-    fout.close()
-    return 0.
+    avgSEFD = 1./(avg/navg)
+  foutCalc.write("  AVG = %9.0f\n" % avgSEFD )
+  return avgSEFD
 
 
-# --- compute SEFD for single or phased ants, for 1 integration --- #
+# --- compute SEFD for single or phased ants, for 1 integration; no printed output --- #
 # ... onegain = 1 x 15 complex array
 # ... onetsys = 1 x 15 real array
+#
 def SEFD( onegain, onetsys, antList ) :
-  jyperk = [65.,65.,65.,65.,65.,65.,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34]
+  jyperkNominal = [65.,65.,65.,65.,65.,65.,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34]
   nants = 0
   sum = 0.
   for ant in antList :
     magg = numpy.abs( onegain[ant-1] )
     if ( (magg > 0.1) and (magg < 10.) and (onetsys[ant-1] > 10. ) ) :
       nants += 1
-      sum += 1./( onegain[ant-1] * math.sqrt( jyperk[ant-1] * onetsys[ant-1] ) )
+      sum += 1./( onegain[ant-1] * math.sqrt( jyperkNominal[ant-1] * onetsys[ant-1] ) )
+	      # note that denominator is vector amplitude, not power
   if (nants > 0) :
     return nants/(numpy.abs(sum) * numpy.abs(sum))  
   else :
@@ -864,7 +868,9 @@ def c14( ) :
 # ...             gainR = selfcal gains for RCP, uvrange(20,1000), all sources including SgrA
 #                 TsysL5,tsysR5, etc
 # t1str,t2str is time range to use to derive SgrA gains
-
+# data are written to 3 different files:
+#   - the 
+#
 def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
 
   # ... retrieve time and gain arrays; smooth the gains, interpolate for SgrA
@@ -916,102 +922,107 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
   gainVsElev( elevarray, gainLtmp, "gainVsElev" )
 
   # ... process the 'summ' file which lists the schedule
-  fout = open( "RbyR", "a" )
-  fout2 = open( "avgSEFD", "a" )
-  fout2.write("\n")
-  fout2.write(" day scan   source   UTstart  el   tau path       Cr-L     Cr-R    Cp-5L    Cp-5R    Cp-6L    Cp-6R    Cp-7L    Cp-7R    Cp-8L    Cp-8R  pheff\n")
   fin = open( "summ", "r" )
+  foutCalc = open( "SEFD_calc."+day, "a" )   # 2 lines per integration, one band; gain, Tsys, SEFD for each record
+  foutRbyR = open( "SEFD_RbyR."+day, "a" )	 # one line per integration, all bands; SEFD values only
+  foutAvg = open( "SEFD_avg."+day, "a" )     # one line per scan, all bands; scan-averaged values only
+
+  foutAvg.write("\n")
+  foutAvg.write(" day scan   source   UTstart  el   tau path       Cr-L     Cr-R    Cp-5L    Cp-5R    Cp-6L    Cp-6R    Cp-7L    Cp-7R    Cp-8L    Cp-8R  pheff\n")
 
   # --- process each scan --- #
   for line in fin :
     if not line.startswith("#") :
       a = line.split()
-      if a[4] == "vlb" :
-        src = a[0]
-        utStart = a[1]
-        utStop = a[2]
-        scanname = a[7]
-        print " "
-        print scanname, src
-        fout.write("#\n")
-        fout.write("#    day %s, scan %s, source %s, UT %8s -- %8s \n" % \
-           ( getDayNo(day), scanname, src, utStart, utStop) ) 
-        fout.write("#\n#    UT        UThrs     el  tau  path      C1-L     C1-R     Cp-5L    Cp-5R    Cp-6L    Cp-6R    Cp-7L    Cp-7R    Cp-8L    Cp-8R   pheff\n")
+      if a[4] != "vlb" :
+        print "ERROR - col 5 is not 'vlb'"
+      src = a[0]
+      utStart = a[1]
+      utStop = a[2]
+      scanname = a[7]
+      print " "
+      print scanname, src
+      foutCalc.write("#\n")
+      foutRbyR.write("#\n")
+      foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s \n" % \
+      foutRbyR.write("#    day %s, scan %s, source %s, UT %8s -- %8s \n" % \
+         ( getDayNo(day), scanname, src, utStart, utStop) ) 
+      foutRbyR.write("#\n#    UT        UThrs     el  tau  path      C1-L     C1-R     Cp-5L    Cp-5R    Cp-6L    Cp-6R    Cp-7L    Cp-7R    Cp-8L    Cp-8R   pheff\n")
 
-      for n in range(0,len(time)) :
-
-        if (t[n] > dechrs( utStart ) - .0028) and (t[n] < dechrs( utStop ) + .0028) :
-          fout.write("  %8s %10.6f    %2d %5.2f %4.0f   " % (time[n],t[n],elev[n],tau230[n],rmspath[n] ) ) 
-
-          sL1 = SEFD( gainL[n], tsysL5[n], [1] )
-          fout.write("%8.0f " % (100.*round(sL1/100.)) )
-
-          sR1 = SEFD( gainR[n], tsysR5[n], [1] )
-          fout.write("%8.0f " % (100.*round(sR1/100.)) )
-
-          sL5 = SEFD( gainL[n], tsysL5[n], cpList )
-          fout.write("%8.0f " % (100.*round(sL5/100.)) )
-
-          sR5 = SEFD( gainR[n], tsysR5[n], cpList )
-          fout.write("%8.0f " % (100.*round(sR5/100.)) )
-
-          sL6 = SEFD( gainL[n], tsysL6[n], cpList )
-          fout.write("%8.0f " % (100.*round(sL6/100.)) )
-
-          sR6= SEFD( gainR[n], tsysR6[n], cpList )
-          fout.write("%8.0f " % (100.*round(sR6/100.)) )
-
-          sL7 = SEFD( gainL[n], tsysL7[n], cpList )
-          fout.write("%8.0f " % (100.*round(sL7/100.)) )
-
-          sR7= SEFD( gainR[n], tsysR7[n], cpList )
-          fout.write("%8.0f " % (100.*round(sR7/100.)) )
-
-          sL8 = SEFD( gainL[n], tsysL8[n], cpList )
-          fout.write("%8.0f " % (100.*round(sL8/100.)) )
-
-          sR8= SEFD( gainR[n], tsysR8[n], cpList )
-          fout.write("%8.0f " % (100.*round(sR8/100.)) )
-
-          sL6_ideal = SEFD( absgain[n], tsysL6[n], cpList ) 
-          fout.write("   %4.2f\n"  % efficiency( sL6, sL6_ideal ) )
-
-      # now print out average values, as before
       t1 = dechrs( utStart ) - .0028	 # start - 10 sec
       t2 = dechrs( utStop ) + .0028      # stop + 10 sec
+      for n in range(0,len(time)) :
+
+        if (t[n] > t1) and (t[n] < t2 ) :     # valid integration in this scan
+          foutRbyR.write("  %8s %10.6f    %2d %5.2f %4.0f   " % (time[n],t[n],elev[n],tau230[n],rmspath[n] ) ) 
+
+          sL1 = SEFD( gainL[n], tsysL5[n], [1] )
+          foutRbyR.write("%8.0f " % (100.*round(sL1/100.)) )
+
+          sR1 = SEFD( gainR[n], tsysR5[n], [1] )
+          foutRbyR.write("%8.0f " % (100.*round(sR1/100.)) )
+
+          sL5 = SEFD( gainL[n], tsysL5[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sL5/100.)) )
+
+          sR5 = SEFD( gainR[n], tsysR5[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sR5/100.)) )
+
+          sL6 = SEFD( gainL[n], tsysL6[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sL6/100.)) )
+
+          sR6= SEFD( gainR[n], tsysR6[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sR6/100.)) )
+
+          sL7 = SEFD( gainL[n], tsysL7[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sL7/100.)) )
+
+          sR7= SEFD( gainR[n], tsysR7[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sR7/100.)) )
+
+          sL8 = SEFD( gainL[n], tsysL8[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sL8/100.)) )
+
+          sR8= SEFD( gainR[n], tsysR8[n], cpList )
+          foutRbyR.write("%8.0f " % (100.*round(sR8/100.)) )
+
+          sL6_ideal = SEFD( absgain[n], tsysL6[n], cpList ) 
+          foutRbyR.write("   %4.2f\n"  % efficiency( sL6, sL6_ideal ) )
+
+      # now print line with average values into foutRbyR
       elevavg = avgVar( t1, t2, t, elev )
       tau230avg = avgVar( t1, t2, t, tau230 )
       rmspathavg = avgVar( t1, t2, t, rmspath )
-      fout.write("# ------- AVG -------   ")
-      fout.write(" %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) ) 
+      foutRbyR.write("# ------- AVG -------   ")
+      foutRbyR.write(" %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) ) 
 
       # ... print SEFD for C1 L and R
       sLc1 = scanSEFD( fout, t1-.1, t2+.1, src, t, source, gainL, defgain, tsysL5, [1] ) 
       sRc1 = scanSEFD( fout, t1-.1, t2+.1, src, t, source, gainR, defgain, tsysR5, [1] ) 
 
       # ... print SEFDs for phased array L and phased array R, bands 5,6,7,8
-      sL5 = scanSEFD( fout, t1, t2, src, t, source, gainL, defgain, tsysL5, cpList ) 
-      sR5 = scanSEFD( fout, t1, t2, src, t, source, gainR, defgain, tsysR5, cpList ) 
-      sL6 = scanSEFD( fout, t1, t2, src, t, source, gainL, defgain, tsysL6, cpList ) 
-      sR6 = scanSEFD( fout, t1, t2, src, t, source, gainR, defgain, tsysR6, cpList ) 
-      sL7 = scanSEFD( fout, t1, t2, src, t, source, gainL, defgain, tsysL7, cpList ) 
-      sR7 = scanSEFD( fout, t1, t2, src, t, source, gainR, defgain, tsysR7, cpList ) 
-      sL8 = scanSEFD( fout, t1, t2, src, t, source, gainL, defgain, tsysL8, cpList ) 
-      sR8 = scanSEFD( fout, t1, t2, src, t, source, gainR, defgain, tsysR8, cpList ) 
+      sL5 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL5, cpList ) 
+      sR5 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR5, cpList ) 
+      sL6 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL6, cpList ) 
+      sR6 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR6, cpList ) 
+      sL7 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL7, cpList ) 
+      sR7 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR7, cpList ) 
+      sL8 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL8, cpList ) 
+      sR8 = scanSEFD( foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR8, cpList ) 
 
       # all efficiencies are the same, so only write out the one for Cp-6L
       sL6_ideal = avgSEFD( t1, t2, src, t, source, absgain, tsysL6, cpList ) 
       pheff = efficiency( sL6, sL6_ideal )
-      fout.write("   %4.2f "  % pheff )
-      fout.write("\n")
+      foutRbyR.write("   %4.2f "  % pheff )
+      foutRbyR.write("\n")
   
       # write one-line summary to scanSEFD file
-      fout2.write(" %3s %4s %8s  %8s" % ( getDayNo(day), scanname, src, utStart) )
-      fout2.write("  %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) )  
-      fout2.write("%8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f   %4.2f\n" % \
+      foutAvg.write(" %3s %4s %8s  %8s" % ( getDayNo(day), scanname, src, utStart) )
+      foutAvg.write("  %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) )  
+      foutAvg.write("%8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f   %4.2f\n" % \
         (sLc1,sRc1,sL5,sR5,sL6,sR6,sL7,sR7,sL8,sR8,pheff ) )
 
   fin.close()  
-  fout.close()
-  fout2.close()
+  foutRbyR.close()
+  foutAvg.close()
 

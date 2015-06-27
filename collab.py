@@ -3,7 +3,7 @@
 # to use: copy relevant bib items to /o/plambeck/CV/Last48.bib
 #    
 
-infile = "/o/plambeck/CV/Plambeck_Publications.bib"
+#infile = "/o/plambeck/CV/Plambeck_Publications.bib"
 infile = "/o/plambeck/CV/Last48.bib"
 fin = open( infile, "r")
 authlist = False

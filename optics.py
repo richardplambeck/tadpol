@@ -19,10 +19,13 @@ from mpl_toolkits.mplot3d import Axes3D
 # -----  here are the parameters defining the setup ----
 D=8.
 thetaEdeg=30.
-thetaCdeg=-170.  # -170.
+thetaCdeg=-160.  # -170.
 ell=8.
-alphadeg=-60.
+alphadeg=-60.    # -60.
 signFF=1. 
+fGHz = 90.
+F2F = 15.
+
 # -----------------------------------------------------
 
 def parab( ):
@@ -37,7 +40,7 @@ def parab( ):
   rsq = (xx**2 + yy**2)
   print rsq
   z = 0.02 * rsq 
-  surf = ax.plot_surface( xx, yy, z, rstride=10, cstride=10, alpha=0.3 )
+  surf = ax.plot_surface( xx, yy, z, rstride=10, cstride=10, alpha=0.5 )
   ax.set_aspect('equal')
   ax.set_zlim(0,10.)
   plt.show()
@@ -99,8 +102,30 @@ def gCrossSection( fGHz=70., w0in=0.3 ) :
     w = w0in * math.sqrt( 1. + pow( lambdain*z/(math.pi * pow(w0in,2.)),2. ) )
     #fout.write("%8.3f  %8.3f  %8.3f\n" % (z, w, -1.*w) )    
   fout.close()
+
+def parBeam( ax, w0in, d0, surf1, F2F, fGHz=fGHz ) :
+  lambdain = (29.98/fGHz)/2.54
+  gx = numpy.array( numpy.arange(0.,25.,.01) )
+  gy = w0in * numpy.sqrt( 1. + pow( lambdain*gx/(math.pi * pow(w0in,2.)),2. ) )
+  bmx = F2F/2.-gx
+  bmy = d0 + gy
+  nmin,imin = trunc( numpy.array( [bmx,bmy] ), surf1 )
+  ax.plot( bmx[0:nmin], bmy[0:nmin], color="red", linestyle='--', linewidth=3 )
+  bmy = d0 - gy
+  nmin,imin = trunc( numpy.array( [bmx,bmy] ), surf1 )
+  ax.plot( bmx[0:nmin], bmy[0:nmin], color="red", linestyle='--', linewidth=3 )
+
+  gy = 2.*w0in * numpy.sqrt( 1. + pow( lambdain*gx/(math.pi * pow(w0in,2.)),2. ) )
+  bmx = F2F/2.-gx
+  bmy = d0 + gy
+  nmin,imin = trunc( numpy.array( [bmx,bmy] ), surf1 )
+  ax.plot( bmx[0:nmin], bmy[0:nmin], color="blue", linestyle='--', linewidth=3 )
+  bmy = d0 - gy
+  nmin,imin = trunc( numpy.array( [bmx,bmy] ), surf1 )
+  ax.plot( bmx[0:nmin], bmy[0:nmin], color="blue", linestyle='--', linewidth=3 )
   
-def gBeam( ax, x, y, theta, surf1, surf2, w0in=0.23, fGHz=220. ) :
+  
+def gBeam( ax, x, y, theta, surf1, surf2, w0in=0.23, fGHz=fGHz ) :
   lambdain = (29.98/fGHz)/2.54
   gx = numpy.array( numpy.arange(0.,25.,.01) )
 
@@ -109,12 +134,14 @@ def gBeam( ax, x, y, theta, surf1, surf2, w0in=0.23, fGHz=220. ) :
     # rotate the beam by angle theta
   beam = numpy.array( [tiltbeam[0]+x, tiltbeam[1]+y] )
     # offset the beam by x,y
-  plotRay( ax, beam, surf1, surf2, color="red" )
+  ybm1 = plotRay( ax, beam, surf1, surf2, color="red" )
+  print "ybm1 = ", ybm1
 
   gy = -gy
   tiltbeam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
   beam = numpy.array( [tiltbeam[0]+x, tiltbeam[1]+y] )
-  plotRay( ax, beam, surf1, surf2, color="red" )
+  ybm2 = plotRay( ax, beam, surf1, surf2, color="red" )
+  print "ybm2 = ", ybm2
 
   gy = -2.*gy
   tiltbeam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
@@ -125,12 +152,14 @@ def gBeam( ax, x, y, theta, surf1, surf2, w0in=0.23, fGHz=220. ) :
   tiltbeam = pol.Jrot( numpy.array( [gx, gy] ), -1.*theta )
   beam = numpy.array( [tiltbeam[0]+x, tiltbeam[1]+y] )
   plotRay( ax, beam, surf1, surf2, color="blue" )
+ 
+  return (ybm1-ybm2)/2.
 
 # plot ray reflecting off 2 surfaces (or truncated at 2nd surface)
 def plotRay( ax, ray, surf1, surf2, color='black', truncate=True ) :
   nmin,imin = trunc( ray, surf1 )
     # figure out where ray intersects surface1; nmin is ray index, imin is surface index
-  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--')
+  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--', linewidth=3 )
     # draw the ray up to the first surface
   if (len(ray[0])-nmin) < 2 :
     print "ray too short"
@@ -141,17 +170,18 @@ def plotRay( ax, ray, surf1, surf2, color='black', truncate=True ) :
     # new ray is the reflected ray from surface1
   nmin,imin = trunc( ray, surf2 )
     # figure out where ray intersects surface2
-  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--')
+  ysave = ray[1][nmin]
+    # may need this to get new beamwaist
+  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--', linewidth=3 )
     # plot ray from surface1 to surface2
-  if truncate or (len(ray[0])-nmin) < 2 :
-    return
-  normal = norm( None, surf2, imin )
-    # norm is angle normal to surf2 at point of intersection with ray
-  ray = reflected( ax, ray, nmin, normal ) 
-    # new ray is the reflected ray from surface2
-  ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--')
+  if not(truncate) and (len(ray[0])-nmin) > 1 :
+    normal = norm( None, surf2, imin )
+      # norm is angle normal to surf2 at point of intersection with ray
+    ray = reflected( ax, ray, nmin, normal ) 
+      # new ray is the reflected ray from surface2
+    ax.plot( ray[0][0:nmin], ray[1][0:nmin], color=color, linestyle='--', linewidth=3 )
+  return ysave
   
-
 def reflected( ax, beam, nmin, normal ) :
   bm = numpy.array( [beam[0][nmin:]-beam[0][nmin], beam[1][nmin:]-beam[1][nmin]] )
     # this is the reflected part of the ray, with point of reflection as the origin
@@ -182,7 +212,7 @@ def trunc( beam, surf ) :
  
 # draw optics for test setup in 2D
 # F2F is spacing between foci of transmitting and receiving paraboloids
-def layout2D( F2F=15. ) :
+def layout2D( F2F=F2F ) :
   # pp = PdfPages( 'ComplexLeaks.pdf' )
   # pyplot.ioff()
   D,thetaE,thetaC,ell,alpha,beta,theta0,e,Feq,F,c,d0,df,dcf = dragone()
@@ -202,9 +232,11 @@ def layout2D( F2F=15. ) :
   hcurve = hyperb2D( ax, alpha, thetaE, e, c, beta, F2F )
   focus( ax, c, beta, F2F )
   hornOutline( ax, 2.*c*math.cos(math.pi-beta), 2.*c*math.sin(math.pi+beta), 180.+thetaCdeg, F2F )
-  gBeam( ax, 2.*c*math.cos(math.pi-beta), 2.*c*math.sin(math.pi+beta), thetaCdeg, hcurve, pcurve )
+  newBW = gBeam( ax, 2.*c*math.cos(math.pi-beta), 2.*c*math.sin(math.pi+beta), thetaCdeg, hcurve, pcurve )
+  parBeam( ax, newBW, d0, pcurve, F2F, fGHz=fGHz )
   #test( ax, c, e )
   #plt.grid( which='both' )
+  #plt.xlim( -7., 22.)
   plt.grid( True )
   plt.show()
    

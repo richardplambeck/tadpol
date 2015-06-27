@@ -225,7 +225,7 @@ def RMcalc( fGHzLsb, PAlsb, fGHzUsb, PAusb ) :
   lambda_usb_meters = 0.30/fGHzUsb
   deltaPhiRadians = (PAlsb - PAusb) * math.pi/180.
   RM = deltaPhiRadians/(pow(lambda_lsb_meters,2.) - pow(lambda_usb_meters,2.))
-  print "RM = %.2e radians/m^2" % RM
+  #print "RM = %.2e radians/m^2" % RM
   return RM
 
 # read standard PA files for lsb, usb, compute pa(usb)-pa(lsb) and uncertainty
@@ -275,7 +275,7 @@ def makeSelectList2( schedFile, srcName ) :
   for line in fin :
     if "vlb" in line :
       a = line.split() 
-      if a[0] == srcName :
+      if a[0].upper() == srcName.upper() :
         print line
         oneString = "source(%s),time(%s,%s)" % (srcName,a[1],a[2])
         selectList.append( oneString ) 

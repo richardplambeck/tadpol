@@ -64,6 +64,7 @@ goto start
     rm -r $RAW
     mv $RAW1 $RAW
     # uvcat vis=$RAW1,$RAW2 out=$RAW options=nocal,nopass,nopol
+goto end
 
   # Initial data inspection
     uvindex vis=$RAW log=uvindex.log
@@ -227,6 +228,8 @@ goto end
     uvplt vis=wide.av select='source('$LEAKCAL'),pol(LL)' axis=time,parang device=/xs \
 	  options=nobase,nopol
     $<
+    varplt vis=wide.av yaxis=chi device=/xs
+goto end
 
   # fit DSB leakages 
     gpcal vis=wide.av options=circular,qusolve,noxy,nopass flux=$LEAKFLUX interval=0.5 \
@@ -261,6 +264,7 @@ goto end
     gpcopy vis=$DSBLEAK out=wide.av options=nocal,nopass
     uvflux vis=wide.av select='source('$LEAKCAL')' line=chan,1,1,6 stokes=I,Q,U,V \
       options=uvpol,nopass
+goto end
     
     gpcopy vis=$LSBLEAK out=wide.lsb options=nocal,nopass
     uvflux vis=wide.lsb select='source('$LEAKCAL')' line=chan,1,1,3 stokes=I,Q,U,V \
@@ -269,6 +273,7 @@ goto end
     gpcopy vis=$USBLEAK out=wide.usb options=nocal,nopass
     uvflux vis=wide.usb select='source('$LEAKCAL')' line=chan,1,1,3 stokes=I,Q,U,V \
       options=uvpol,nopass
+goto end
 
   # Once again fit gain vs time, smooth to 15 min time resolution, copy to lsb and usb
     selfcal vis=wide.av refant=$REFANT interval=0.1 options=amplitude,apriori,noscale \
@@ -292,8 +297,10 @@ goto end
   # ====== Dust continuum map ====== 
   # ================================
 
+    puthd in=wide.av/senmodel value='GSV' type=ascii
+
     rm -r  $MAP.I.mp $MAP.Q.mp $MAP.U.mp $MAP.V.mp $MAP.bm
-    invert vis=wide.lsb,wide.usb line=chan,3,1,1 \
+    invert vis=wide.av line=chan,6,1,1 \
       map=$MAP.I.mp,$MAP.Q.mp,$MAP.U.mp,$MAP.V.mp beam=$MAP.bm stokes=I,Q,U,V sup=0 \
       'select=source('$SRC')' options=mfs,systemp cell=0.25 imsize=512
 
@@ -421,9 +428,9 @@ goto end
 	rm noiseList
 	foreach MP (co.I co.Q co.U co.V)
 	  rm -r $MP.sl
-	  clean map=$MP.mp beam=$MAP.bm out=$MP.sl niters=1000
+	  clean map=$MP.mp beam=co.bm out=$MP.sl niters=1000
 	  rm -r $MP.cm
-	  restor map=$MP.mp beam=$MAP.bm model=$MP.sl out=$MP.cm
+	  restor map=$MP.mp beam=co.bm model=$MP.sl out=$MP.cm
 	  cgdisp in=$MP.cm device=/xs region=quarter labtyp=arcsec options=3pixel csize=0,1,1
 	  echo " " >> noiseList
 	  imlist options=stat in=$MP.cm region='arcsec,box(20,-20,-20,20)' log=junk
@@ -491,7 +498,6 @@ goto end
 	gpplt vis=win7.tmp yaxis=phase device=/xs yrange=-180,180 options=wrap nxy=5,3
 goto end
 
-start:
   # Rewrite the data to apply the passband 
     rm -r win7.cal
     uvcat vis=win7.tmp out=win7.cal options=nopol
@@ -559,8 +565,9 @@ goto end
 	  levs2=1,2,3,4,5,6,7,8,9,10,12,20,30,40,50 
 
   # Cleanup
-    rm -r win7.xy
-    rm -r win7.tmp
-    rm -r sio.sl sio.mp
+start:
+    rm -r *.xy
+    rm -r *.tmp
+    rm -r *.sl *.mp
 
 end:

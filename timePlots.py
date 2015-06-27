@@ -9,6 +9,7 @@ import time
 import numpy
 import subprocess
 import shlex
+import vCal
 import string
 import leakSolve
 import paPlot
@@ -210,6 +211,7 @@ def plot4( t, s) :
   #fig.xaxis.set_major_formatter(mpdates.AutoDateFormatter())
   fig.xaxis.set_major_formatter(mpdates.DateFormatter( "%m/%d" ) )
   pyplot.draw()
+  pyplot.show()
 
 def plotsep( infile ) :
   t = []
@@ -224,3 +226,51 @@ def plotsep( infile ) :
         s.append(60.*float(a[5]))
   plot4( t,s )
   fin.close()
+
+def plotHA( infile="List2" ) :
+  times = numpy.array( [0,0], dtype=float )
+  pyplot.clf()
+  pyplot.ion()
+  fig = pyplot.subplot(1,1,1)
+  pyplot.ylim( 0., 25. )
+  pyplot.xlim( 0., 24. )
+  fig.grid()
+  yoff = [1.,1.]
+  fin = open( infile, "r" )
+  lastSrc = None
+  for line in fin :
+    if string.find( line, "NEVER" ) < 0 :
+       a = line.split()
+       color = 'red'
+       if float(a[9]) > 15. : color = 'green'
+       if float(a[9]) > 20. : color = 'blue'
+       if lastSrc != a[0] :
+         yoff[0] = yoff[0] + 1.
+         yoff[1] = yoff[1] + 1.
+         fig.text( vCal.dechrs(a[5])-.2, yoff[0], a[0], verticalalignment="center", \
+             horizontalalignment="right", fontsize=10 )
+         lastSrc = a[0]
+       times[0] = vCal.dechrs(a[5])
+       times[1] = vCal.dechrs(a[6])
+       
+       if times[1] < times[0] :
+         times[0] = 0.
+         fig.plot( times, yoff, linewidth=5, color=color )
+         times[0] = vCal.dechrs(a[5])
+         times[1] = 24.
+       fig.plot( times, yoff, linewidth=5, color=color )
+  fin.close()
+  pyplot.draw()
+  
+
+# used by vCal to plot smoothed gains
+def plotGains( t, g1, g2 ) :
+  pyplot.clf()
+  pyplot.ion()
+  for nant in range(1,16) :
+    fig=pyplot.subplot(5,3,nant)
+    pyplot.ylim( 0., 3.)
+    fig.plot( t, g1[:,[nant-1]], "r,")
+    fig.plot( t, g2[:,[nant-1]], "b," )
+  #pyplot.draw()
+  pyplot.show()

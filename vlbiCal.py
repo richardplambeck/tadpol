@@ -106,8 +106,8 @@ def getVar15( infile, t ) :
     if ( not line.startswith("#") ) :
       a = line.split()
       if ( len(a) == 6) : 
-        #print a[1], t[nline]
-        if ( (nline > len(t)) or (abs(dechrs(a[1]) - t[nline]) > .0003)) :
+        print a[1], t[nline]
+        if ( (nline > len(t)) or (abs(dechrs(a[1]) - dechrs(t[nline]) ) > .0003)) :
           print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
         else :
           nline = nline + 1
@@ -481,13 +481,13 @@ def basicEffic( antList, infile, outfile ) :
 # --- generate calibration tables for all 5 days --- #
 def doall2013() :
 
-  cpList = [2,3,4,5,6,8,9,14]
-  oneday( '21mar', cpList )
-  oneday( '22mar', cpList )
+#  cpList = [2,3,4,5,6,8,9,14]
+#  oneday( '21mar', cpList )
+#  oneday( '22mar', cpList )
 
   cpList = [2,4,5,6,8,9,13,14]
-  oneday( '23mar', cpList )
-  oneday( '25mar', cpList )
+#  oneday( '23mar', cpList )
+#  oneday( '25mar', cpList )
   oneday( '26mar', cpList )
-  oneday( '27mar', cpList )
+#  oneday( '27mar', cpList )
 

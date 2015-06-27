@@ -3,9 +3,13 @@
 
 import numpy
 import math
-import vlbiCal
 import subprocess
 import shlex
+import vCal
+import time
+import datetime
+import matplotlib.pyplot as pyplot
+import matplotlib.dates as mpdates
 
 def getGains( visFile ) :
   '''produce time and gain arrays'''
@@ -96,3 +100,64 @@ def makeFile ( infile, cutoff ) :
       fout.write("   # %s\n" % gstr )
     print "%s %s %s" % (tt,bad,gstr)
   fout.close()
+
+antList0 = [1, 2,3,4,5,6,7,8,9,11,12,13,15]
+# --- read varplt log containing tsys or elev, 6 lines per vis record, 4 values per line --- #
+def flagTsys( infile, cutoff=2500., antList=antList0 ) :
+  varlist = []
+  t = []
+  fin = open( infile, "r" )
+  n1 = 0
+  nline = 0
+  for line in fin:
+    if ( not line.startswith("#") ) :
+      a = line.split()
+      if ( len(a) == 6) :
+        nline = nline + 1
+        t.append(datetime.datetime.strptime( a[1], "%H:%M:%S") )
+        n1 = 4
+        for n in range(2,6) :
+          varlist.append( a[n] )
+      elif ( (len(a) == 4) and (n1 < 12) ) :
+        n1 = n1 + 4
+        for n in range(0,4) :
+          varlist.append( a[n] )
+      elif ( (len(a) == 4) and (n1 == 12) ) :
+        n1 = n1 + 4
+        for n in range(0,3) :
+          varlist.append( a[n] )
+  fin.close()
+  vl = numpy.reshape( numpy.array( varlist, dtype=float ), (-1,15) )
+  va = numpy.hsplit( vl, 15 )
+  #print vl[13][0:]
+  print va[13]
+  plot( t, va, cutoff, antList )
+
+def plot( t, s, cutoff, antList) :
+  color = [ "red", "blue", "green", "chartreuse", "orangered", \
+            "aqua", "fuchsia", "gray", "lime", "maroon", "navy", \
+            "olive", "orange", "silver", "teal", "black" ]
+  pyplot.clf()
+  pyplot.ion()
+  fig = pyplot.subplot(1,1,1)
+  tt = mpdates.date2num(t)
+  pyplot.ylim(0,10000.)
+  for ant,col in zip(antList,color) :
+    fig.plot_date( t, s[ant-1], ".", color=col, label="C%d" % ant )
+    for ttt,tsys in zip( t, s[ant-1] ) :
+      if tsys > cutoff :
+        print "   C%d   %s   %.0f" % (ant, ttt.strftime( "%H:%M:%S" ), tsys )
+      
+  fig.legend( loc=0, prop={'size':10} )
+
+  #fig.xaxis.set_major_locator(mpdates.MinuteLocator(interval=10))
+  #fig.xaxis.set_major_formatter(mpdates.DateFormatter( "%H:%M" ) )
+  fig.grid()
+  pyplot.ylabel("Tsys (K)")
+  pyplot.xlabel("UT")
+  #fig.xaxis.set_major_locator(mpdates.AutoDateLocator())
+  #fig.xaxis.set_major_formatter(mpdates.AutoDateFormatter())
+  pyplot.show()
+
+#flagTsys( "win1LL.log" )
+#flagTsys( "win1RR.log" )

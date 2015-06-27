@@ -175,7 +175,7 @@ def doit( thetadeg ) :
   stack2 = [ [22.5,tt], [67.5,tt] ]
   stack3 = [ [15.,tt],  [75.,tt],   [15.,tt] ]
   stack5 = [ [7.,tt],   [36.,tt],  [102.,tt], [36.,tt], [7.,tt] ]
-  which = stack2
+  which = stack3
   p1 = makepath( 130., vin, which )
   e1 = makeendpoints( 130., vin, which )
   p2 = makepath( 150., vin, which )
@@ -184,3 +184,71 @@ def doit( thetadeg ) :
   e3 = makeendpoints( 170., vin, which )
   pplot( p1, p2, p3, e1, e2, e3 )
   
+def drawcylinder( ax ) :
+  npts = 2048 
+  xa = numpy.array( [-1, 1] )
+  ya = numpy.array( [0.,0.] )
+  za = numpy.array( [40.,40.] )
+  q = Axes3D.plot(ax, xa, za, zs=ya, c='gray' )
+  q = Axes3D.plot(ax, ya, za, zs=xa, c='gray' )
+  za = numpy.array( [-40.,-40.] )
+  q = Axes3D.plot(ax, xa, za, zs=ya, c='gray' )
+  q = Axes3D.plot(ax, ya, za, zs=xa, c='gray' )
+  xa = numpy.array( [0.,0.] )
+  za = numpy.array( [0.,0.] )
+  ya = numpy.array( [-40.,40.] )
+  q = Axes3D.plot(ax, xa, ya, zs=za, c='gray', linestyle='--' )
+
+  x = numpy.zeros( npts )
+  y = -30.*numpy.ones( npts )
+  z = numpy.zeros( npts )
+  xx = numpy.zeros( npts )
+  yy = numpy.zeros( npts )
+  zz = numpy.zeros( npts )
+
+  n = 0
+  for phi in numpy.arange( 0., 2*math.pi, 2*math.pi/npts ) :
+    x[n] = math.cos(phi)
+    z[n] = math.sin(phi)
+    n = n+1
+  #q = Axes3D.plot(ax, x, y, zs=z, c='gray' )
+  y = 30.* numpy.ones( npts )
+  #q = Axes3D.plot(ax, x, y, zs=z, c='gray' )
+  n = 0
+  for phi in numpy.arange( -30., 30.0, (60./npts) ) :
+    yy[n] = phi
+    amp = math.cos(phi)
+    zz[n] = amp * math.cos( .007 * (30.-phi) )
+    xx[n] = -1.* amp * math.sin( .007 * (30.-phi) )
+    #zz[n] = math.cos(phi)
+    n = n+1
+  q = Axes3D.plot(ax, xx, yy, zs=zz, c='black' )
+  xxx = numpy.zeros( 2 )
+  yyy = 40.*numpy.ones( 2 )
+  zzz = numpy.zeros( 2 )
+  zzz[0] = -1.
+  zzz[1] = 1. 
+  q = Axes3D.plot(ax, xxx, yyy, zs=zzz, c='black' )
+  xxxx = numpy.zeros( 2 )
+  yyyy = -40.*numpy.ones( 2 )
+  zzzz = numpy.zeros( 2 )
+  xxxx[0] = -1.* math.sin( .007 * (60.) )
+  zzzz[0] = math.cos( .007 * (60.) )
+  xxxx[1] = 1.* math.sin( .007 * (60.) )
+  zzzz[1] = -1.* math.cos( .007 * (60.) )
+  q = Axes3D.plot(ax, xxxx, yyyy, zs=zzzz, c='black' )
+  
+
+def cylinder() :
+  fig = plt.figure()
+  ax = Axes3D(fig)
+  #ax.set_aspect('equal')
+  #ax.set_axis_off()
+  drawcylinder( ax )
+  ax.auto_scale_xyz( [-5,5], [-40,40], [-5,5] )
+  ax.set_aspect('equal')
+  ax.view_init(25,-75)
+  #ax.set_axis_off()
+  #q = fig.gca(projection='3d')
+  #q._axis3don=False
+  plt.show()

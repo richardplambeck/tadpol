@@ -79,6 +79,8 @@
 #3C273        2013-APR-26.0   225.0     4.36    0.0	  ... SMA flux
 3C273        2013-MAR-24.0   225.0     4.04    0.0	  average scaled value for vlbi
 3C273        2013-MAY-24.0   225.0     4.39    0.06   MWC349, 1.16 Jy/K at elev 28: c1089.1C_230SgrA.2
+#3C273        2014-JAN-14.0   225.0     2.77    0.0   MARS, 0.93 Jy/K at elev 43: c1190.2D_2303c279.1
+3C273        2014-JAN-15.0   225.0     2.90    0.0    Mars at elev 30; 0.95 Jy/K; c1090.2D_2303c279.3
 
 # ---------
 M87          2012-MAR-15.0   226.3     2.28    0.0	  VLBI day 075; Uranus 1.2 Jy/K at elev 35
@@ -104,6 +106,10 @@ M87          2013-MAR-24.0   226.3     1.47    0.0    average scaled value for v
 3C279        2013-MAY-25.0   225.0    10.52     0.06   MWC349, 1.15 Jy/K at elev 34: c1078.1C_230SgrA.2
 3C279        2013-MAY-27.0   225.0    11.31     0.06   from SMA list
 3C279        2013-OCT-21.0   225.0    10.88     0.06   Mars at elev 25; 1.15 Jy/K; c1190.1C_230SgrA.2
+3C279        2013-OCT-28.0   225.0     9.6      0.06   mwc349 at elev 30; 1.45 Jy/K; c1078.1C_230SgrA.3
+#3C279        2014-JAN-14.0   225.0     9.01    0.0    MARS, 0.93 Jy/K at elev 43: c1190.2D_2303c279.1
+3C279        2014-JAN-15.0   225.0     9.32    0.0    Mars at elev 30; 0.95 Jy/K; c1090.2D_2303c279.3
+3C279        2014-MAY-04.0   225.0     8.95    0.0    Mars at elev 48; 1.00 Jy/K; c1217.2D_2303c279.2
 
 # ---------
 1337-129     2012-MAY-06.0   225.0     2.75    0.0    MWC349 at elev 30, 1.27 Jy/K; c0888V.17D_230Ser6.2
@@ -115,6 +121,9 @@ M87          2013-MAR-24.0   226.3     1.47    0.0    average scaled value for v
 3C286        2012-JUN-13.0   225.0     0.43    0.00   1.3/1.5 * nominal MWC349 at elev 30; 1.5 Jy/K; c0910.3
 #3C286        2012-JUN-13.0   225.0     0.37    0.00   1.06 * raw CARMA value of 0.30; SMA is 0.30
 3C286        2013-OCT-21.0   225.0     0.36     0.06   Mars at elev 25; 1.15 Jy/K; c1190.1C_230SgrA.2
+#3C286        2014-JAN-14.0   225.0     0.30    0.0    MARS, 0.93 Jy/K at elev 43: c1190.2D_2303c279.1
+3C286        2014-JAN-15.0   225.0     0.34    0.0    Mars at elev 30; 0.95 Jy/K; c1090.2D_2303c279.3
+3C286        2014-MAY-04.0   225.0     0.31    0.0    Mars at elev 48; 1.00 Jy/K; c1217.2D_2303c279.2
 
 # ---------
 1625-254     2011-AUG-31.0   228.0     0.64    0.005
@@ -124,6 +133,7 @@ M87          2013-MAR-24.0   226.3     1.47    0.0    average scaled value for v
 #1633+382     2013-FEB-08.0   225       2.59    0.0    ... SMA flux
 #1633+382     2013-MAR-22.0   226.3     4.18    0.0    Mars at elev 32; 1.1 Jy/K; VLBI c1116.1D_230SgrA
 1633+382     2013-MAR-24.0   226.3     4.18    0.0    averaged scaled value for vlbi
+1635+381     2013-AUG-24.0   225.      5.12    0.0    MWC349 at elev 73; 1.10 Jy/K
 
 # ---------
 #3C345        2013-FEB-08.0   225.      1.73    0.0    ... SMA flux
@@ -144,6 +154,7 @@ NRAO530      2012-MAR-15.0   226.3     1.73    0.0	  VLBI day 075; Uranus 1.2 Jy
 #1733-130     2013-FEB-08.0   225.0     1.18    0.0    ... SMA flux
 #NRAO530      2013-MAR-22.0   226.3     1.38    0.0    Mars at elev 32; 1.1 Jy/K; VLBI c1116.1D_230SgrA
 NRAO530      2013-MAR-24.0   226.3     1.38    0.0    averaged scaled value for vlbi
+1733-130     2014-MAY-04.0   225.0     1.14    0.0    Mars at elev 48; 1.00 Jy/K; c1217.2D_2303c279.2
  
 # ---------
 1743-038     2012-MAR-30.0   225.0     2.33    0.0    SMA
@@ -154,6 +165,8 @@ NRAO530      2013-MAR-24.0   226.3     1.38    0.0    averaged scaled value for 
 #1743-038     2013-MAY-23.0   225.0     1.63    0.06   SMA value
 1743-038     2013-MAY-25.0   225.0     1.76    0.06   MWC349, 1.15 Jy/K at elev 34: c1078.1C_230SgrA.2
 1743-038     2013-OCT-21.0   225.0     1.27    0.06   Mars at elev 25; 1.15 Jy/K; c1190.1C_230SgrA.2
+1743-038     2013-OCT-28.0   225.0     1.4     0.06   mwc349 at elev 30; 1.45 Jy/K; c1078.1C_230SgrA.3
+1743-038     2014-JAN-15.0   225.0     0.86    0.06   Mars at elev 30; 0.95 Jy/K; c1090.2D_2303c279.3
 
 # ---------
 SGRA         2012-MAR-15.0   226.3     3.18    0.0	  VLBI day 075; Uranus 1.2 Jy/K at elev 35
@@ -167,6 +180,8 @@ SGRA         2013-MAY-24.0   225.0     3.59    0.06   MWC349, 1.16 Jy/K at elev 
 #1751+096     2013-FEB-08.0   225.0     1.82    0.0    ... SMA flux
 #1749+096     2013-MAR-21.0   226.3     2.1     0.0    Mars at elev 48; 1.2 Jy/K; VLBI c1116.1D_230SgrA
 1749+096     2013-MAR-21.0   226.3     1.79    0.0    average scaled value for vlbi
+#1751+096     2014-JAN-14.0   225.0     1.48    0.0    MARS, 0.93 Jy/K at elev 43: c1190.2D_2303c279.1
+1751+096     2014-JAN-15.0   225.0     1.54    0.0    Mars at elev 30; 0.95 Jy/K; c1090.2D_2303c279.3
 
 # ---------
 1924-292     2011-AUG-31.0   224.0     5.48    0.02
@@ -194,20 +209,29 @@ SGRA         2013-MAY-24.0   225.0     3.59    0.06   MWC349, 1.16 Jy/K at elev 
 MWC349       2012-MAR-01.0   223.0     1.95    0.00   adopt this as a standard
 
 # ---------  BLLAC: 22:02  +42:16
-BLLAC        2011-OCT-28.0   223.0     8.80    0.00   MWC349 at elev 50; 1.20 Jy/K; ct002.230DR21.2
-BLLAC        2012-MAR-15.0   226.3     6.48    0.0	  VLBI day 075; Uranus 1.2 Jy/K at elev 35
-BLLAC        2012-MAY-07.0   223.0     7.10    0.00   MWC349 at elev 46; 1.15 Jy/K; c0888I. DR21OH
-BLLAC        2012-MAY-12.0   223.0     6.90   .0.00   MWC349 at elev 80; 1.20 Jy/K; c0888I. DR21OH
-BLLAC        2012-JUN-30.0   223.0     6.50    0.00   MWC349 at elev 50; 1.17 Jy/K; c0888I.22E_DR21OH
+BLLAC        2011-OCT-28.0   223.0     8.80    1.00   MWC349 at elev 50; 1.20 Jy/K; ct002.230DR21.2
+BLLAC        2012-MAR-15.0   226.3     6.48    1.0	  VLBI day 075; Uranus 1.2 Jy/K at elev 35
+BLLAC        2012-MAY-07.0   223.0     7.10    1.00   MWC349 at elev 46; 1.15 Jy/K; c0888I. DR21OH
+BLLAC        2012-MAY-12.0   223.0     6.90    1.00   MWC349 at elev 80; 1.20 Jy/K; c0888I. DR21OH
+BLLAC        2012-JUN-30.0   223.0     6.50    1.00   MWC349 at elev 50; 1.17 Jy/K; c0888I.22E_DR21OH
 #BLLAC        2013-MAR-21.0   226.3     9.36    0.0    Mars at elev 48; 1.2 Jy/K; VLBI c1116.1D_230SgrA
-BLLAC        2013-MAR-24.0   226.3     8.23    0.0    avg value for vlbi
+BLLAC        2013-MAR-24.0   226.3     8.23    1.0    avg value for vlbi
+#BLLAC	     2013-JUL-19.0   225.0     3.2    1.00    MWC349 at elev 48, 1.08 Jy/K; c1103.2E_226dr21oh.1
+BLLAC	     2013-AUG-05.0   225.0     5.2    1.00    MWC349 at elev 44, 1.08 Jy/K; c1103.2E_226dr21oh.2
+BLLAC	     2013-AUG-23.0   225.0     5.3    1.00    Neptune at elev 37, 1.00 Jy/K; c1103.2E_226dr21oh.3
+#BLLAC	     2013-AUG-24.0   225.0     5.8    1.00    MWC349 at elev 73, 1.10 Jy/K; c1103.2E_226dr21oh.4
 
 # ---------
 2232+117     2012-NOV-03.0   225.0     4.59    0.00   Uranus at elev 42, 1.12 Jy/K; c0888.1D_230W3Main.1
 
 # ---------  3c454.3: 22:53 +16:08
-3c454.3	     2011-SEP-29.0   225.0     2.6     0.00
-3c454.3	     2013-SEP-20.0   225.0     8.0     0.00   Neptune at elev 41, 1.16 Jy/K; cf0053.1E_230RAQr.3
+3c454.3	     2011-SEP-29.0   225.0     2.6     1.00
+3c454.3	     2013-JUL-19.0   225.0     7.2     1.00   MWC349 at elev 48, 1.08 Jy/K; c1103.2E_226dr21oh.1
+#3c454.3	     2013-AUG-05.0   225.0     6.3    1.00    MWC349 at elev 44, 1.08 Jy/K; c1103.2E_226dr21oh.2
+3c454.3	     2013-AUG-05.0   225.0     7.5     1.00   better guess
+3c454.3	     2013-AUG-23.0   225.0     7.9     1.00   Neptune at elev 37, 1.00 Jy/K; c1103.2E_226dr21oh.3
+3c454.3	     2013-SEP-20.0   225.0     8.0     1.00   Neptune at elev 41, 1.16 Jy/K; cf0053.1E_230RAQr.3
+3c454.3      2014-MAY-04.0   225.0     7.52    0.0    Mars at elev 48; 1.00 Jy/K; c1217.2D_2303c279.2
 
 
 

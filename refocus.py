@@ -20,12 +20,20 @@ from scipy.optimize import curve_fit
 
 #f0 =  [  1.914,  5.158, -1.304, 3.233, -8.413, 7.292, -6.826, 2.793, -15.403, -16.007, 4.603, 9.508, -2.786, -1.289,  -1.492 ]
       # these are the values we started with on 19 mar 2013
-# these are the nominal positions on 20 mar 2013
-f0 =  numpy.array( [  1.91,  5.16, -1.30, 3.23, -8.41, 6.50, -6.83, 2.80, -15.40, -15.00, 4.20, 9.51, -2.79, -1.29,  -1.49 ], dtype=float)
+
+#f0 =  numpy.array( [  1.91,  5.16, -1.30, 3.23, -8.41, 6.50, -6.83, 2.80, -15.40, -15.00, 4.20, 9.51, -2.79, -1.29,  -1.49 ], dtype=float)
+      # these are the nominal positions on 20 mar 2013
+
+#f0 =  numpy.array( [  1.91,  5.41, -0.67, 3.25, -8.16, 6.50, -6.86, 2.79, -15.40, -15.00, 4.20, 9.50, -2.80, -1.29,  -1.51 ], dtype=float)
+      # these are nominal positions on 19 mar 2015
+
+f0 =  numpy.array( [  2.0,  5.67, -0.63, 3.15, -8.4, 7.0, -6.5, 3.4, -14.3, -15.00, 4.50, 9.8, -2.50, -0.1,  -1.1 ], dtype=float)
+      # average of day and night values 27mar2015 - except C10 not remeased
+
 # startFocus will be set in main function, definition
 # needed here for interrupt handling.
 startFocus = []
-print f0
+print "nominal focus values in default table: ",f0
 
 def signal_handler(signal, frame):
   print "Ctrl-C press detected. Canceling script."
