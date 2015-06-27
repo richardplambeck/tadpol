@@ -1403,12 +1403,10 @@ def doit9( viewEl=8, viewAz=200 ) :
 # n2 = index of refractoin perpendicular to plane of incidence
 # ... note: can use n1,n2 = nsapphire( fGHz ) where n1=ordinary, n2=extraordinary axis
 
-#def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., tanDelta=5.e-4 ) :   this is the old def
-
-plateTrans( LOGHz-fIF, nrefrac, nrefrac, angIdeg=angIdeg, tanDelta=tanDelta, tcm=tcm )
-def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., alphaO=0., alphaE=0. ) :
-  #alpha = 2. * math.pi * (n1+n2)/2. * tanDelta * fGHz/clight   	  # POWER loss per cm; use avg index for simplicity
-  alpha = math.sqrt(alphaO*alphaE)  # temporary, 6/22/2015
+def plateTrans( fGHz, n1, n2, angIdeg=45, tcm=1., alphaO=0., alphaE=0., tanDelta=5.e-4 ) :
+  alpha = 2. * math.pi * (n1+n2)/2. * tanDelta * fGHz/clight   	  # POWER loss per cm; use avg index for simplicity
+  #if alphaO != 0. :
+  #  alpha = math.sqrt(alphaO*alphaE)  
   #print "... alpha = %.3f cm^-1" % alpha
   thetaI = math.pi * angIdeg / 180.	                              # convert to radians 
   refDelay = 2. * math.pi * fGHz/clight * tcm/math.cos(thetaI)    # delay in radians without plate
@@ -1624,6 +1622,7 @@ def doit5( dataFile, angIrange=[43.,48.,2.], phiRange=[-5.,6.,2.], alphaO=.05, a
   for phi in numpy.arange( phiRange[0], phiRange[1], phiRange[2] ) :
     for angI in numpy.arange( angIrange[0], angIrange[1], angIrange[2] ) :
       T3,T4,T5 = Tfit( LOGHz, fsm, angI, phi, alphaO, alphaE )  
+      # T3,T4,T5 = Tfit2( LOGHz, fsm, angI, phi, alphaO, alphaE )  
       variance = numpy.mean( pow( T3-T3sm, 2. )) + \
          numpy.mean( pow( T4-T4sm, 2. ))
       print "phi = %.1f, angI = %.1f, variance = %.1f" % (phi, angI, variance)
@@ -1654,35 +1653,43 @@ def doit5( dataFile, angIrange=[43.,48.,2.], phiRange=[-5.,6.,2.], alphaO=.05, a
      transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", size="medium" )
   plt.show( )
 
+# Tfit is the original fitting routine
+# it computes npar and nperp from phiDeg, but does NOT keep track of polarization state within 
+#	 the plate - that is, it assumes that input polarization is it
+
 def Tfit( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
   Thot = 295.
   Tcold = 77.
+  npar = neff( phiDeg )
+  nperp = neff( phiDeg + 90. )
+  tanDelta=4.e-4
+  print "using npar = %.3f, nperp = %.3f" % (npar,nperp)
   T3 = []
   T4 = []
   T5 = []
-  inpolList = [ Y ]	        	# 3mm band is sensitive to single pol in Y-direction
-  if LOGHz > 180. :
-    inpolList = [ X, Y ]        # 1mm band is sensitive to circular pol
-
-  for fIF in fdat :             
-    trans = 0.
-    refl = 0.
-    for fGHz in [ LOGHz-fIF, LOGHz+fIF ] :	        # process each sideband separately
-      for inpol in inpolList : 					    # process each polarization separately
-        Tpar,Tperp,Rpar,Rperp = plateTrans2( inpol, fGHz, angIdeg, phiDeg, alphaO, alphaE )
-        trans = trans + Tpar*Tpar.conjugate() + Tperp*Tperp.conjugate()
-          # compute power transmitted through plate in both X and Y polarizations
-        refl = refl + Rpar*Rpar.conjugate() + Rperp*Rperp.conjugate()
-          # compute power reflected from plate in both X and Y polarizations
-    for j in range(0,len(inpolList)) :      # divide by 2 or by 4
-      trans = trans/2. 
-      refl = refl/2.
+  
+  for fIF in fdat : 
+    TparLSB,TperpLSB,RparLSB,RperpLSB = plateTrans( LOGHz-fIF, npar, nperp, angIdeg=angIdeg, tanDelta=tanDelta )
+    TparUSB,TperpUSB,RparUSB,RperpUSB = plateTrans( LOGHz+fIF, npar, nperp, angIdeg=angIdeg, tanDelta=tanDelta )
+    if ( LOGHz < 200. ) :    # single polarization perp to plane of incidence
+      trans = (TperpLSB*TperpLSB.conjugate() \
+         + TperpUSB*TperpUSB.conjugate())/2.
+      refl = ( RperpLSB*RperpLSB.conjugate() \
+         + RperpUSB*RperpUSB.conjugate())/2.
+    else :                   # circular pol
+      trans = (TparLSB*TparLSB.conjugate() + TperpLSB*TperpLSB.conjugate() \
+         + TparUSB*TparUSB.conjugate() + TperpUSB*TperpUSB.conjugate())/4.
+      refl = (RparLSB*RparLSB.conjugate() + RperpLSB*RperpLSB.conjugate() \
+         + RparUSB*RparUSB.conjugate() + RperpUSB*RperpUSB.conjugate())/4.
     loss = 1.-trans-refl
     # print "... %.3f GHz: T,R,L = %.4f, %.4f, %.4f" % (fIF, trans, refl, loss)
     T3.append( trans*Thot + refl*Tcold + loss*Thot )
     T4.append( trans*Tcold + refl*Thot + loss*Thot )
     T5.append( trans*Tcold + refl*Tcold + loss*Thot )
   return [ numpy.array(T3,dtype=float), numpy.array(T4,dtype=float), numpy.array(T5,dtype=float ) ]
+
+# Tfit2 is the new fitting routine (uses plateTrans2)
+# it rotates into the frame of the principal axes inside the plate, keeps track of polarization
 
 def Tfit2( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
   Thot = 295.
