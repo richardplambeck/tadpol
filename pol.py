@@ -1835,8 +1835,7 @@ def surf( vec, tpar, tperp, rpar, rperp ) :
 def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=3.05, nE=3.40, tcm=1. ) :
   angI = math.pi * angIdeg / 180.	                              # convert to radians 
   neffpar,neffperp = effindex( phiDeg, angIdeg, nO=nO, nE=nE )
-  print "effindex  phiDeg = %.1f  npar,nperp = %.3f, %.3f" % (phiDeg,neffpar,neffperp)
-  print "... npar, nperp = ", neffpar, neffperp
+  print "... phiDeg = %.1f  npar,nperp = %.3f, %.3f" % (phiDeg,neffpar,neffperp)
 
   # compute Fresnel coefficients for polarization parallel to plane of incidence     
   angTpar = math.asin((math.sin(angI))/neffpar)	                          # Snell's law, eqn 8 (p. 38)
@@ -1848,24 +1847,24 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=
   [dummy1,tperp,dummy2,rperp] = fresnel( 1., angI, neffperp, angTperp )                 # entering dielectric
   [dummy1,tprimeperp,dummy2,rprimeperp] = fresnel( neffperp, angTperp, 1., angI )       # leaving dielectric
   avAngT = math.sqrt( angTpar*angTperp )
-  # print "... tperp, rperp            ", tperp, rperp
-  # print "... tprimeperp, rprimeperp  ", tprimeperp, rprimeperp
-  # print "angTpar = %.2f, angTperp = %.2f" % (180./math.pi * angTpar, 180./math.pi * angTperp)
 
   # compute atten and phase shifts (in radians) through the plate
   angTO = math.asin((math.sin(angI))/nO)
   angTE = math.asin((math.sin(angI))/nE)
-  attnO = alphaO/2. * tcm / math.cos(angTO) 					#  AMPLITUDE attenuation per pass through plate
-  attnE = alphaE/2. * tcm / math.cos(angTE) 					#  AMPLITUDE attenuation per pass through plate
-  deltaO = 2 * math.pi * nO * fGHz/clight * tcm / math.cos(angTO)     
-  deltaE = 2 * math.pi * nE * fGHz/clight * tcm / math.cos(angTE)    
-  print "... deltaO, deltaE = ", 180./math.pi * deltaO, 180./math.pi * deltaE
+  #attnO = alphaO/2. * tcm / math.cos(angTO) 					#  AMPLITUDE attenuation per pass through plate
+  #attnE = alphaE/2. * tcm / math.cos(angTE) 					#  AMPLITUDE attenuation per pass through plate
+  #deltaO = 2 * math.pi * nO * fGHz/clight * tcm / math.cos(angTO)     
+  #deltaE = 2 * math.pi * nE * fGHz/clight * tcm / math.cos(angTE)    
+  attnO = alphaO/2. * tcm / math.cos(avAngT) 					#  AMPLITUDE attenuation per pass through plate
+  attnE = alphaE/2. * tcm / math.cos(avAngT) 					#  AMPLITUDE attenuation per pass through plate
+  deltaO = 2 * math.pi * nO * fGHz/clight * tcm / math.cos(avAngT)     
+  deltaE = 2 * math.pi * nE * fGHz/clight * tcm / math.cos(avAngT)    
+  # print "... deltaO, deltaE = ", 180./math.pi * deltaO, 180./math.pi * deltaE
   delaymat = numpy.array( [ [cmath.exp(-attnE - 1j*deltaE), 0], [0, cmath.exp(-attnO - 1j*deltaO)] ] )
-  # print attnO,deltaO,attnE,deltaE
-  # print delaymat
-  #extraphase = math.sin(angI) * 2. * tcm * math.tan(avAngT) * 2. * math.pi * fGHz/clight
-  extraphasePerp = math.sin(angI) * 2. * tcm * math.tan(angTperp) * 2. * math.pi * fGHz/clight
-  extraphasePar = math.sin(angI) * 2. * tcm * math.tan(angTpar) * 2. * math.pi * fGHz/clight
+  # extraphasePerp = math.sin(angI) * 2. * tcm * math.tan(angTperp) * 2. * math.pi * fGHz/clight
+  # extraphasePar = math.sin(angI) * 2. * tcm * math.tan(angTpar) * 2. * math.pi * fGHz/clight
+  extraphasePerp = math.sin(angI) * 2. * tcm * math.tan(avAngT) * 2. * math.pi * fGHz/clight
+  extraphasePar = math.sin(angI) * 2. * tcm * math.tan(avAngT) * 2. * math.pi * fGHz/clight
   print "... extraphasePar, Perp = ", 180./math.pi * extraphasePar, 180./math.pi * extraphasePerp
     # this is the phase SAVED outside the plate on each pass due to geometry; depends on neffpar and neffperp
   extramat = numpy.array( [ [cmath.exp(1j*extraphasePar), 0], [0, cmath.exp(1j*extraphasePerp)] ] )
@@ -1874,49 +1873,34 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=
 
   # begin with Jones vector in frame of tilt axis
   v1 = inpol 
-  # print "... tpar, tperp: ", tpar, tperp
-  # print "... rpar, rperp: ", rpar, rperp
   v2,R = surf( v1, tpar, tperp, rpar, rperp )                # v2 is Jones vector just inside plate, R is initial reflected amp
-  # print "... pwr reflected from surf1:         ", R*R.conjugate()	# for debugging; this is power just inside surface1
   T = numpy.array( [0.,0.], dtype=complex )                  # Jones vector transmitted; each component is complex
   Acalc = numpy.array( [0.,0.], dtype=float )
   Rsave = R
 
   # now let signal rattle back and forth inside the plate; each pass is one round trip
   for npass in range(0, 12) :  
-    # print "... pwr just inside surf1:           ", numpy.dot( transCorr, v2*v2.conjugate() )
     v3 = Jrot( v2, phiDeg )                     # rotate into frame of principal axes [ E_O, E_E ]
     v4 = numpy.dot( delaymat, v3 )              # complex delays include attenuation
     v5 = Jrot( v4, -phiDeg )                    # rotate back to original X-Y frame
-    # print "... pwr just inside surf2:           ", numpy.dot( transCorr, v5*v5.conjugate() )  
     Acalc = Acalc + numpy.dot( transCorr, v2*v2.conjugate() - v5*v5.conjugate() )
-    # print "... Acalc:                           ", Acalc
     t,v2 = surf( v5, tprimepar, tprimeperp, rprimepar, rprimeperp)    
        # t is the Jones vector transmitted through the surface
        # v2 is the Jones vector reflected just inside the surface
-    # print "... pwr reflected from surf2:        ", numpy.dot( transCorr, v2*v2.conjugate() )	
     extramat = numpy.array( [ [cmath.exp(1j*npass*extraphasePar), 0], [0, cmath.exp(1j*npass*extraphasePerp)] ] )
     t = numpy.dot( extramat, t )     
        # apply geometric phase shift to both components of t; no correction for pass0 = reference phase
-    # print "... pwr transmitted thru surf2:      ", t*t.conjugate()			
     T = T + t                                   # add to T (in X,Y frame)
     v3 = Jrot( v2, phiDeg )                     # direction of propagation is reversed; should I reverse phi ??
     v4 = numpy.dot( delaymat, v3 )              # complex delays include attenuation
     v5 = Jrot( v4, -phiDeg )                    # rotate back to original X-Y frame
-    # print "... reflected pwr just inside surf1: ", numpy.dot( transCorr, v5*v5.conjugate() )	
     Acalc = Acalc + numpy.dot( transCorr, v2*v2.conjugate() - v5*v5.conjugate() )
-    # print "... Acalc:                           ", Acalc
     t,v2 = surf( v5, tprimepar, tprimeperp, rprimepar, rprimeperp)    
        # compute transmission, reflection from 1st surface; note that transmitted wave will add to reflection
     extramat = numpy.array( [ [cmath.exp(1j*(npass+1)*extraphasePar), 0], [0, cmath.exp(1j*(npass+1)*extraphasePerp)] ] )
     t = numpy.dot( extramat, t)
        # (npass+1)*extraphase is geometric delay outside the plate SAVED after npasses
-    # print "... pwr transmitted thru surf1:      ", t*t.conjugate()			
-    print "... phase relative to Rsave ",numpy.angle( Rsave * t.conjugate(), deg=True )		 
-    print "... amp relative to Rsave:  ", abs(t)/abs(Rsave)
-    Rsave = t
     R = R + t 								    # at the first surface, transmitted signals add to R
-    # print "... total reflected pwr:             ", R*R.conjugate()
 
     # --- debug info: make sure that all power is accounted for ---
     T0tmp = T[0]*T[0].conjugate()
@@ -1924,8 +1908,10 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=
     R0tmp = R[0]*R[0].conjugate()
     R1tmp = R[1]*R[1].conjugate()
     Atmp = 1. - T0tmp - T1tmp - R0tmp - R1tmp 
-    print "... after %2d passes, T = %.5f, %.5f, R = %.5f, %.5f, Acalc = %.5f, %.5f, A = %.5f" % \
-       (npass, abs(T0tmp),abs(T1tmp),abs(R0tmp),abs(R1tmp), Acalc[0], Acalc[1], Atmp )
+    print "... after %2d passes, T = %.5f, %.5f, R = %.5f, %.5f, A = %8.5f" % \
+       (npass, abs(T0tmp),abs(T1tmp),abs(R0tmp),abs(R1tmp), Atmp )
+    # print "... after %2d passes, T = %.5f, %.5f, R = %.5f, %.5f, Acalc = %.5f, %.5f, A = %8.5f" % \
+     #   (npass, abs(T0tmp),abs(T1tmp),abs(R0tmp),abs(R1tmp), Acalc[0], Acalc[1], Atmp )
   return [ T[0], T[1], R[0], R[1] ]             # [ ampTpar, ampTperp, ampRpar, ampRperp ]
 
 # compares results of plateTrans and plateTrans2 for special case where phiDeg=0 or phiDeg=90 only
@@ -1950,7 +1936,7 @@ def ptcompare( LOGHz, angIdeg, phiDeg0=True, alpha=0. ) :
   #T = abs(Tpar*Tpar.conjugate() + Tperp*Tperp.conjugate()) / 2.
   #R = abs(Rpar*Rpar.conjugate() + Rperp*Rperp.conjugate()) / 2.
   A = 1 - T - R
-  print "... T = %8.4f, R = %8.4f, A = %8.4f" % (T, R, A)
+  print "... T = %.4f, R = %.4f, A = %.4f" % (T, R, A)
   print "\nplateTrans2:"
   Tpar,Tperp,Rpar,Rperp = plateTrans2( v1, LOGHz, angIdeg, phiDeg, alpha, alpha, nO, nE )
   #print "%8.4f %8.4f   %8.4f %8.4f   %8.4f %8.4f   %8.4f %8.4f   %5.3f %5.3f %5.3f %5.3f" % (Tpar.real,Tpar.imag, \
@@ -1958,4 +1944,4 @@ def ptcompare( LOGHz, angIdeg, phiDeg0=True, alpha=0. ) :
   T = abs(Tpar*Tpar.conjugate() + Tperp*Tperp.conjugate())
   R = abs(Rpar*Rpar.conjugate() + Rperp*Rperp.conjugate())
   A = 1 - T - R
-  print "... T = %8.4f, R = %8.4f, A = %8.4f" % (T, R, A)
+  print "... T = %.4f, R = %.4f, A = %.4f" % (T, R, A)
