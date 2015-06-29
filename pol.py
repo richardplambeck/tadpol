@@ -1621,8 +1621,8 @@ def doit5( dataFile, angIrange=[43.,48.,2.], phiRange=[-5.,6.,2.], alphaO=.05, a
   T5sm = smArray( T5dat )
   for phi in numpy.arange( phiRange[0], phiRange[1], phiRange[2] ) :
     for angI in numpy.arange( angIrange[0], angIrange[1], angIrange[2] ) :
-      T3,T4,T5 = Tfit( LOGHz, fsm, angI, phi, alphaO, alphaE )  
-      # T3,T4,T5 = Tfit2( LOGHz, fsm, angI, phi, alphaO, alphaE )  
+      #T3,T4,T5 = Tfit( LOGHz, fsm, angI, phi, alphaO, alphaE )  
+      T3,T4,T5 = Tfit2( LOGHz, fsm, angI, phi, alphaO, alphaE )  
       variance = numpy.mean( pow( T3-T3sm, 2. )) + \
          numpy.mean( pow( T4-T4sm, 2. ))
       print "phi = %.1f, angI = %.1f, variance = %.1f" % (phi, angI, variance)
@@ -1635,7 +1635,7 @@ def doit5( dataFile, angIrange=[43.,48.,2.], phiRange=[-5.,6.,2.], alphaO=.05, a
   # once best fit is found, model all the points
   var5 = numpy.mean( pow(T5-T5sm, 2.) )
   print "lowest variance = %.1f, var5 = %.2f, for phi  = %.1f, angI = %.1f" % (varsave, var5, phibest, angIbest)
-  T3,T4,T5 = Tfit( LOGHz, fdat, angIbest, phibest, alphaO, alphaE )  
+  T3,T4,T5 = Tfit2( LOGHz, fdat, angIbest, phibest, alphaO, alphaE )  
   plt.ioff()
   fig = plt.subplot(1,1,1)
   fig.plot( fdat, T3, color='red' )
@@ -1697,7 +1697,7 @@ def Tfit2( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
   T3 = []
   T4 = []
   T5 = []
-  inpolList = [ Y ]	        	# 3mm band is sensitive to single pol in Y-direction
+  inpolList = [ Y ]	        	# 3mm band is sensitive to single pol in Y-direction; necessary!!
   if LOGHz > 180. :
     inpolList = [ X, Y ]        # 1mm band is sensitive to circular pol
 
@@ -1726,7 +1726,7 @@ def Tfit2( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
 # the ordinary axis of the dielectric is in the x-y plane, at angle phiDeg to the x-axis
 # the ray propagates in the y-z plane at angle thetaDeg to z-axis
 
-def effindex( phiDeg, thetaDeg, no=3.05, ne=3.40 ) :
+def effindex( phiDeg, thetaDeg, nO=3.05, nE=3.40 ) :
   theta = math.pi/180. * thetaDeg
   phi = math.pi/180. * phiDeg
   #vecOrdinary = numpy.array( [ math.cos(phi), math.sin(phi), 0. ], dtype=float )
@@ -1737,8 +1737,8 @@ def effindex( phiDeg, thetaDeg, no=3.05, ne=3.40 ) :
     # this is the angle between the ray direction and the ordinary axis
   cosphi = math.cos( phi )
   sinphi = math.sin( phi )
-  npar = 1./ math.sqrt( pow(sinphi/no, 2.) + pow( cosphi/ne, 2. ) )
-  nperp = 1./ math.sqrt( pow(cosphi/no, 2.) + pow( sinphi/ne, 2.) ) 
+  npar = 1./ math.sqrt( pow(sinphi/nO, 2.) + pow( cosphi/nE, 2. ) )
+  nperp = 1./ math.sqrt( pow(cosphi/nO, 2.) + pow( sinphi/nE, 2.) ) 
   return npar,nperp
   
 # propagate signal through anisotropic dielectric, at angle phiDeg to ordinary axis
@@ -1796,7 +1796,7 @@ def dumbtest3( ) :
   fout.close
 
 # compute amplitude transmission and reflection through surface
-# the input Jones vector v1 = [ Epar, Eperp ] where par and perp are relative to the plane of incidence
+# the input Jones vector v1 = [ Ex, Ey] = [ Epar, Eperp ] where par and perp are relative to the plane of incidence
 # return trans and refl Jones vectors
 def surf( vec, tpar, tperp, rpar, rperp ) :
   Tmat = numpy.array( [[ tpar, 0.],[ 0., tperp]] )
@@ -1824,16 +1824,13 @@ def surf( vec, tpar, tperp, rpar, rperp ) :
 #  - again use Fresnel coefficients to compute trans and refl for this wave; once
 #     back inside the plate, compute reflected wave back to first surface
 
-# phi is rotation of fast axis relative to plane of incidence?
+# inpol is the Jones vector [Ex Ey] incident on plate in +z direction
+# phiDeg is rotation of fast axis relative to plane of incidence?
 
 def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=.037, alphaE=.023,  nO=3.05, nE=3.40, tcm=1. ) :
   angI = math.pi * angIdeg / 180.	                              # convert to radians 
-  refDelay = 2. * math.pi * fGHz/clight * tcm/math.cos(angI)    # delay in radians without plate
-  # print "... refDelay = %.3f radians" % refDelay
-  neffpar,neffperp = effindex( phiDeg, angIdeg )	            # these indices used only to compute Fresnel coeff at the surface
-  #neffpar = nO
-  #neffperp = nE
-  # print "neff par, perp = %.3f, %.3f" % (neffpar,neffperp)
+  neffpar,neffperp = effindex( phiDeg, angIdeg, nO=nO, nE=nE )
+  print "effindex  phiDeg = %.1f  npar,nperp = %.3f, %.3f" % (phiDeg,neffpar,neffperp)
 
   # compute Fresnel coefficients for polarization parallel to plane of incidence     
   angTpar = math.asin((math.sin(angI))/neffpar)	                          # Snell's law, eqn 8 (p. 38)
@@ -1847,7 +1844,7 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=.037, alphaE=.023, 
   avAngT = math.sqrt( angTpar*angTperp )
   # print "angTpar = %.2f, angTperp = %.2f" % (180./math.pi * angTpar, 180./math.pi * angTperp)
 
-  # compute atten and delays through the plate
+  # compute atten and phase shifts (in radians) through the plate; assumed to propagate at angle avAngT
   attnO = alphaO/2. * tcm / math.cos(avAngT) 					#  AMPLITUDE attenuation per pass through plate
   attnE = alphaE/2. * tcm / math.cos(avAngT) 					#  AMPLITUDE attenuation per pass through plate
   deltaO = 2 * math.pi * nO * fGHz/clight * tcm / math.cos(avAngT)     
@@ -1857,32 +1854,50 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=.037, alphaE=.023, 
   # print delaymat
   extraphase = math.sin(angI) * 2. * tcm * math.tan(avAngT) * 2. * math.pi * fGHz/clight
     # this is the phase SAVED outside the plate on each pass due to geometry
+  transCorr = numpy.array( [ [neffpar * math.cos(angTpar)/math.cos(angI), 0.], [0., neffperp * math.cos(angTperp)/math.cos(angI)] ] )
+    # this is the irradiance correction factor just inside the surface, in the X-Y frame only
 
   # begin with Jones vector in frame of tilt axis
-  #v1 = numpy.array( [1,1], dtype=complex )
   v1 = inpol 
-  v2,R = surf( v1, tpar, tperp, rpar, rperp )                # v2 is Jones vector just inside plate, R is reflected amp
+  # print "... tpar, tperp: ", tpar, tperp
+  # print "... rpar, rperp: ", rpar, rperp
+  v2,R = surf( v1, tpar, tperp, rpar, rperp )                # v2 is Jones vector just inside plate, R is initial reflected amp
+  # print "... pwr reflected from surf1:         ", R*R.conjugate()	# for debugging; this is power just inside surface1
   T = numpy.array( [0.,0.], dtype=complex )                  # Jones vector transmitted; each component is complex
+  Acalc = numpy.array( [0.,0.], dtype=float )
 
   # now let signal rattle back and forth inside the plate; each pass is one round trip
-  for npass in range(0, 10) :  
-    v3 = Jrot( v2, phiDeg )                     # rotate into frame of principal axes
+  for npass in range(0, 12) :  
+    # print "... pwr just inside surf1:           ", numpy.dot( transCorr, v2*v2.conjugate() )
+    v3 = Jrot( v2, phiDeg )                     # rotate into frame of principal axes [ E_O, E_E ]
     v4 = numpy.dot( delaymat, v3 )              # complex delays include attenuation
     v5 = Jrot( v4, -phiDeg )                    # rotate back to original X-Y frame
+    # print "... pwr just inside surf2:           ", numpy.dot( transCorr, v5*v5.conjugate() )  
+    Acalc = Acalc + numpy.dot( transCorr, v2*v2.conjugate() - v5*v5.conjugate() )
+    # print "... Acalc:                           ", Acalc
     t,v2 = surf( v5, tprimepar, tprimeperp, rprimepar, rprimeperp)    
        # t is the Jones vector transmitted through the surface
        # v2 is the Jones vector reflected just inside the surface
+    # print "... pwr reflected from surf2:        ", numpy.dot( transCorr, v2*v2.conjugate() )	
     t = t * numpy.exp( 1j * npass * extraphase )      
-       # apply geometric phase shift to both components of t; pass 0 is the reference phase
-    T = T + t                                   # add to T
-    v3 = Jrot( v2, -phiDeg )                    # direction of propagation is reversed, so I am reversing phi
+       # apply geometric phase shift to both components of t; no correction for pass0 = reference phase
+    # print "... pwr transmitted thru surf2:      ", t*t.conjugate()			
+    T = T + t                                   # add to T (in X,Y frame)
+    v3 = Jrot( v2, phiDeg )                     # direction of propagation is reversed; should I reverse phi ??
     v4 = numpy.dot( delaymat, v3 )              # complex delays include attenuation
-    v5 = Jrot( v4, phiDeg )                     # rotate back to original X-Y frame
+    v5 = Jrot( v4, -phiDeg )                    # rotate back to original X-Y frame
+    # print "... reflected pwr just inside surf1: ", numpy.dot( transCorr, v5*v5.conjugate() )	
+    Acalc = Acalc + numpy.dot( transCorr, v2*v2.conjugate() - v5*v5.conjugate() )
+    # print "... Acalc:                           ", Acalc
+    t = t * numpy.exp( 1j * npass * extraphase )      
     t,v2 = surf( v5, tprimepar, tprimeperp, rprimepar, rprimeperp)    
-       # compute transmission, reflection from 2nd surface; note that transmitted wave will add to reflection
+       # compute transmission, reflection from 1st surface; note that transmitted wave will add to reflection
     t = t * numpy.exp( 1j * (npass+1) * extraphase )         
+       # note that t will add to reflection coeff; pass 0 is after 1 round-trip, does need phase correction
        # apply geometric phase shift to both components of t; R was the reference phase
+    # print "... pwr transmitted thru surf1:      ", t*t.conjugate()			
     R = R + t 								    # at the first surface, transmitted signals add to R
+    # print "... total reflected pwr:             ", R*R.conjugate()
 
     # --- debug info: make sure that all power is accounted for ---
     T0tmp = T[0]*T[0].conjugate()
@@ -1890,8 +1905,8 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=.037, alphaE=.023, 
     R0tmp = R[0]*R[0].conjugate()
     R1tmp = R[1]*R[1].conjugate()
     Atmp = 1. - T0tmp - T1tmp - R0tmp - R1tmp 
-    #print "... after %d passes, T = %.5f,%.ef, R = %.5f,%.5f, A = %.5f" % \
-    #   (npass, T0tmp,T1tmp,R0tmp,R1tmp,Atmp) 
+    print "... after %2d passes, T = %.5f, %.5f, R = %.5f, %.5f, Acalc = %.5f, %.5f, A = %.5f" % \
+       (npass, abs(T0tmp),abs(T1tmp),abs(R0tmp),abs(R1tmp), Acalc[0], Acalc[1], Atmp )
   return [ T[0], T[1], R[0], R[1] ]             # [ ampTpar, ampTperp, ampRpar, ampRperp ]
 
 def ptcompare( LOGHz, angIdeg, alphaO=0., alphaE=0. ) :
