@@ -12,6 +12,12 @@ from matplotlib.patches import Circle
 from matplotlib.backends.backend_pdf import PdfPages
 from mpl_toolkits.mplot3d import Axes3D
 
+plate = {'tcm' : 1.09, \
+         'nO'  : 3.06, \
+         'nE'  : 3.40, \
+         'alphaO' : 0.005, \
+         'alphaE' : 0.005 }
+
 # ---------------------------------------------------------------------------------------------------------- #
 # define basis vectors in reference coordinate system (aligned with OMT axes)
 # each vector consists of 2 complex numbers [ (Re_x,Im_x), (Re_y,Im_y) ]
@@ -1626,10 +1632,11 @@ def doit5( dataFile, angIrange=[43.,48.,2.], phiRange=[-5.,6.,2.], alphaO=.05, a
   T3sm = smArray( T3dat )
   T4sm = smArray( T4dat )
   T5sm = smArray( T5dat )
+  phiOffset = 0.*numpy.ones(len(fsm), dtype=float)
   for phi in numpy.arange( phiRange[0], phiRange[1], phiRange[2] ) :
     for angI in numpy.arange( angIrange[0], angIrange[1], angIrange[2] ) :
       #T3,T4,T5 = Tfit( LOGHz, fsm, angI, phi, alphaO, alphaE )  
-      T3,T4,T5 = Tfit2( LOGHz, fsm, angI, phi, alphaO, alphaE )  
+      T3,T4,T5 = Tfit2( LOGHz, fsm, phiOffset, angI, phi, alphaO, alphaE )  
       variance = numpy.mean( pow( T3-T3sm, 2. )) + \
          numpy.mean( pow( T4-T4sm, 2. ))
       print "phi = %.1f, angI = %.1f, variance = %.1f" % (phi, angI, variance)
@@ -1641,7 +1648,8 @@ def doit5( dataFile, angIrange=[43.,48.,2.], phiRange=[-5.,6.,2.], alphaO=.05, a
   # once best fit is found, model all the points
   var5 = numpy.mean( pow(T5-T5sm, 2.) )
   print "lowest variance = %.1f, var5 = %.2f, for phi  = %.1f, angI = %.1f" % (varsave, var5, phibest, angIbest)
-  T3,T4,T5 = Tfit2( LOGHz, fdat, angIbest, phibest, alphaO, alphaE )  
+  phiOffset = 0.*numpy.ones(len(fdat), dtype=float)
+  T3,T4,T5 = Tfit2( LOGHz, fdat, phiOffset, angIbest, phibest, alphaO, alphaE )  
   plt.ioff()
   fig = plt.subplot(1,1,1)
   fig.plot( fdat, T3, color='red' )
@@ -1695,9 +1703,13 @@ def Tfit( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
   return [ numpy.array(T3,dtype=float), numpy.array(T4,dtype=float), numpy.array(T5,dtype=float ) ]
 
 # Tfit2 is the new fitting routine (uses plateTrans2)
+# generalize it for simultaneous fit to data at more than one angle: phiOffset is array of
+#    offset angles in degrees, one for each fdat
 # it rotates into the frame of the principal axes inside the plate, keeps track of polarization
 
-def Tfit2( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
+def Tfit2( LOGHz, fdat, phiOffset, angIdeg, phiDeg, alphaO, alphaE, nO=3.06, nE=3.40, tcm=1.09 ) :
+  #print "phiDeg = ", phiDeg
+  #print "phiOffset = ", phiOffset
   Thot = 295.
   Tcold = 77.
   T3 = []
@@ -1705,14 +1717,14 @@ def Tfit2( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
   T5 = []
   inpolList = [ Y ]	        	# 3mm band is sensitive to single pol in Y-direction; necessary!!
   if LOGHz > 180. :
-    inpolList = [ X, Y ]        # 1mm band is sensitive to circular pol
+    inpolList = [ L ]        # 1mm band is sensitive to circular pol
 
-  for fIF in fdat :             
+  for fIF,phiOff in zip( fdat, phiOffset) :             
     trans = 0.
     refl = 0.
     for fGHz in [ LOGHz-fIF, LOGHz+fIF ] :	        # process each sideband separately
       for inpol in inpolList : 					    # process each polarization separately
-        Tpar,Tperp,Rpar,Rperp = plateTrans2( inpol, fGHz, angIdeg, phiDeg, alphaO, alphaE )
+        Tpar,Tperp,Rpar,Rperp = plateTrans2( inpol, fGHz, angIdeg, phiDeg-phiOff, alphaO, alphaE, nO, nE, tcm )
         trans = trans + Tpar*Tpar.conjugate() + Tperp*Tperp.conjugate()
           # compute power transmitted through plate in both X and Y polarizations
         refl = refl + Rpar*Rpar.conjugate() + Rperp*Rperp.conjugate()
@@ -1832,10 +1844,10 @@ def surf( vec, tpar, tperp, rpar, rperp ) :
 #  - calculation of phase shifts and loss through the plate are done in the frame of the
 #      principal axes of the plate
 
-def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=3.05, nE=3.40, tcm=1. ) :
+def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=3.06, nE=3.40, tcm=1.09 ) :
   angI = math.pi * angIdeg / 180.	                              # convert to radians 
   neffpar,neffperp = effindex( phiDeg, angIdeg, nO=nO, nE=nE )
-  print "... phiDeg = %.1f  npar,nperp = %.3f, %.3f" % (phiDeg,neffpar,neffperp)
+  #print "... phiDeg = %.1f  npar,nperp = %.3f, %.3f" % (phiDeg,neffpar,neffperp)
 
   # compute Fresnel coefficients for polarization parallel to plane of incidence     
   angTpar = math.asin((math.sin(angI))/neffpar)	                          # Snell's law, eqn 8 (p. 38)
@@ -1865,7 +1877,7 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=
   # extraphasePar = math.sin(angI) * 2. * tcm * math.tan(angTpar) * 2. * math.pi * fGHz/clight
   extraphasePerp = math.sin(angI) * 2. * tcm * math.tan(avAngT) * 2. * math.pi * fGHz/clight
   extraphasePar = math.sin(angI) * 2. * tcm * math.tan(avAngT) * 2. * math.pi * fGHz/clight
-  print "... extraphasePar, Perp = ", 180./math.pi * extraphasePar, 180./math.pi * extraphasePerp
+  # print "... extraphasePar, Perp = ", 180./math.pi * extraphasePar, 180./math.pi * extraphasePerp
     # this is the phase SAVED outside the plate on each pass due to geometry; depends on neffpar and neffperp
   extramat = numpy.array( [ [cmath.exp(1j*extraphasePar), 0], [0, cmath.exp(1j*extraphasePerp)] ] )
   transCorr = numpy.array( [ [neffpar * math.cos(angTpar)/math.cos(angI), 0.], [0., neffperp * math.cos(angTperp)/math.cos(angI)] ] )
@@ -1879,7 +1891,7 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=
   Rsave = R
 
   # now let signal rattle back and forth inside the plate; each pass is one round trip
-  for npass in range(0, 12) :  
+  for npass in range(0, 8) :  
     v3 = Jrot( v2, phiDeg )                     # rotate into frame of principal axes [ E_O, E_E ]
     v4 = numpy.dot( delaymat, v3 )              # complex delays include attenuation
     v5 = Jrot( v4, -phiDeg )                    # rotate back to original X-Y frame
@@ -1908,8 +1920,8 @@ def plateTrans2( inpol, fGHz, angIdeg=45., phiDeg=0., alphaO=0., alphaE=0.,  nO=
     R0tmp = R[0]*R[0].conjugate()
     R1tmp = R[1]*R[1].conjugate()
     Atmp = 1. - T0tmp - T1tmp - R0tmp - R1tmp 
-    print "... after %2d passes, T = %.5f, %.5f, R = %.5f, %.5f, A = %8.5f" % \
-       (npass, abs(T0tmp),abs(T1tmp),abs(R0tmp),abs(R1tmp), Atmp )
+    # print "... after %2d passes, T = %.5f, %.5f, R = %.5f, %.5f, A = %8.5f" % \
+    #   (npass, abs(T0tmp),abs(T1tmp),abs(R0tmp),abs(R1tmp), Atmp )
     # print "... after %2d passes, T = %.5f, %.5f, R = %.5f, %.5f, Acalc = %.5f, %.5f, A = %8.5f" % \
      #   (npass, abs(T0tmp),abs(T1tmp),abs(R0tmp),abs(R1tmp), Acalc[0], Acalc[1], Atmp )
   return [ T[0], T[1], R[0], R[1] ]             # [ ampTpar, ampTperp, ampRpar, ampRperp ]
@@ -1945,3 +1957,84 @@ def ptcompare( LOGHz, angIdeg, phiDeg0=True, alpha=0. ) :
   R = abs(Rpar*Rpar.conjugate() + Rperp*Rperp.conjugate())
   A = 1 - T - R
   print "... T = %.4f, R = %.4f, A = %.4f" % (T, R, A)
+
+# doit6 is supposed to do global fit to set of measurements at 1 freq, varying phi, angI, nO, nE, tcm, alphaO, alphaE
+def doit6( dataFileList, phiOffsetList ) :
+  fsm = []
+  T3sm = []
+  T4sm = []
+  phOff = []
+  alphaO = .005
+  alphaE = .005
+  fout = open("doit6.log", "a")
+  fout.write("\n\n%s, %s\n" % (dataFileList, phiOffsetList) )
+  fout.close()
+# read in and smooth all the datasets
+  for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
+    LOGHz = float( dataFile.split("_")[0] )
+    print "LOGHz = %0f" % LOGHz
+    fdat, T3dat, T4dat, T5dat = readDataFile( dataFile )
+    fsm1 = smArray( fdat ) 
+    T3sm1 = smArray( T3dat )  
+    T4sm1 = smArray( T4dat ) 
+    for n in range(0,len(fsm1)) :
+      fsm.append( fsm1[n] )
+      T3sm.append( T3sm1[n] )
+      T4sm.append( T4sm1[n] )
+      phOff.append( phiOff )
+# fit all, searching for min variance
+  varsave = 1.e6
+  for tcm in numpy.arange( 1.00, 1.03, .01) :
+    for nO in numpy.arange( 3.03, 3.07, .01 ) :
+      for nE in numpy.arange( 3.38, 3.41, .01 ) :
+        for angI in numpy.arange( 45., 48., 20. ) :
+          for phi in numpy.arange( 70., 95., 1. ) :
+           T3,T4,T5 = Tfit2( LOGHz, fsm, phOff, angI, phi, alphaO, alphaE, nO, nE, tcm )  
+           variance = numpy.mean( pow( T3-T3sm, 2. )) + \
+             numpy.mean( pow( T4-T4sm, 2. ))
+           print "tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f" % \
+             (tcm, nO, nE, angI, phi, variance)
+           fout = open("doit6.log", "a")
+           fout.write("tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f\n" % \
+             (tcm, nO, nE, angI, phi, variance))
+           fout.close()
+           if variance < varsave :
+             tcmbest = tcm
+             nObest = nO
+             nEbest = nE
+             angIbest = angI
+             phibest = phi 
+             varsave = variance
+
+  print "BEST: tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f" % \
+             (tcmbest, nObest, nEbest, angIbest, phibest, varsave)
+  fout = open("doit6.log", "a")
+  fout.write("BEST: tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f\n" % \
+             (tcmbest, nObest, nEbest, angIbest, phibest, varsave) )
+  fout.close()
+
+# plot all data for all files
+  plt.ioff()
+  nplot = 1
+  for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
+    fdat, T3dat, T4dat, T5dat = readDataFile( dataFile )
+    phOff = phiOff * numpy.ones( len(fdat), dtype=float )
+    T3,T4,T5 = Tfit2( LOGHz, fdat, phOff, angIbest, phibest, alphaO, alphaE, nObest, nEbest, tcmbest )  
+    fig = plt.subplot(2,2,nplot)
+    fig.plot( fdat, T3, color='red' )
+    fig.plot( fdat, T3dat, color='red' )
+    fig.plot( fdat, T4, color='blue' )
+    fig.plot( fdat, T4dat, color='blue' )
+    fig.plot( fdat, T5, color='purple' )
+    fig.plot( fdat, T5dat, color='purple' )
+    fig.grid( True )
+    fig.set_title( dataFile, fontsize=12 )
+    fig.set_ylim(0,300)
+    fig.text( .05, .1, "tcm = %.3f, nO = %.3f, nE = %.3f, variance = %.1f" % \
+       ( tcmbest, nObest, nEbest, varsave), \
+       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=6 )
+    fig.text( .05, .05, "phi = %.1f, angI = %.1f, alphaO = %.3f, alphaE = %.3f" % (phibest,angIbest,alphaO,alphaE), \
+       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=6 )
+    nplot = nplot + 1
+  plt.show( )
+
