@@ -1595,6 +1595,7 @@ def readDataFile( dataFile ) :
   T3dat = []
   T4dat = []
   T5dat = []
+  T6dat = []
   for line in fin :
     if not line.startswith('#') :
       a = line.split()
@@ -1602,8 +1603,9 @@ def readDataFile( dataFile ) :
       T3dat.append( float(a[1]) )
       T4dat.append( float(a[2]) )
       T5dat.append( float(a[3]) ) 
+      T6dat.append( float(a[4]) ) 
   fin.close() 
-  return [ numpy.array(fdat), numpy.array(T3dat), numpy.array(T4dat), numpy.array(T5dat) ]
+  return [ numpy.array(fdat), numpy.array(T3dat), numpy.array(T4dat), numpy.array(T5dat), numpy.array(T6dat) ]
    
     
 def smArray( x, nsm=6 ) :
@@ -1707,9 +1709,10 @@ def Tfit( LOGHz, fdat, angIdeg, phiDeg, alphaO, alphaE ) :
 #    offset angles in degrees, one for each fdat
 # it rotates into the frame of the principal axes inside the plate, keeps track of polarization
 
-def Tfit2( LOGHz, fdat, phiOffset, angIdeg, phiDeg, alphaO, alphaE, nO=3.06, nE=3.40, tcm=1.09 ) :
+def Tfit2( LOGHz, fdat, phiOffset, angIdeg, phiDeg, alphaO, alphaE, nO=3.06, nE=3.40, tcm=1.09, T5fit=False, T6avg=77. ) :
   #print "phiDeg = ", phiDeg
   #print "phiOffset = ", phiOffset
+  print "Tfit2 using T6avg = %.2f" % T6avg 
   Thot = 295.
   Tcold = 77.
   T3 = []
@@ -1717,7 +1720,7 @@ def Tfit2( LOGHz, fdat, phiOffset, angIdeg, phiDeg, alphaO, alphaE, nO=3.06, nE=
   T5 = []
   inpolList = [ Y ]	        	# 3mm band is sensitive to single pol in Y-direction; necessary!!
   if LOGHz > 180. :
-    inpolList = [ L ]        # 1mm band is sensitive to circular pol
+    inpolList = [ R ]        # 1mm band is sensitive to circular pol
 
   for fIF,phiOff in zip( fdat, phiOffset) :             
     trans = 0.
@@ -1736,7 +1739,7 @@ def Tfit2( LOGHz, fdat, phiOffset, angIdeg, phiDeg, alphaO, alphaE, nO=3.06, nE=
     # print "... %.3f GHz: T,R,L = %.4f, %.4f, %.4f" % (fIF, trans, refl, loss)
     T3.append( trans*Thot + refl*Tcold + loss*Thot )
     T4.append( trans*Tcold + refl*Thot + loss*Thot )
-    T5.append( trans*Tcold + refl*Tcold + loss*Thot )
+    T5.append( trans*Tcold + refl*T6avg + loss*Thot )
   return [ numpy.array(T3,dtype=float), numpy.array(T4,dtype=float), numpy.array(T5,dtype=float ) ]
 
 
@@ -1751,12 +1754,14 @@ def Tfit2( LOGHz, fdat, phiOffset, angIdeg, phiDeg, alphaO, alphaE, nO=3.06, nE=
 def effindex( phiDeg, thetaDeg, nO=3.05, nE=3.40 ) :
   theta = math.pi/180. * thetaDeg
   phi = math.pi/180. * phiDeg
-  #vecOrdinary = numpy.array( [ math.cos(phi), math.sin(phi), 0. ], dtype=float )
-	# this is unit vector in direction of the ordinary axis
+  #vecC = numpy.array( [ math.cos(phi), math.sin(phi), 0. ], dtype=float )
+	# this is unit vector in direction of the C-axis (the optic axis)
   #vecRay = numpy.array( [ 0., math.sin(theta), math.cos(theta) ] )
     # this is unit vector in the direction of the ray
   #cosA = numpy.dot( vecOrdinary, vecRay )  # law of cosines
     # this is the angle between the ray direction and the ordinary axis
+  #vecPerp = numpy.cross( vecRay, x )
+  #vecPar = numpy.cross( vecRay, y )
   cosphi = math.cos( phi )
   sinphi = math.sin( phi )
   npar = 1./ math.sqrt( pow(sinphi/nO, 2.) + pow( cosphi/nE, 2. ) )
@@ -1958,69 +1963,128 @@ def ptcompare( LOGHz, angIdeg, phiDeg0=True, alpha=0. ) :
   A = 1 - T - R
   print "... T = %.4f, R = %.4f, A = %.4f" % (T, R, A)
 
-# doit6 is supposed to do global fit to set of measurements at 1 freq, varying phi, angI, nO, nE, tcm, alphaO, alphaE
-def doit6( dataFileList, phiOffsetList ) :
+# doit6 is searches for lowest variance for multiple datasets
+# I imagine doing this one freq at a time, so doit6 plots 4 panels with final results
+# ... dataFileList = list of data file names, e.g., { 'file1.dat', 'file2.dat' ]
+# ... phOffsetList = list of phi offsets in degrees, e.g., [ 0, 60. ]
+# ... searchList is a dictionary of search ranges
+# ... T5fit to find min variance in T5 (normally fits T3 and T4)
+# ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
+
+# srcDefault ranges are below; note that currently alphaE is set equal to alphaO inside doit6, so alphaE search
+#  range is not used
+
+srchDefault = { 'tcm'    : [ 1.009, 1.010, .02 ], \
+                'nO'     : [ 3.050, 3.060, .02 ], \
+                'nE'     : [ 3.400, 3.410, .02 ], \
+                'angI'   : [ 45., 46., 2. ], \
+                'phi'    : [ 0., 1., 2. ], \
+                'alphaO' : [ 0.005, 0.006, .01 ], \
+                'alphaE' : [ 0.005, 0.006, .01 ] }
+
+def doit6( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None ) :
   fsm = []
   T3sm = []
   T4sm = []
+  T5sm = []
+  T6sm = []
   phOff = []
-  alphaO = .005
-  alphaE = .005
   fout = open("doit6.log", "a")
-  fout.write("\n\n%s, %s\n" % (dataFileList, phiOffsetList) )
+  fout.write("#\n#\n# %s, %s\n" % (dataFileList, phiOffsetList) )
   fout.close()
+
 # read in and smooth all the datasets
   for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
     LOGHz = float( dataFile.split("_")[0] )
     print "LOGHz = %0f" % LOGHz
-    fdat, T3dat, T4dat, T5dat = readDataFile( dataFile )
+    fdat, T3dat, T4dat, T5dat, T6dat = readDataFile( dataFile )
     fsm1 = smArray( fdat ) 
     T3sm1 = smArray( T3dat )  
     T4sm1 = smArray( T4dat ) 
+    T5sm1 = smArray( T5dat )
+    T6sm1 = smArray( T6dat )
     for n in range(0,len(fsm1)) :
       fsm.append( fsm1[n] )
       T3sm.append( T3sm1[n] )
       T4sm.append( T4sm1[n] )
+      T5sm.append( T5sm1[n] )
+      T6sm.append( T6sm1[n] )
       phOff.append( phiOff )
-# fit all, searching for min variance
-  varsave = 1.e6
-  for tcm in numpy.arange( 1.00, 1.03, .01) :
-    for nO in numpy.arange( 3.03, 3.07, .01 ) :
-      for nE in numpy.arange( 3.38, 3.41, .01 ) :
-        for angI in numpy.arange( 45., 48., 20. ) :
-          for phi in numpy.arange( 70., 95., 1. ) :
-           T3,T4,T5 = Tfit2( LOGHz, fsm, phOff, angI, phi, alphaO, alphaE, nO, nE, tcm )  
-           variance = numpy.mean( pow( T3-T3sm, 2. )) + \
-             numpy.mean( pow( T4-T4sm, 2. ))
-           print "tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f" % \
-             (tcm, nO, nE, angI, phi, variance)
-           fout = open("doit6.log", "a")
-           fout.write("tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f\n" % \
-             (tcm, nO, nE, angI, phi, variance))
-           fout.close()
-           if variance < varsave :
-             tcmbest = tcm
-             nObest = nO
-             nEbest = nE
-             angIbest = angI
-             phibest = phi 
-             varsave = variance
+    if T6override :
+      T6avg = T6override
+    else :
+      T6avg = numpy.mean(T6sm)
+    if T5fit :
+      print "... looking for min variance in T5; using T6avg = %.2f" % T6avg
+    
 
-  print "BEST: tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f" % \
-             (tcmbest, nObest, nEbest, angIbest, phibest, varsave)
+# fit all, searching for min variance
+  srch = srchDefault
+  for key in [ 'tcm', 'nO', 'nE', 'angI', 'phi', 'alphaO', 'alphaE' ] :
+    if key in srchList :
+      srch[key] = srchList[key]
+  print srch
+  
+  varsave = 1.e6
+  for tcm in numpy.arange( srch['tcm'][0], srch['tcm'][1], srch['tcm'][2] ) :
+    for nO in numpy.arange( srch['nO'][0], srch['nO'][1], srch['nO'][2] ) :
+      for nE in numpy.arange( srch['nE'][0], srch['nE'][1], srch['nE'][2] ) :
+        for angI in numpy.arange( srch['angI'][0], srch['angI'][1], srch['angI'][2] ) :
+          for phi in numpy.arange( srch['phi'][0], srch['phi'][1], srch['phi'][2] ) :
+            for alphaO in numpy.arange( srch['alphaO'][0], srch['alphaO'][1], srch['alphaO'][2] ) :
+              alphaE = alphaO
+              #for alphaE in numpy.arange( srch['alphaE'][0], srch['alphaE'][1], srch['alphaE'][2] ) :
+              T3,T4,T5 = Tfit2( LOGHz, fsm, phOff, angI, phi, alphaO, alphaE, nO, nE, tcm, T5fit, T6avg )  
+              variance = numpy.mean( pow( T3-T3sm, 2. )) + \
+                 numpy.mean( pow( T4-T4sm, 2. ))
+              var5 =  numpy.mean( pow( T5-T5sm, 2. ))
+              print "tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, alphaO,E = %.3f, %.3f, var34 = %.1f, var5 = %.2f" % \
+                (tcm, nO, nE, angI, phi, alphaO, alphaE, variance, var5)
+              fout = open("doit6.log", "a")
+              fout.write( "tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  phi: %.1f  alphaO,E: %.3f %.3f  variance: %.1f  var5: %.2f\n" % \
+                (tcm, nO, nE, angI, phi, alphaO, alphaE, variance, var5))
+              fout.close()
+              if T5fit and (var5 < varsave) :
+                tcmbest = tcm
+                nObest = nO
+                nEbest = nE
+                angIbest = angI
+                phibest = phi 
+                alphaObest = alphaO
+                alphaEbest = alphaE
+                varsave = var5
+              elif (variance < varsave) :
+                tcmbest = tcm
+                nObest = nO
+                nEbest = nE
+                angIbest = angI
+                phibest = phi 
+                alphaObest = alphaO
+                alphaEbest = alphaE
+                varsave = variance
+
+  print "# BEST: tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, alphaO,E = %.3f, %.3f, var34 = %.1f" % \
+             (tcmbest, nObest, nEbest, angIbest, phibest, alphaObest, alphaEbest, varsave )
   fout = open("doit6.log", "a")
-  fout.write("BEST: tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, variance = %.1f\n" % \
-             (tcmbest, nObest, nEbest, angIbest, phibest, varsave) )
+  fout.write("# BEST tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  phi: %.1f  alphaO,E: %.3f %.3f  var34: %.1f" % \
+             (tcmbest, nObest, nEbest, angIbest, phibest, alphaObest, alphaEbest, varsave) )
   fout.close()
 
 # plot all data for all files
   plt.ioff()
   nplot = 1
+  nmax = len( dataFileList)
+  nm = 1
+  fsize = 12
+  if nmax > 1 :
+    nm = 2 
+    fsize = 6
+    
   for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
-    fdat, T3dat, T4dat, T5dat = readDataFile( dataFile )
+    fdat, T3dat, T4dat, T5dat, T6dat = readDataFile( dataFile )
     phOff = phiOff * numpy.ones( len(fdat), dtype=float )
-    T3,T4,T5 = Tfit2( LOGHz, fdat, phOff, angIbest, phibest, alphaO, alphaE, nObest, nEbest, tcmbest )  
-    fig = plt.subplot(2,2,nplot)
+    T3,T4,T5 = Tfit2( LOGHz, fdat, phOff, angIbest, phibest, alphaObest, alphaEbest, nObest, nEbest, tcmbest, T5fit, T6avg )  
+    fig = plt.subplot(nm,nm,nplot)
     fig.plot( fdat, T3, color='red' )
     fig.plot( fdat, T3dat, color='red' )
     fig.plot( fdat, T4, color='blue' )
@@ -2032,9 +2096,13 @@ def doit6( dataFileList, phiOffsetList ) :
     fig.set_ylim(0,300)
     fig.text( .05, .1, "tcm = %.3f, nO = %.3f, nE = %.3f, variance = %.1f" % \
        ( tcmbest, nObest, nEbest, varsave), \
-       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=6 )
-    fig.text( .05, .05, "phi = %.1f, angI = %.1f, alphaO = %.3f, alphaE = %.3f" % (phibest,angIbest,alphaO,alphaE), \
-       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=6 )
+       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
+    fig.text( .05, .05, "phi = %.1f, angI = %.1f, alphaO = %.3f, alphaE = %.3f" % (phibest,angIbest,alphaObest,alphaEbest), \
+       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
     nplot = nplot + 1
   plt.show( )
 
+# converts alpha to tanDelta, using average index of 3.25
+
+def tanD (fGHz, alpha) :
+  print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
