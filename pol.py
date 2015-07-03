@@ -1970,6 +1970,7 @@ def ptcompare( LOGHz, angIdeg, phiDeg0=True, alpha=0. ) :
 # ... searchList is a dictionary of search ranges
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
+# ... nSmooth to boxcar average the raw data in blocks of nSmooth when plotting results and dumping to data file
 
 # srcDefault ranges are below; note that currently alphaE is set equal to alphaO inside doit6, so alphaE search
 #  range is not used
@@ -1982,7 +1983,7 @@ srchDefault = { 'tcm'    : [ 1.009, 1.010, .02 ], \
                 'alphaO' : [ 0.005, 0.006, .01 ], \
                 'alphaE' : [ 0.005, 0.006, .01 ] }
 
-def doit6( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None ) :
+def doit6( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None, nSmooth=0 ) :
   fsm = []
   T3sm = []
   T4sm = []
@@ -1993,11 +1994,14 @@ def doit6( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None )
   fout.write("#\n#\n# %s, %s\n" % (dataFileList, phiOffsetList) )
   fout.close()
 
-# read in and smooth all the datasets
+# read in and smooth all the datasets; using default nsm=6 for this rather than nSmooth
   for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
     LOGHz = float( dataFile.split("_")[0] )
     print "LOGHz = %0f" % LOGHz
     fdat, T3dat, T4dat, T5dat, T6dat = readDataFile( dataFile )
+    fsm1 = smArray( fdat ) 
+    T3sm1 = smArray( T3dat )  
+    T4sm1 = smArray( T4dat ) 
     fsm1 = smArray( fdat ) 
     T3sm1 = smArray( T3dat )  
     T4sm1 = smArray( T4dat ) 
@@ -2070,7 +2074,7 @@ def doit6( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None )
              (tcmbest, nObest, nEbest, angIbest, phibest, alphaObest, alphaEbest, varsave) )
   fout.close()
 
-# plot all data for all files
+# plot data for all files; also dump results to "fit.dat"
   plt.ioff()
   nplot = 1
   nmax = len( dataFileList)
@@ -2079,11 +2083,47 @@ def doit6( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None )
   if nmax > 1 :
     nm = 2 
     fsize = 6
+
+  fout = open("fit.dat", "w")
+  fout.write( '# created by pol.doit6()\n' )
+  fout.write( '# dataFileList:  ' + ', '.join(dataFileList) + '\n' )
+  fout.write( '# phiOffsetList: ' + ', '.join( [str(q) for q in phiOffsetList] ) + '\n#\n' )
+  fout.write( "# tcm    : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['tcm'][0], srch['tcm'][1], srch['tcm'][2], tcmbest ) )
+  fout.write( "# nO     : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['nO'][0], srch['nO'][1], srch['nO'][2], nObest ) )
+  fout.write( "# nE     : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['nE'][0], srch['nE'][1], srch['nE'][2], nEbest ) )
+  fout.write( "# angI   : [ %.1f, %.1f, %.1f ] best %.1f\n" % \
+     ( srch['angI'][0], srch['angI'][1], srch['angI'][2], angIbest ) )
+  fout.write( "# phi    : [ %.1f, %.1f, %.1f ] best %.1f\n" % \
+     ( srch['phi'][0], srch['phi'][1], srch['phi'][2], phibest ) )
+  fout.write( "# alphaO : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['alphaO'][0], srch['alphaO'][1], srch['alphaO'][2], alphaObest ) )
+  fout.write( "# alphaE is constrained to equal alphaO\n" )
+  if (T5fit) :
+    fout.write( "# minimized (T5-T5dat)^2\n")
+  else :
+    fout.write( "# minimized (T3-T3dat)^2 + (T4-T4dat)^2\n")
+
     
   for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
     fdat, T3dat, T4dat, T5dat, T6dat = readDataFile( dataFile )
+    if nSmooth > 0 :
+      fdat = smArray( fdat, nSmooth )
+      T3dat = smArray( T3dat, nSmooth )
+      T4dat = smArray( T4dat, nSmooth ) 
+      T5dat = smArray( T5dat, nSmooth ) 
+      T6dat = smArray( T6dat, nSmooth ) 
     phOff = phiOff * numpy.ones( len(fdat), dtype=float )
     T3,T4,T5 = Tfit2( LOGHz, fdat, phOff, angIbest, phibest, alphaObest, alphaEbest, nObest, nEbest, tcmbest, T5fit, T6avg )  
+
+    fout.write( '#\n# %s\n' % dataFile )
+    for ifq in range(0,len(fdat)) :
+      fout.write("%8.5f  %6.2f %6.2f  %6.2f %6.2f  %6.2f %6.2f  %6.2f %6.2f\n" % \
+        ( fdat[ifq], T3dat[ifq], T3[ifq], T4dat[ifq], T4[ifq], T5dat[ifq], T5[ifq], T6dat[ifq], T6avg ) )
+    fout.close()
+
     fig = plt.subplot(nm,nm,nplot)
     fig.plot( fdat, T3, color='red' )
     fig.plot( fdat, T3dat, color='red' )
