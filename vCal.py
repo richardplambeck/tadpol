@@ -174,7 +174,7 @@ def SgrGain( time, gainComplex, t1str, t2str, C1gain=None, plotName="gain.pdf" )
   smoothGain = numpy.abs( outGain )
   gAmps = numpy.abs( gainComplex )
      # recompute these since some were set to zero
-  timePlots.plotGains( t, gAmps, smoothGain, plotName )
+  #timePlots.plotGains( t, gAmps, smoothGain, plotName )
   return outGain   
   
 
@@ -305,7 +305,7 @@ def avgSEFD( foutCalc, t1, t2, src, t, source, gain, tsys, antList ) :
   # --- process each integration within the time interval --- #
   for n in range( 0, len(t) ) :
     if ( (t[n] >= t1) and (t[n] <= t2) and (src == source[n]) ) :
-      s = SEFD( gain[n], tsys[n], antList )
+      s = SEFD( gain[n], tsys[n], antList, foutCalc )
         # ... note that gain[n] and tsys[n] are (1 x 15) arrays
 
       # --- write 1 line with gains and scan SEFD --- #
@@ -332,21 +332,27 @@ def avgSEFD( foutCalc, t1, t2, src, t, source, gain, tsys, antList ) :
   return avgSEFD
 
 
-# --- compute SEFD for single or phased ants, for 1 integration; no printed output --- #
+# SEFD returns one SEFD for a single antenna or a phased array, for a single integration
 # ... onegain = 1 x 15 complex array
 # ... onetsys = 1 x 15 real array
+# ... antList = list of antennas
+# ... no printed output from this routine
 #
-def SEFD( onegain, onetsys, antList ) :
+def SEFD( onegain, onetsys, antList, foutCalc ) :
   jyperkNominal = [65.,65.,65.,65.,65.,65.,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34]
   nants = 0
-  sum = 0.
+  sum = 0.+ 0j
+# --- compute SEFD for single or phased ants, for 1 integration; no printed output --- #
   for ant in antList :
     magg = numpy.abs( onegain[ant-1] )
     if ( (magg > 0.1) and (magg < 10.) and (onetsys[ant-1] > 10. ) ) :
       nants += 1
+      #sss = 1./( onegain[ant-1] * math.sqrt( jyperkNominal[ant-1] * onetsys[ant-1] ) )
+      #foutCalc.write("   %.2e %.2e" % (sss.real, sss.imag) )
       sum += 1./( onegain[ant-1] * math.sqrt( jyperkNominal[ant-1] * onetsys[ant-1] ) )
-	      # note that denominator is vector amplitude, not power
+	      # note/ that denominator is vector amplitude, not power
   if (nants > 0) :
+    #foutCalc.write( "  SUM: %.2e %.2e\n" % ( sum.real, sum.imag ) )
     return nants/(numpy.abs(sum) * numpy.abs(sum))  
   else :
     return 0.
@@ -1021,49 +1027,49 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
         if (t[n] > t1) and (t[n] < t2 ) :     # valid integration in this scan
           foutRbyR.write("  %8s %8.4f    %2d %5.2f %4.0f   " % (time[n],t[n],elev[n],tau230[n],rmspath[n] ) ) 
 
-          sL1 = SEFD( gainL[n], tsysL5[n], [1] )
-          sR1 = SEFD( gainR[n], tsysR5[n], [1] )
+          sL1 = SEFD( gainL[n], tsysL5[n], [1], foutCalc )
+          sR1 = SEFD( gainR[n], tsysR5[n], [1], foutCalc )
             # no point in writing record-by-record SEFDs since no valid data during VLBI scans 
 
-          sL5 = SEFD( gainL[n], tsysL5[n], cpList )
+          sL5 = SEFD( gainL[n], tsysL5[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sL5/100.)) )
 
           foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band1R\n" % \
              ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR5 = SEFD( gainR[n], tsysR5[n], cpList )
+          sR5 = SEFD( gainR[n], tsysR5[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sR5/100.)) )
 
           foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band3L\n" % \
              ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sL6 = SEFD( gainL[n], tsysL6[n], cpList )
+          sL6 = SEFD( gainL[n], tsysL6[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sL6/100.)) )
 
           foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band3R\n" % \
              ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR6= SEFD( gainR[n], tsysR6[n], cpList )
+          sR6= SEFD( gainR[n], tsysR6[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sR6/100.)) )
 
           foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band5L\n" % \
              ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sL7 = SEFD( gainL[n], tsysL7[n], cpList )
+          sL7 = SEFD( gainL[n], tsysL7[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sL7/100.)) )
 
           foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band5R\n" % \
              ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR7= SEFD( gainR[n], tsysR7[n], cpList )
+          sR7= SEFD( gainR[n], tsysR7[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sR7/100.)) )
 
           foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band7L\n" % \
              ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sL8 = SEFD( gainL[n], tsysL8[n], cpList )
+          sL8 = SEFD( gainL[n], tsysL8[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sL8/100.)) )
 
           foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band7R\n" % \
              ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR8= SEFD( gainR[n], tsysR8[n], cpList )
+          sR8= SEFD( gainR[n], tsysR8[n], cpList, foutCalc )
           foutRbyR.write("%8.0f " % (100.*round(sR8/100.)) )
 
-          sL6_ideal = SEFD( absgain[n], tsysL6[n], cpList ) 
+          sL6_ideal = SEFD( absgain[n], tsysL6[n], cpList, foutCalc ) 
           foutRbyR.write("   %4.2f\n"  % efficiency( sL6, sL6_ideal ) )
 
       # now print line with average values into foutRbyR
