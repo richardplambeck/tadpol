@@ -251,6 +251,25 @@ def getSource( infile, t ) :
             source.append( a[1] )
             nline = nline + 1
 
+# --- read source names from 'uvindex interval=0.1' log file --- #
+def getFlux( infile, t ) :
+  nline = 0
+  nl = 0
+  flux = []
+  fin = open( infile, "r" )
+  for line in fin:
+    nl += 1
+    if nl > 10  :
+      a = line.split()
+      decHrs = 24. * float(a[0])
+      if ( abs(decHrs - t[nline]) > .0003) or (nline >= len(t)) :
+        print "skipping %s record at UT %s - time not in gains array" % (infile,a[0])
+        continue 
+      else :
+        flux.append( float(a[1]) )
+        nline = nline + 1
+  return flux
+
 def efficiency( s, s_ideal ) :
   if (s > 0.) :
     return s_ideal/s
@@ -286,23 +305,52 @@ def scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gain, defgain, tsys, a
       foutRbyR.write("%8.0f*" % (100.*round(s/100.)) )
   return s
 
-# --- compute SEFD averaged over a scan --- #
+
+# SEFD returns SEFD for a single integration, for 1 antenna or for a phased array
+# ... onegain = 1 x 15 complex array
+# ... onetsys = 1 x 15 real array
+# ... antList = list of antennas
+# no printed or written output
+# antennas with gain of 0 are assumed to have been flagged bad because they were not
+#   pointed at source, or not locked; they add noise, but not signal, to phased sum
+# if all antennas in list have gain of 0, return very large SEFD = 99999.
+#
+def SEFD( onegain, onetsys, antList ) :
+  jyperkNominal = [65.,65.,65.,65.,65.,65.,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34]
+  sum = 0.+ 0j
+  for ant in antList :
+    magg = numpy.abs( onegain[ant-1] )
+    if ( (magg > 0.) and (onetsys[ant-1] > 10. ) ) :
+      sum += 1./( onegain[ant-1] * math.sqrt( jyperkNominal[ant-1] * onetsys[ant-1] ) )
+	      # note/ that denominator is vector amplitude, not power
+  if abs(sum) > 0. :
+    return len(antList)/(numpy.abs(sum) * numpy.abs(sum))  
+  else :
+    return 99999.
+
+# avgSEFD computes SEFD averaged over a scan, for a single correlator window --- #
 # ... t1 and t2 are decimal hrs since UT0, src is source name
 # ... t is (npts x 1) time array, decimal hrs since UT0
 # ... source is (npts x 1) list of source names
 # ... gain is (npts x 15) complex array
 # ... tsys is (npts x 15) real array
-# ... 5/25/15 - writes out gains and tsys for each ant to foutCalc, pointer to e.g. "SEFD_calc.30mar"
-# 
+# ... foutCalc is file containing details of calculation (for skeptics)
+# calling routine should write out info about scan number, scan UT range, correlator window to
+#   file foutCalc; this routine will write out two lines (time + gains + sefd on line 1, tsys
+#   on line 2) to foutCalc
+#
 def avgSEFD( foutCalc, t1, t2, src, t, source, gain, tsys, antList ) : 
   foutCalc.write("\n# t1,t2,src,antList = %.3f, %.3f, %s, %s\n" % (t1,t2,src,antList))
-  foutCalc.write(" UT  ")
+
+  # ... write header for foutCalc section
+  foutCalc.write(" UThrs  ")
   for ant in antList :
     foutCalc.write( "  --- C%2d ---" % ant ) 
   foutCalc.write("\n")
   navg = 0
   avg = 0.
-  # --- process each integration within the time interval --- #
+
+  # ... process each integration within the time interval ... #
   for n in range( 0, len(t) ) :
     if ( (t[n] >= t1) and (t[n] <= t2) and (src == source[n]) ) :
       s = SEFD( gain[n], tsys[n], antList, foutCalc )
@@ -331,31 +379,6 @@ def avgSEFD( foutCalc, t1, t2, src, t, source, gain, tsys, antList ) :
   foutCalc.write("# AVG = %9.0f\n" % avgSEFD )
   return avgSEFD
 
-
-# SEFD returns one SEFD for a single antenna or a phased array, for a single integration
-# ... onegain = 1 x 15 complex array
-# ... onetsys = 1 x 15 real array
-# ... antList = list of antennas
-# ... no printed output from this routine
-#
-def SEFD( onegain, onetsys, antList, foutCalc ) :
-  jyperkNominal = [65.,65.,65.,65.,65.,65.,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34]
-  nants = 0
-  sum = 0.+ 0j
-# --- compute SEFD for single or phased ants, for 1 integration; no printed output --- #
-  for ant in antList :
-    magg = numpy.abs( onegain[ant-1] )
-    if ( (magg > 0.1) and (magg < 10.) and (onetsys[ant-1] > 10. ) ) :
-      nants += 1
-      #sss = 1./( onegain[ant-1] * math.sqrt( jyperkNominal[ant-1] * onetsys[ant-1] ) )
-      #foutCalc.write("   %.2e %.2e" % (sss.real, sss.imag) )
-      sum += 1./( onegain[ant-1] * math.sqrt( jyperkNominal[ant-1] * onetsys[ant-1] ) )
-	      # note/ that denominator is vector amplitude, not power
-  if (nants > 0) :
-    #foutCalc.write( "  SUM: %.2e %.2e\n" % ( sum.real, sum.imag ) )
-    return nants/(numpy.abs(sum) * numpy.abs(sum))  
-  else :
-    return 0.
 
 # --- print phase vs time for each ant --- #
 def phase( time, gain, outfile ) :
