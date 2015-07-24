@@ -365,7 +365,7 @@ def scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gain, defgain, tsys, a
 # no printed or written output
 # antennas with gain of 0 are assumed to have been flagged bad because they were not
 #   pointed at source, or not locked; they add noise, but not signal, to phased sum
-# if all antennas in list have gain of 0, return very large SEFD = 99999.
+# if all antennas in list have gain of 0, return very large SEFD = 9999999.
 #
 def SEFD( onegain, onetsys, antList ) :
   jyperkNominal = [65.,65.,65.,65.,65.,65.,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34,145.34]
@@ -378,7 +378,7 @@ def SEFD( onegain, onetsys, antList ) :
   if abs(sum) > 0. :
     return len(antList)/(numpy.abs(sum) * numpy.abs(sum))  
   else :
-    return 99999.
+    return 9999999.
 
 def testSEFD( glist, tsyslist, antlist ) :
   gnComplex = numpy.zeros( 15, dtype=complex )
@@ -953,10 +953,10 @@ def flux2011( ) :
   print t
 
   # ... retrieve tsys, rmspath, tau230, elev arrays
-  rmspath = getVar( "rmspath", t )
-  tau230 = getVar( "tau230", t )
+  rmspath = getVar( "rmspath.log", t )
+  tau230 = getVar( "tau230.log", t )
   source = getSource ( "uvindex.log", t )
-  elevarray = getVar15( "elev", t )
+  elevarray = getVar15( "elev.log", t )
 
   # ... use elev of C1 as the elevation
   elev = numpy.empty( (len(time)), dtype=float )
@@ -1070,10 +1070,10 @@ def onedayOLD2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] )
       tL = dechrs( timeL[iL] )
       tR = dechrs( timeR[iR] )
       if tL > tR :
-        print "...    > discarding Rgain for time %s" % timeR[iR]   
+        print "...   discarding Rgain for time %s" % (timeR[iR])
         iR = iR + 1
       else :
-        print "...    > discarding Lgain for time %s" % timeL[iL]   
+        print "...   discarding Lgain for time %s" % (timeL[iL])
         iL = iL + 1
   gainLtmp = numpy.array( Lgain )
   gainRtmp = numpy.array( Rgain )
@@ -1280,10 +1280,10 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
         tL = dechrs( timeL[iL] )
         tR = dechrs( timeR[iR] )
         if tL > tR :
-          print "... > discarding Rgain for time %s", timeR[iR]   
+          print "...  discarding Rgain for time %s" % timeR[iR]   
           iR = iR + 1
         else :
-          print "... > discarding Lgain for time %s", timeL[iL]   
+          print "...  discarding Lgain for time %s" % timeL[iL]   
           iL = iL + 1
     gainLtmp = numpy.array( Lgain )
     gainRtmp = numpy.array( Rgain )
@@ -1291,11 +1291,9 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
     
   # rescale gain amps on SgrA, fill in gains on C1 during scans (note: SgrGain reads source.log and axisrms.log)
     print "... fill in SgrA and C1 Lgains"
-    # gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, "Lgains.%s.pdf" % day )
-    gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, None )
+    gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, "Lgains.%s.pdf" % day )
     print "... fill in SgrA and C1 Rgains"
-    # gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, "Rgains.%s.pdf" % day )
-    gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, None )
+    gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, "Rgains.%s.pdf" % day )
 
   # create decimal time array 
     t = numpy.empty( len(time), dtype=float )
