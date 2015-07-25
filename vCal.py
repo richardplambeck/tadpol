@@ -1042,219 +1042,8 @@ def c14( ) :
 # ...             gainR = selfcal gains for RCP, uvrange(20,1000), all sources including SgrA
 #                 TsysL5,tsysR5, etc
 # t1str,t2str is time range to use to derive SgrA gains
-# data are written to 3 different files:
 #
-def onedayOLD2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
-
-  # ... retrieve time and gain arrays
-  print "... retrieving L gains"
-  [timeL,gainLtmp] = getGains( "wideL.vlb" )
-  print "... retrieving R gains"
-  [timeR,gainRtmp] = getGains( "wideR.vlb" )
-
-  # ... drop any time,gain pairs where both L and R gains are not present
-  print "... number of L gains = %d; number of R gains = %d" % ( len(timeL),len(timeR) )
-  time = []
-  iL = 0
-  iR = 0
-  Lgain = []
-  Rgain = []
-  while (iL < len(timeL)) and (iR < len(timeR)) :
-    if timeL[iL] == timeR[iR] :
-      time.append( timeL[iL] )
-      Lgain.append( gainLtmp[iL] )
-      Rgain.append( gainRtmp[iR] )
-      iL = iL + 1
-      iR = iR + 1
-    else :
-      tL = dechrs( timeL[iL] )
-      tR = dechrs( timeR[iR] )
-      if tL > tR :
-        print "...   discarding Rgain for time %s" % (timeR[iR])
-        iR = iR + 1
-      else :
-        print "...   discarding Lgain for time %s" % (timeL[iL])
-        iL = iL + 1
-  gainLtmp = numpy.array( Lgain )
-  gainRtmp = numpy.array( Rgain )
-  print "... after reconciliation, number of L gains = %d; number of R gains = %d" % ( len(gainLtmp),len(gainRtmp) )
-    
-  print "... fill in SgrA and outlier Lgains"
-  gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, "Lgains.%s.pdf" % day )
-  print "... fill in SgrA and outlier Rgains"
-  gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, "Rgains.%s.pdf" % day )
-
-  # ... create decimal time array 
-  t = numpy.empty( len(time), dtype=float )
-  for n in range (0, len(time) ) :
-    t[n] = dechrs( time[n] )
-
-  # ... retrieve tsys, rmspath, tau230, elev arrays
-  print "... retrieve system temperatures"
-  tsysL5 = getVar15( "tsys5L.log", t )
-  tsysR5 = getVar15( "tsys5R.log", t )
-  tsysL6 = getVar15( "tsys6L.log", t )
-  tsysR6 = getVar15( "tsys6R.log", t )
-  tsysL7 = getVar15( "tsys7L.log", t )
-  tsysR7 = getVar15( "tsys7R.log", t )
-  tsysL8 = getVar15( "tsys8L.log", t )
-  tsysR8 = getVar15( "tsys8R.log", t )
-  print "... retrieve rmspath, tau230, sourceName, elevation"
-  rmspath = getVar( "rmspath.log", t )
-  tau230 = getVar( "tau230.log", t )
-  source = getSource ( "source.log", t )
-  elevarray = getVar15( "elev.log", t )
-
-  # ... use elev of C8 as the elevation
-  elev = numpy.empty( (len(time)), dtype=float )
-  for n in range (0, len(time) ) :
-    elev[n] = elevarray[n][7]
-
-  # ... all array lengths should match, otherwise this routine will crash!
-  print "... array lengths: ", len(time), len(gainL), len(gainR), len(tsysL5), len(tsysR5), len(tsysL6), \
-    len(tsysR6), len(rmspath), len(tau230), len(source), len(elev)
-
-  # ... create absgain and default gain files for future use
-  absgain = numpy.empty( (len(time),15), dtype=complex )
-  defgain = numpy.empty( (len(time),15), dtype=complex )
-  jyperk = numpy.ones( 15, dtype=float ) 
-  for n in range (0, len(time)) : 
-    for i in range (0,15) :
-      absgain[n][i] = numpy.abs( gainL[n][i] ) + 1j * 0.
-      defgain[n][i] = jyperk[i] * (1. + 0j)
-  # print "\ndefgains:\n",defgain
-
-  # ... make table of gain vs elev for plotting (use original gains)
-  gainVsElev( elevarray, gainLtmp, "gainVsElev" )
-
-  # ... process the 'summ' file which lists the schedule
-  print "... process summ file"
-  fin = open( "summ", "r" )
-  foutCalc = open( "SEFD_calc."+day, "a" )   # 2 lines per integration, one band; gain, Tsys, SEFD for each record
-  foutRbyR = open( "SEFD_RbyR."+day, "a" )	 # one line per integration, all bands; SEFD values only
-  foutAvg = open( "SEFD_avg."+day, "a" )     # one line per scan, all bands; scan-averaged values only
-
-  foutAvg.write("\n")
-  foutAvg.write(" day scan   source   UTstart  el   tau path      Cr-L     Cr-R    Cp-1L    Cp-1R    Cp-3L    Cp-3R    Cp-5L    Cp-5R    Cp-7L    Cp-7R  pheff\n")
-
-  # --- process each scan --- #
-  for line in fin :
-    if not line.startswith("#") :
-      a = line.split()
-      if a[4] != "vlb" :
-        print "ERROR - col 5 is not 'vlb'"
-      src = a[0]
-      utStart = a[1]
-      utStop = a[2]
-      scanname = a[7]
-      print " "
-      print scanname, src
-      foutCalc.write("#\n# =======================================================\n")
-      foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s \n" % \
-         ( getDayNo(day), scanname, src, utStart, utStop) ) 
-      foutRbyR.write("#\n")
-      foutRbyR.write("#    day %s, scan %s, source %s, UT %8s -- %8s \n" % \
-         ( getDayNo(day), scanname, src, utStart, utStop) ) 
-      foutRbyR.write("#\n#    UT      UThrs     el  tau  path   Cp-1L    Cp-1R    Cp-3L    Cp-3R    Cp-5L    Cp-5R    Cp-7L    Cp-7R   pheff\n")
-
-      t1 = dechrs( utStart ) - .0028	 # start - 10 sec
-      t2 = dechrs( utStop ) + .0028      # stop + 10 sec
-      for n in range(0,len(time)) :
-
-        if (t[n] > t1) and (t[n] < t2 ) :     # valid integration in this scan
-          foutRbyR.write("  %8s %8.4f    %2d %5.2f %4.0f   " % (time[n],t[n],elev[n],tau230[n],rmspath[n] ) ) 
-
-          sL1 = SEFD( gainL[n], tsysL5[n], [1], foutCalc )
-          sR1 = SEFD( gainR[n], tsysR5[n], [1], foutCalc )
-            # no point in writing record-by-record SEFDs since no valid data during VLBI scans 
-
-          sL5 = SEFD( gainL[n], tsysL5[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sL5/100.)) )
-
-          foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band1R\n" % \
-             ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR5 = SEFD( gainR[n], tsysR5[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sR5/100.)) )
-
-          foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band3L\n" % \
-             ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sL6 = SEFD( gainL[n], tsysL6[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sL6/100.)) )
-
-          foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band3R\n" % \
-             ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR6= SEFD( gainR[n], tsysR6[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sR6/100.)) )
-
-          foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band5L\n" % \
-             ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sL7 = SEFD( gainL[n], tsysL7[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sL7/100.)) )
-
-          foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band5R\n" % \
-             ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR7= SEFD( gainR[n], tsysR7[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sR7/100.)) )
-
-          foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band7L\n" % \
-             ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sL8 = SEFD( gainL[n], tsysL8[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sL8/100.)) )
-
-          foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band7R\n" % \
-             ( getDayNo(day), scanname, src, utStart, utStop) ) 
-          sR8= SEFD( gainR[n], tsysR8[n], cpList, foutCalc )
-          foutRbyR.write("%8.0f " % (100.*round(sR8/100.)) )
-
-          sL6_ideal = SEFD( absgain[n], tsysL6[n], cpList, foutCalc ) 
-          foutRbyR.write("   %4.2f\n"  % efficiency( sL6, sL6_ideal ) )
-
-      # now print line with average values into foutRbyR
-      elevavg = avgVar( t1, t2, t, elev )
-      tau230avg = avgVar( t1, t2, t, tau230 )
-      rmspathavg = avgVar( t1, t2, t, rmspath )
-      foutRbyR.write("# ------ AVG ------   ")
-      foutRbyR.write(" %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) ) 
-
-      # ... print SEFD for C1 L and R
-      sLc1 = scanSEFD( foutCalc, None, t1-.1, t2+.1, src, t, source, gainL, defgain, tsysL5, [1] ) 
-      sRc1 = scanSEFD( foutCalc, None, t1-.1, t2+.1, src, t, source, gainR, defgain, tsysR5, [1] ) 
-
-      # ... print SEFDs for phased array L and phased array R, bands 5,6,7,8
-      foutCalc.write("#    day %s, scan %s, source %s, UT %8s -- %8s,  band1L\n" % \
-         ( getDayNo(day), scanname, src, utStart, utStop) ) 
-      sL5 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL5, cpList ) 
-
-      sR5 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR5, cpList ) 
-      sL6 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL6, cpList ) 
-      sR6 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR6, cpList ) 
-      sL7 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL7, cpList ) 
-      sR7 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR7, cpList ) 
-      sL8 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainL, defgain, tsysL8, cpList ) 
-      sR8 = scanSEFD( foutCalc, foutRbyR, t1, t2, src, t, source, gainR, defgain, tsysR8, cpList ) 
-
-      # all efficiencies are the same, so only write out the one for Cp-6L
-      foutCalc.write("#\n# ==== compute SEFD for perfect phasing =====\n")
-      sL6_ideal = avgSEFD( foutCalc, t1, t2, src, t, source, absgain, tsysL6, cpList ) 
-      pheff = efficiency( sL6, sL6_ideal )
-      foutRbyR.write("   %4.2f "  % pheff )
-      foutRbyR.write("\n")
-  
-      # write one-line summary to scanSEFD file
-      foutAvg.write(" %3s %4s %8s  %8s" % ( getDayNo(day), scanname, src, utStart) )
-      foutAvg.write("  %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) )  
-      foutAvg.write("%8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f %8.0f   %4.2f\n" % \
-        ( 100.*round(sLc1/100.), 100.*round(sRc1/100.), 100*round(sL5/100.), \
-        100.*round(sR5/100.), 100.*round(sL6/100.), 100.*round(sR6/100.), 100.*round(sL7/100.), \
-        100.*round(sR7/100.), 100.*round(sL8/100.), 100.*round(sR8/100.), pheff ) )
-
-  fin.close()  
-  foutCalc.close()
-  foutRbyR.close()
-  foutAvg.close()
-
-#
-def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
+def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], makeGainPlots=False ) :
 
   # retrieve time and gain arrays
     print "... retrieving L gains"
@@ -1291,9 +1080,14 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
     
   # rescale gain amps on SgrA, fill in gains on C1 during scans (note: SgrGain reads source.log and axisrms.log)
     print "... fill in SgrA and C1 Lgains"
-    gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, "Lgains.%s.pdf" % day )
+    plotName = None
+    if makeGainPlots :
+      plotName = "Lgains.%s.pdf" % day
+    gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, plotName )
     print "... fill in SgrA and C1 Rgains"
-    gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, "Rgains.%s.pdf" % day )
+    if makeGainPlots :
+      plotName = "Rgains.%s.pdf" % day
+    gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, plotName )
 
   # create decimal time array 
     t = numpy.empty( len(time), dtype=float )
@@ -1334,6 +1128,7 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
     foutCalc = open( "SEFD_calc."+day, "a" )   # 2 lines per integration, one band; gain, Tsys, SEFD for each record
     foutRbyR = open( "SEFD_RbyR."+day, "a" )	 # one line per integration, all bands; SEFD values only
     foutAvg = open( "SEFD_avg."+day, "a" )     # one line per scan, all bands; scan-averaged values only
+    foutSummary = open( "SEFD_summary."+day, "a" )     # one line per scan, Cr and Cp avgSEFD; Cp 10-90 percentile SEFDs
 
     foutAvg.write("\n")
     foutAvg.write("# day scan    source   UTstart  el   tau path      Cr-L     Cr-R     Cp-1L    Cp-1R    Cp-3L    Cp-3R    Cp-5L    Cp-5R    Cp-7L    Cp-7R   pheff\n")
@@ -1398,13 +1193,35 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15] ) :
         foutRbyR.write(" %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) ) 
         foutAvg.write("  %3s %4s  %8s  %8s" % ( getDayNo(day), scanname, src, utStart) )
         foutAvg.write("  %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) )  
+        foutSummary.write("  %3s %4s  %8s  %8s" % ( getDayNo(day), scanname, src, utStart) )
+        foutSummary.write("  %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) )  
         for j in range(0,10) :
           foutRbyR.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
           foutAvg.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
         foutRbyR.write("   %4.2f\n"  % efficiency( ARbyR[4][-1], idealSEFD[-1] ) )
         foutAvg.write("   %4.2f\n"  % efficiency( ARbyR[4][-1], idealSEFD[-1] ) )
 
+      # for plot of SEFD range, reorder by SEFD, then find 10 and 90 percentile values
+        meanCr = 0.5 * ( ARbyR[0][-1] + ARbyR[1][-1] )
+          # avg Cr SEFD for L and R, over the entire scan - one number
+        meanSEFD = numpy.mean( ARbyR[2:], axis=0 ) 
+          # avg Cp SEFD for the 8 windows (4 L, 4 R) for each 10 sec record - an array
+        sortedCpSEFD = numpy.sort( meanSEFD[0:-1] )
+          # meanSEFD sorted from lowest to highest, omitting last value, which is the avg
+        if len(sortedCpSEFD) > 2 :
+          nn1 = int( round(0.1 * len(sortedCpSEFD)) )
+          nn2 = int( round(0.9 * len(sortedCpSEFD)) )
+          print "%d %d  %.0f  %.0f %.0f %.0f" % ( nn1,nn2,meanCr,meanSEFD[-1],sortedCpSEFD[nn1-1], sortedCpSEFD[nn2-1])
+          foutSummary.write("   %8.0f  %8.0f %8.0f %8.0f  %6.4f  %6.4f %6.4f %6.4f\n" % \
+            (meanCr, meanSEFD[-1], sortedCpSEFD[nn1-1], sortedCpSEFD[nn2-1], numpy.log10(meanCr), \
+            numpy.log10(meanSEFD[-1]), numpy.log10(sortedCpSEFD[nn1-1]), numpy.log10(sortedCpSEFD[nn2-1]) ) )
+              # printing logs for possible logarithmic plot
+        else :
+          foutSummary.write(" 0. 0. 0. 0. 0. 0. 0. 0.\n")
+
+
     fin.close()  
     foutCalc.close()
     foutRbyR.close()
     foutAvg.close()
+    foutSummary.close()
