@@ -10,6 +10,7 @@ import numpy
 import subprocess
 import shlex
 import timePlots
+import datetime
 
 # --- ants phased in 2013
 # antList = [2,4,5,6,8,9,13,14]
@@ -114,7 +115,7 @@ def smoothGainAmps( time, gainComplex, hrs=1. ) :
 # ... (t1str, t2str) is time interval to use for computing gain amp for Sgr
 # ... C1amp = override value of C1 gain amp to use if desired
 #
-def SgrGain( time, gainComplex, t1str, t2str, C1amp=None, plotName="gain.pdf" ) :
+def SgrGain( time, gainComplex, t1str, t2str, C1amp=None, plotName="gain.pdf", foutCalc=None ) :
 
     outGain = numpy.array(gainComplex)
       # ... default is to leave gain alone
@@ -131,6 +132,7 @@ def SgrGain( time, gainComplex, t1str, t2str, C1amp=None, plotName="gain.pdf" ) 
   # derive median gain over the whole night, omitting crazy values
     print "... derive median gain amps over the whole night, omitting outliers and SgrA"
     print "... derive SgrA gain amplitudes from medians over time range (%s,%s)" % (t1str,t2str)
+    foutCalc.write("# derive SgrA gain amplitudes from medians over time range (%s,%s)\n" % (t1str,t2str))
     gAmps = numpy.abs( gainComplex )
       # ... create array of gain amplitudes
     for n in range( 0, len(time) ) :
@@ -143,9 +145,11 @@ def SgrGain( time, gainComplex, t1str, t2str, C1amp=None, plotName="gain.pdf" ) 
       # ... these are the MEDIAN gain amplitudes for the entire night, ignoring masked values
     if C1amp :
       print "... using override gain amp of  %.3f for C1, instead of computed median %.3f" % \
-        C1amp, medianAmp[0]
+      foutCalc.write( "#\n# using override gain amp of  %.3f for C1, instead of computed median %.3f\n" % \
+        C1amp, medianAmp[0] )
       medianAmp[0] = C1amp
     print "\nmedian gains:  ", numpy.array_str( medianAmp, precision=3, max_line_width=200 )
+    foutCalc.write("# median gains:   %s\n" % numpy.array_str( medianAmp, precision=3, max_line_width=200 ) )
 
   # derive SgrA gains over the interval (t1str,t2str)
     t1 = dechrs( t1str )
@@ -163,6 +167,7 @@ def SgrGain( time, gainComplex, t1str, t2str, C1amp=None, plotName="gain.pdf" ) 
       # for C1 we have very few gain values, so use medianAmp for Sgr as well
     print "SgrA gains:    ", numpy.array_str( SgrAmp, precision=3, max_line_width=200 )
     print " "
+    foutCalc.write("# Sgr gains:      %s\n#\n" % numpy.array_str( medianAmp, precision=3, max_line_width=200 ) )
 
   # now rescale amplitudes of SgrA gains, fill in C1 gain during scans
     msk = numpy.ma.getmask( gAmpsMasked )
@@ -1078,16 +1083,31 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
     gainRtmp = numpy.array( Rgain )
     print "... after reconciliation, number of L gains = %d; number of R gains = %d" % ( len(gainLtmp),len(gainRtmp) )
     
+  # open output files, label with current date,time so we can keep track of old vs new ones
+    foutCalc = open( "SEFD_calc."+day, "a" )   # 2 lines per integration, one band; gain, Tsys, SEFD for each record
+    foutRbyR = open( "SEFD_RbyR."+day, "a" )	 # one line per integration, all bands; SEFD values only
+    foutAvg = open( "SEFD_avg."+day, "a" )     # one line per scan, all bands; scan-averaged values only
+    foutSummary = open( "SEFD_summary."+day, "a" )     # one line per scan, Cr and Cp avgSEFD; Cp 10-90 percentile SEFDs
+
+    nowStr = datetime.datetime.now().strftime("%m/%d/%Y %H:%M")
+    foutAvg.write("# [vCal output %s]\n#\n" % nowStr )
+    foutCalc.write("# [vCal output %s]\n" % nowStr )
+    foutRbyR.write("# [vCal output %s]\n" % nowStr )
+    foutSummary.write("# [vCal output %s]\n" % nowStr )
+    foutAvg.write("# day scan    source   UTstart  el   tau path      Cr-L     Cr-R     Cp-1L    Cp-1R    Cp-3L    Cp-3R    Cp-5L    Cp-5R    Cp-7L    Cp-7R   pheff\n")
+
   # rescale gain amps on SgrA, fill in gains on C1 during scans (note: SgrGain reads source.log and axisrms.log)
     print "... fill in SgrA and C1 Lgains"
     plotName = None
     if makeGainPlots :
       plotName = "Lgains.%s.pdf" % day
-    gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, plotName )
+    foutCalc.write("#\n# Lgains\n" )
+    gainL = SgrGain( time, gainLtmp, t1str, t2str, C1gain, plotName, foutCalc )
     print "... fill in SgrA and C1 Rgains"
     if makeGainPlots :
       plotName = "Rgains.%s.pdf" % day
-    gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, plotName )
+    foutCalc.write("#\n# Rgains\n" )
+    gainR = SgrGain( time, gainRtmp, t1str, t2str, C1gain, plotName, foutCalc )
 
   # create decimal time array 
     t = numpy.empty( len(time), dtype=float )
@@ -1125,13 +1145,7 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
   # process the 'summ' file which lists the schedule
     print "... process summ file"
     fin = open( "summ", "r" )
-    foutCalc = open( "SEFD_calc."+day, "a" )   # 2 lines per integration, one band; gain, Tsys, SEFD for each record
-    foutRbyR = open( "SEFD_RbyR."+day, "a" )	 # one line per integration, all bands; SEFD values only
-    foutAvg = open( "SEFD_avg."+day, "a" )     # one line per scan, all bands; scan-averaged values only
-    foutSummary = open( "SEFD_summary."+day, "a" )     # one line per scan, Cr and Cp avgSEFD; Cp 10-90 percentile SEFDs
 
-    foutAvg.write("\n")
-    foutAvg.write("# day scan    source   UTstart  el   tau path      Cr-L     Cr-R     Cp-1L    Cp-1R    Cp-3L    Cp-3R    Cp-5L    Cp-5R    Cp-7L    Cp-7R   pheff\n")
 
   # process each scan
     for line in fin :
@@ -1173,7 +1187,7 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-7R', t, gainR, tsysR8, cpList ) )
         
       # compute phasing efficiency for band6L, assume it is about the same for other bands
-        idealSEFD = AscanSEFD( foutCalc, t1, t2, 'Cp-6L-ideal', t, absgain, tsysL6, cpList )
+        idealSEFD = AscanSEFD( foutCalc, t1, t2, 'Cp-3L-ideal', t, absgain, tsysL6, cpList )
 
       # write record-by-record summary, all bands on one line     
         i = 0    # index for ARbyR arrays, which cover only (t1,t2), hence are shorter
@@ -1212,7 +1226,7 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
           nn1 = int( round(0.1 * len(sortedCpSEFD)) )
           nn2 = int( round(0.9 * len(sortedCpSEFD)) )
           print "%d %d  %.0f  %.0f %.0f %.0f" % ( nn1,nn2,meanCr,meanSEFD[-1],sortedCpSEFD[nn1-1], sortedCpSEFD[nn2-1])
-          foutSummary.write("   %8.0f  %8.0f %8.0f %8.0f  %6.4f  %6.4f %6.4f %6.4f\n" % \
+          foutSummary.write(" %8.0f  %8.0f %8.0f %8.0f    %6.4f   %6.4f %6.4f %6.4f\n" % \
             (meanCr, meanSEFD[-1], sortedCpSEFD[nn1-1], sortedCpSEFD[nn2-1], numpy.log10(meanCr), \
             numpy.log10(meanSEFD[-1]), numpy.log10(sortedCpSEFD[nn1-1]), numpy.log10(sortedCpSEFD[nn2-1]) ) )
               # printing logs for possible logarithmic plot
@@ -1225,3 +1239,33 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
     foutRbyR.close()
     foutAvg.close()
     foutSummary.close()
+
+def makeSEFDplot( infile, outfile ) :
+  fin = open( infile, "r" )
+  fout = open( outfile, "w" )
+  for line in fin :
+    a = line.split()
+    col = 1
+    if (a[2] == "SGRA" ) : col = 2
+    if (a[2] == "M87" ) : col = 4
+    fout.write("move %s %s\n" % (a[11],a[1]) )
+    fout.write("color %d\n" % col)
+    fout.write("symbol 0\n")
+    fout.write("dot\n")
+    fout.write("move %s %s\n" % (a[12],a[1]) )
+    fout.write("symbol 16\n" )
+    fout.write("dot\n")
+    fout.write("move %s %s\n" % (a[13],a[1]) )
+    fout.write("draw %s %s\n" % (a[14],a[1]) )
+    fout.write("expand .8\n")
+    fout.write("move 6.1 %.2f\n" % (float(a[1])+.5) )
+    fout.write("putlabel 0 %s\n" % a[1])
+    fout.write("move 6.5 %.2f\n" % (float(a[1])+.5) )
+    fout.write("putlabel 0 %s\n" % a[3])
+    fout.write("move 7.2 %.2f\n" % (float(a[1])+.5) )
+    fout.write("putlabel 0 %s\n" % a[2])
+    fout.write("expand 1\n")
+    fout.write("color 1\n")
+  fin.close()
+  fout.close()
+   
