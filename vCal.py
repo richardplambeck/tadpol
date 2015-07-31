@@ -211,7 +211,7 @@ def getVar30( infile, t ) :
       a = line.split()
       if ( len(a) == 6) and (nline < len(t)) : 
         # print a[1], t[nline]
-        if ( (nline > len(t)) or (abs(dechrs(a[1]) - t[nline]) > .0008)) :
+        if ( (nline >= len(t)) or (abs(dechrs(a[1]) - t[nline]) > .0008)) :
           #print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
           nskip = nskip + 1
         else :
@@ -244,7 +244,10 @@ def getVar15( infile, t ) :
       a = line.split()
       if ( len(a) == 6) : 
         # print a[1], t[nline]
-        if ( (nline > len(t)) or (abs(dechrs(a[1]) - t[nline]) > .0008)) :
+        if nline >= len(t) :
+          # print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
+          nskip = nskip + 1 
+        elif abs(dechrs(a[1]) - t[nline]) > .0008 :
           # print "skipping %s record at UT %s - time not in gains array" % (infile,a[1])
           nskip = nskip + 1 
         else :
@@ -274,7 +277,7 @@ def getVar( infile, t ) :
   for line in fin:
     if ( not line.startswith("#") ) :
       a = line.split()
-      if ( abs(dechrs(a[1]) - t[nline]) > .0008) :
+      if ( nline >= len(t) ) or ( abs(dechrs(a[1]) - t[nline]) > .0008 ) :
         # print "skipping %s record at UT %s = %.5f; next gains time = %.5f" % (infile,a[1],dechrs(a[1]),t[nline])
         nskip = nskip + 1
       else :
@@ -1179,12 +1182,16 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cr-R', t, gainR, tsysL5, [1] ) )
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-1L', t, gainL, tsysL5, cpList ) )
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-1R', t, gainR, tsysR5, cpList ) )
+          # comment out for 21,22mar2015
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-3L', t, gainL, tsysL6, cpList ) )
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-3R', t, gainR, tsysR6, cpList ) )
+          # comment out for 21,22mar2015
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-5L', t, gainL, tsysL7, cpList ) )
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-5R', t, gainR, tsysR7, cpList ) )
+          # comment out for 21,22mar2015
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-7L', t, gainL, tsysL8, cpList ) )
         ARbyR.append( AscanSEFD( foutCalc, t1, t2, 'Cp-7R', t, gainR, tsysR8, cpList ) )
+          # comment out for 21,22mar2015
         
       # compute phasing efficiency for band6L, assume it is about the same for other bands
         idealSEFD = AscanSEFD( foutCalc, t1, t2, 'Cp-3L-ideal', t, absgain, tsysL6, cpList )
@@ -1194,8 +1201,18 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
         for n in range(0,len(time)) :
           if (t[n] > t1) and (t[n] < t2 ) :     # valid integration in this scan
             foutRbyR.write("  %8s %8.4f    %2d %5.2f %4.0f   " % (time[n],t[n],elev[n],tau230[n],rmspath[n] ) ) 
+
+          # this is the normal code
             for j in range(0,10) :
               foutRbyR.write("%8.0f " % (100.*round(ARbyR[j][i]/100.)) )
+
+          # code below is ony for 21,22mar2015
+            # for j in range(0,2) :
+            #   foutRbyR.write("%8.0f " % (100.*round(ARbyR[j][i]/100.)) )
+            # for j in range(2,6) :
+            #   foutRbyR.write("%8.0f " % (100.*round(ARbyR[j][i]/100.)) )
+            #   foutRbyR.write("    ---- " )
+
             foutRbyR.write("   %4.2f\n"  % efficiency( ARbyR[4][i], idealSEFD[i] ) )
             i = i + 1
 
@@ -1209,9 +1226,22 @@ def oneday2015( day, t1str, t2str, C1gain=None, cpList=[2,3,4,5,6,13,14,15], mak
         foutAvg.write("  %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) )  
         foutSummary.write("  %3s %4s  %8s  %8s" % ( getDayNo(day), scanname, src, utStart) )
         foutSummary.write("  %2d %5.2f %4.0f   " % (elevavg,tau230avg,rmspathavg ) )  
+
+      # this is the normal code
         for j in range(0,10) :
           foutRbyR.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
           foutAvg.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
+
+      # this is the code for 21,22 mar 2015 when RCP beamformers were misphased  
+        #for j in range(0,2) :
+        #  foutRbyR.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
+        #  foutAvg.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
+        #for j in range(2,6) :
+        #  foutRbyR.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
+        #  foutRbyR.write("    ---- " )
+        #  foutAvg.write("%8.0f " % (100.*round(ARbyR[j][-1]/100.)) )
+        #  foutAvg.write("    ---- " )
+
         foutRbyR.write("   %4.2f\n"  % efficiency( ARbyR[4][-1], idealSEFD[-1] ) )
         foutAvg.write("   %4.2f\n"  % efficiency( ARbyR[4][-1], idealSEFD[-1] ) )
 
