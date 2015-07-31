@@ -261,16 +261,75 @@ def plotHA( infile="List2" ) :
        fig.plot( times, yoff, linewidth=5, color=color )
   fin.close()
   pyplot.draw()
-  
 
 # used by vCal to plot smoothed gains
-def plotGains( t, g1, g2 ) :
+# g1 is original gain
+# g2 is new gain
+def plotGains( t, g1, g2, plotName ) :
+  nrows = 2
+  ncols = 2
   pyplot.clf()
-  pyplot.ion()
+  pyplot.ioff()
+  pp = PdfPages( plotName )
+  nplot = 1
   for nant in range(1,16) :
-    fig=pyplot.subplot(5,3,nant)
-    pyplot.ylim( 0., 3.)
+    if nplot > nrows*ncols :
+      pyplot.suptitle( plotName, size=8 )
+      pyplot.savefig( pp, format='pdf' )
+      nplot = 1
+      pyplot.clf()
+    fig=pyplot.subplot( nrows, ncols, nplot )
+    fig.tick_params( axis='both', which='major', labelsize=8)
+    if nplot > 2 :
+      pyplot.xlabel( 'UT hrs', fontsize=8 )
+    if nplot == 1 or nplot == 3 :
+      pyplot.ylabel( 'gain correction (sqrt Jy/K)', fontsize=8 )
+    pyplot.ylim( -0.1, 3.1)
     fig.plot( t, g1[:,[nant-1]], "r,")
     fig.plot( t, g2[:,[nant-1]], "b," )
+    # fig.plot( t, g3[ nant-1 ], "-" )
+    fig.text( .05, .9, "C%d" % nant, transform=fig.transAxes )
+    nplot = nplot + 1
   #pyplot.draw()
-  pyplot.show()
+  if (nplot > 1) :
+    pyplot.suptitle( plotName, size=8 )
+    pyplot.savefig( pp, format='pdf' )
+  pp.close()
+
+def plotSEFD( infile, label ) :
+    fin = open( infile, "r" ) 
+    pyplot.clf()
+    pyplot.ion()
+    fig = pyplot.subplot(1,1,1)
+    for line in fin :
+      if not line.startswith('#') :
+        a = line.split()
+        color = 'black'
+        if (a[2] == "SGRA" ) : color = 'red'
+        if (a[2] == "M87" ) :  color = 'blue'
+        t = datetime.datetime.strptime( a[3], "%H:%M:%S") 
+        tt = mpdates.date2num(t)
+        Cr = float(a[7]) 
+        Cp = float(a[8]) 
+        Cplow = float(a[9]) 
+        Cphigh = float(a[10]) 
+        fig.plot_date( tt, Cp, marker="o", color=color, linewidth=3 )
+        fig.plot_date( tt, Cr, marker="s", fillstyle='full', alpha=0.5, color=color )
+        fig.plot_date( [tt,tt], [Cplow,Cphigh], "-", linewidth=2, color=color )
+    fin.close()
+    fig.xaxis.set_major_locator(mpdates.HourLocator())
+    fig.xaxis.set_major_formatter(mpdates.DateFormatter( "%H" ) )
+    fig.set_yscale("log")
+    tmin = mpdates.date2num( datetime.datetime.strptime( "00:00", "%H:%M") )
+    tmax = mpdates.date2num( datetime.datetime.strptime( "19:00", "%H:%M") )
+    fig.set_xlim( tmin-.02,tmax )
+    fig.set_ylim( 1.e3,1.e6 )
+    fig.text( .5, .94, label, verticalalignment="center", transform=fig.transAxes, \
+      horizontalalignment="center", fontsize=18 )
+    
+    fig.grid()
+    pyplot.xlabel( "UT (hrs)" )
+    pyplot.ylabel( "SEFD (Jy)" )
+    pyplot.show()
+   
+ 
