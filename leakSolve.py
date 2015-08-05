@@ -13,6 +13,7 @@ import subprocess
 import shlex
 import string
 import sys
+import struct
 
 # this is a collection of routines (not objects!) that solve for or restore leakages;
 #    leakages are written to or read from a disk file
@@ -70,7 +71,7 @@ def copytoSStmp( visFile, selectStr ) :
   p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
   time.sleep(1)
-  p= subprocess.Popen( ( shlex.split('uvcat vis=%s select=%s out=sstmp options=nopol' \
+  p=subprocess.Popen( ( shlex.split('uvcat vis=%s select=%s out=sstmp options=nopol' \
      % (visFile, selectStr) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
   result = p.communicate()[0]
@@ -279,17 +280,27 @@ def restoreLk( LkFile, lineStr, outfile ) :
   if failed :
     print "FAILED: could not find %s in file %s" % (lineStr,LkFile)
   else :
-    leakStr = ""
-    for n in range(0,60) :
-      if n == 0 :
-        leakStr = "%.3f" % lk[0]
-      else :
-        leakStr = leakStr + ",%.3f" % (lk[n])
+    leakStr = struct.pack( ">ii", 7, 0 )   # this is the preamble for all leakage items
+    for i in range(0,60) :
+      leakStr = leakStr + struct.pack( ">f", lk[i] )
+    fout = open( outfile+"/leakage", "wb" )
+    fout.write( leakStr )
+    fout.close()
+
+    # ---- writeleak no longer works, so had to replace this with code above ---- #
+    # leakStr = ""
+    # for n in range(0,60) :
+    #   if n == 0 :
+    #     leakStr = "%.3f" % lk[0]
+    #   else :
+    #     leakStr = leakStr + ",%.3f" % (lk[n])
     #print "leakStr=%s" % leakStr 
-    p= subprocess.Popen( ( shlex.split('/fringe2/plambeck/pol/tadpol/writeleak vis=%s leak=%s' % \
-     ( outfile, leakStr ) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
-    result = p.communicate()[0]
-    if (len(result) > 1) : print result 
+    # p= subprocess.Popen( ( shlex.split('/fringe2/plambeck/pol/tadpol/writeleak vis=%s leak=%s' % \
+    # ( outfile, leakStr ) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT) 
+    # result = p.communicate()[0]
+    # if (len(result) > 1) : print result 
+    # -------------------------------------------------------------------------- #
+
   return [fstart,fstop]
 
 # make table of D_R and D_L for the phased sum of ants in antList (or for single ant)
