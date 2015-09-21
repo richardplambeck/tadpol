@@ -1456,18 +1456,18 @@ def plateTrans( fGHz, npar, nperp, angIdeg=45, tcm=1., alpha=0., tanDelta=0. ) :
     ampRperp = ampRperp + tperp * tprimeperp * rprimeperp * pow(rprimeperp*rprimeperp,m-1) * numpy.exp(-2.*m*attn + 1.j*m*delta2 )
   return [ ampTpar, ampTperp, ampRpar, ampRperp ]
 
-def doit2( angIdeg=45., npar=0., nperp=0., fGHz0=220. ) :
+def doit2( angIdeg=45., npar=0., nperp=0., fGHz0=220., tcm=0.3755 ) :
   fout = open("plateTrans", "w" )
   if npar==0. :
     npar,nperp = nsapphire( fGHz0 )
   # print "using npar = %.3f, nperp = %.3f" % (npar,nperp)
 
-
   fout.write("# angIdeg = %.2f\n" % angIdeg )
-  fout.write("# using npar = %.3f, nperp = %.3f\n" % (npar,nperp))
+  fout.write("# using npar = %.3f, nperp = %.3f, tcm = %.3f\n" % (npar,nperp,tcm))
   fout.write("# fGHz     Tpar    Rpar   Apar    Tperp   Rperp   Aperp\n")
   for fGHz in numpy.arange(fGHz0-10.,fGHz0+10.005,.005) :
-     ampTpar,ampTperp,ampRpar,ampRperp = plateTrans( fGHz, npar, nperp, angIdeg=angIdeg, alphaO=0.1, alphaE=0.1  )
+     # ampTpar,ampTperp,ampRpar,ampRperp = plateTrans( fGHz, npar, nperp, angIdeg=angIdeg, alphaO=0.1, alphaE=0.1  )
+     ampTpar,ampTperp,ampRpar,ampRperp = plateTrans( fGHz, npar, nperp, tcm=tcm, angIdeg=angIdeg  )
      Tpar = ampTpar*ampTpar.conjugate()
      Tperp = ampTperp*ampTperp.conjugate()
      Rpar = ampRpar*ampRpar.conjugate()
@@ -2146,3 +2146,78 @@ def doit6( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None, 
 
 def tanD (fGHz, alpha) :
   print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
+
+# average together appropriate data, compute temperature increase
+def processTsysFile( file ) :
+  thot = 291.
+  tcold = 80.
+  keywordList = [ "P1", "P2", "P3", "P4", "P5", "P6", "zotefoam", "rexolite" ]
+  for i in range(1,13) :
+    keywordList.append( "pos%d" % i )
+  labelList = [ "_P5avg" ]
+  nval = [ 0 ]
+  hot = [ 0. ]
+  cold = [ 0. ]
+
+  fin = open( file, "r" )
+  for line in fin :
+    if line.startswith("#") :
+      newlabel = ""
+      for word in keywordList :
+        if word in line :
+          if (word == "pos1") and (("pos10" in line) or ("pos11" in line) or ("pos12" in line)) :
+            continue
+          else :
+            newlabel = newlabel + "_" + word 
+        
+    else :
+      if not newlabel in labelList :
+        labelList.append( newlabel )
+        nval.append( 0 )
+        hot.append( 0. )
+        cold.append( 0. )
+      a = line.split()
+      for n,label in enumerate( labelList ) :
+        if newlabel == label or ((label == "_P5avg") and ("P5" in newlabel)):
+          nval[n] = nval[n] + 1
+          hot[n] = hot[n] + float(a[10])
+          cold[n] = cold[n] + float(a[11])
+  fin.close()
+  
+  fout = open( file+".summary", "w" )
+  fout.write( "# output of pol.processTsysFile( %s )\n" % file )
+  fout.write( "# using thot = %.1f, tcold = %.1f\n" % (thot,tcold))
+
+  for n in range(0,len(hot)) :
+    hot[n] = hot[n]/nval[n]
+    cold[n] = cold[n]/nval[n]
+
+  for n,label in enumerate(labelList) :
+    if label == "_P6" :
+      trcvr = cold[n] * (thot-tcold)/(hot[n]-cold[n]) - tcold 
+      hotref = hot[n]
+      gain = (thot-tcold)/(hot[n]-cold[n])
+      print " trcvr = %.2f" % trcvr
+      fout.write("# trcvr = %.2f K from P6\n#\n" % trcvr )
+
+  fout.write( "#   label     nvals   Phot(uW)  Pcold(uW)  delT  del_T_scaled\n") 
+  for n,label in enumerate(labelList) :
+    textra1 = cold[n] * gain - tcold - trcvr
+    textra2 = cold[n] * gain * hot[n]/hotref - tcold - trcvr
+    print " %13s  %2d  %8.5f  %8.5f  %6.2f  %6.2f" % ( label[1:], nval[n], hot[n], cold[n], textra1, textra2 )
+    fout.write(" %13s  %2d  %8.5f  %8.5f  %6.2f  %6.2f\n" % ( label[1:], nval[n], hot[n], cold[n], textra1, textra2 ) )
+  
+def T_vs_Az() :
+  fout = open("T_vs_az", "w")
+  for npos in range(1,13) :
+    fout.write(" %2d" % npos)
+    label = "pos%d" % npos
+    for freq in [ 100, 110, 220, 230, 240, 250 ] :
+      fin = open( "tsys.%d.summary" % freq, "r" ) 
+      for line in fin :
+        a = line.split()
+        if a[0].endswith(label) : 
+          fout.write("  %s" % a[4] )
+      fin.close()
+    fout.write("\n")
+  fout.close()
