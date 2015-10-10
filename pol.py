@@ -2148,37 +2148,43 @@ def tanD (fGHz, alpha) :
   print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
 
 # average together appropriate data, compute temperature increase
+# note: this file may need to be hacked depending on how we processed the data
 def processTsysFile( file ) :
   thot = 291.
   tcold = 80.
-  keywordList = [ "P1", "P2", "P3", "P4", "P5", "P6", "zotefoam", "rexolite" ]
+  # keywordList = [ "P1", "P2", "P3", "P4", "P5", "P6", "zotefoam", "rexolite", "0deg", "30deg", "60deg", "90deg" ]
+  keywordList = [ "p1", "p2", "p3", "p4", "p5", "p6", "zotefoam", "rexolite", "0deg", "30deg", "60deg", "90deg" ]
   for i in range(1,13) :
     keywordList.append( "pos%d" % i )
-  labelList = [ "_P5avg" ]
+  labelList = [ "_p5avg" ]
   nval = [ 0 ]
   hot = [ 0. ]
   cold = [ 0. ]
 
   fin = open( file, "r" )
   for line in fin :
-    if line.startswith("#") :
+    if line.startswith("sp") :
+      print line
       newlabel = ""
       for word in keywordList :
         if word in line :
           if (word == "pos1") and (("pos10" in line) or ("pos11" in line) or ("pos12" in line)) :
+            continue
+          elif (word == "0deg") and (("30deg" in line) or ("60deg" in line) or ("90deg" in line)) :
             continue
           else :
             newlabel = newlabel + "_" + word 
         
     else :
       if not newlabel in labelList :
+        print "NEW LABEL: ",newlabel
         labelList.append( newlabel )
         nval.append( 0 )
         hot.append( 0. )
         cold.append( 0. )
       a = line.split()
       for n,label in enumerate( labelList ) :
-        if newlabel == label or ((label == "_P5avg") and ("P5" in newlabel)):
+        if newlabel == label or ((label == "_p5avg") and ("p5" in newlabel)):
           nval[n] = nval[n] + 1
           hot[n] = hot[n] + float(a[10])
           cold[n] = cold[n] + float(a[11])
@@ -2193,12 +2199,12 @@ def processTsysFile( file ) :
     cold[n] = cold[n]/nval[n]
 
   for n,label in enumerate(labelList) :
-    if label == "_P6" :
+    if label == "_p6" :
       trcvr = cold[n] * (thot-tcold)/(hot[n]-cold[n]) - tcold 
       hotref = hot[n]
       gain = (thot-tcold)/(hot[n]-cold[n])
       print " trcvr = %.2f" % trcvr
-      fout.write("# trcvr = %.2f K from P6\n#\n" % trcvr )
+      fout.write("# trcvr = %.2f K from p6\n#\n" % trcvr )
 
   fout.write( "#   label     nvals   Phot(uW)  Pcold(uW)  delT  del_T_scaled\n") 
   for n,label in enumerate(labelList) :
