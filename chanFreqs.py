@@ -242,3 +242,72 @@ def makefplot( fLO1=fLO1MHz, wincenters=wincenters, outfile="DBEfreqs.txt"  ) :
     #  verticalalignment='center', fontsize=8  )
   #fout.close()
   pyplot.show()     
+
+# plot SgrA spectrum
+
+def SgrSpec( infile ) :
+    bandcolors = [ 'coral', 'chartreuse', 'cyan', 'plum' ]
+    patchxy = [ [226.162,0.], [226.642,0.], [227.122,0.], [227.602,0.] ]
+    freq = []
+    flux = []
+    fin = open( infile, "r" )
+    for line in fin:
+      a = line.split()
+      freq.append( float(a[0]) )
+      flux.append( float(a[1]) )
+  # LSB 
+    fig=pyplot.subplot( 2, 1, 2 )
+    fig.set_xlim( [ 214., 216.2] )
+    fig.set_ylim( [ 0., 3.2 ] )
+    for n1 in range( 0, len(freq), 24 ) :
+      fig.plot( freq[n1:n1+24], flux[n1:n1+24], linewidth=2, color='black' )
+    fig.set_ylabel("flux density (Jy)")
+    fig.set_xlabel("sky frequency (GHz)")
+    fig.grid()
+
+  # USB
+    fig=pyplot.subplot( 2, 1, 1 )
+    fig.set_xlim( [ 226., 228.2] )
+    fig.set_ylim( [ 0., 3.2 ] )
+    for n1 in range( 0, len(freq), 24 ) :
+      fig.plot( freq[n1:n1+24], flux[n1:n1+24], linewidth=2, color='black' )
+
+  # show CARMA beamformer bands
+    for xy, col in zip( patchxy, bandcolors ) :
+      chanblock = Rectangle( xy, .48, 3.2, fill=True, \
+         edgecolor='none', facecolor=col, alpha=0.4 )  
+      fig.add_patch(chanblock)
+    fig.set_ylabel("flux density (Jy)")
+    fig.grid()
+    fig.set_title("SgrA spectrum measured with CARMA")
+    pyplot.show()     
+
+# for test of MWC349, find correspondence between DBE chans and CARMA correlator chans
+def MWC349() :  
+    fLO1 = 225040.0000
+    fcenter = win1center+3*480.
+    [nsb, fblock, fLO2, nsb2] = findLO2( fLO1+fcenter, fLO1 )
+
+  # first list the sky freqs of the centers of the CARMA correlator chans (169 to 192)
+  #   (I intend to plot the spectrum as a histogram, each bin centered on the freq)
+  # there are 24 channels, each with width 500/24 = 20.8333333 MHz  
+    fsky0 = fsky( 500., fLO2, nsb2, fblock, fLO1, nsb )
+    fsky1 = fsky( 1000., fLO2, nsb2, fblock, fLO1, nsb )
+    #print fsky0,fsky1
+    print "\nCARMA correlator channel mid frequencies:"
+    Cwidth = 500./24.
+    for nC in range (169,193,1) :
+      fC = 1000. - (nC - 169) * Cwidth - 0.5 * Cwidth
+      fskyC = fsky( fC, fLO2, nsb2, fblock, fLO1, nsb )
+      print "%4d  %10.3f" % (nC, fskyC)
+    
+  # now list the sky freqs of the EDGES of the 16 DBE chans
+  #   (I intend to plot the edges as vertical lines)
+    print "\nDBE channel start,stop freqs:"
+    for nDBE in range( 0, 17, 1 ) :
+      fsky0 = fsky( fDBE(nDBE)-16., fLO2, nsb2, fblock, fLO1, nsb )
+      fsky1 = fsky( fDBE(nDBE)+16., fLO2, nsb2, fblock, fLO1, nsb )
+      print nDBE, fsky0, fsky1
+      #fout.write( " -------- " + "{:,.3f}".format(fsky0*1.e6) + "\n" )
+      #fout.write( " -------- " + "{:,.3f}".format(fsky0*1.e6) + "\n" )
+      #fout.write( " DBE%d  \n " % nDBE )
