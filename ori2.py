@@ -18,7 +18,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
 from scipy import signal
 
-# dump out spectrum of selected region with imspec, return [freqLSR, flux]
+# dump out spectrum of selected region with imspec, return [chan, freqLSR, flux]
 def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=5., hann=3, tmpfile="junk" ):
     clight = 2.99792e5    # speed of light in km/sec
 
@@ -42,6 +42,7 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=5., hann=3, tmpfile
     print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
 
   # now dump out the spectrum for the selected region
+    chan = []
     freq = []
     flux = []
     p= subprocess.Popen( ( shlex.split("imspec in=%s region=%s options=list,eformat,noheader,hanning,%d log=%s" % \
@@ -51,26 +52,27 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=5., hann=3, tmpfile
       # allow 5 sec to finish writing tmpfile
     fin = open( tmpfile, "r" )
     for line in fin :
-      print line
       a = line.split()
       if len(a) > 2 :
+        chan.append( int(a[0]) )
         nchan = int( a[0] )
         vlsr = float( a[1] )
         flux.append( float( a[2] ) )
-        vlsrcalc = v1 + (nchan-1) * dv
+        vlsrcalc = v1 + (nchan - 1) * dv
         if abs(vlsrcalc-vlsr) > 0.05 :
           print "WARNING: channel %d listed vlsr = %.2f, calculated = %.2f" % (nchan,vlsr,vlsrcalc)
         fqLSR = restfreq * (1. - vlsrcalc/clight) 
-        freq.append( (1.+vsource/clight)*fqLSR )
+        freq.append( fqLSR/(1.-vsource/clight) )
+        #print nchan, vlsrcalc, fqLSR, freq[-1]
           # freq in rest frame of source
     fin.close()
     print "read in %d lines" % len(freq)
-    spectrum = numpy.array(sorted(zip(freq,flux)))
-      # this sorts the freq,flux pairs in freq order
-    a,b = numpy.split( spectrum, 2, axis=1 )
+    spectrum = numpy.array(sorted(zip(freq,chan,flux)))
+      # this sorts the chan,freq,flux triplets in freq order
+    a,b,c = numpy.split( spectrum, 3, axis=1 )
       # this returns separate freq and flux arrays
-    return numpy.reshape(a,len(a)), numpy.reshape(b,len(b))
-      # unless I do this the array is officially a 2D array?!
+    return numpy.reshape(b,len(a)), numpy.reshape(a,len(b)), numpy.reshape(c,len(c))
+      # unless I do this the arrays are officially 2D arrays?!
 
 def yminmax( yarray ) :
     ymin = yarray.min()
@@ -107,7 +109,7 @@ def findLines( fluxArray, continuum ) :
     # return signal.deconvolve( fluxArray-continuum, shape)
     return numpy.convolve( fluxArray-continuum, shape, mode='same')
 
-def hist( freq, flux, plotParams, linelistFile=None ) :
+def hist( chan, freq, flux, plotParams, linelistFile=None ) :
     if plotParams["pdf"] :
       pyplot.ioff()
       pp = PdfPages("spectrum.pdf")
@@ -121,9 +123,10 @@ def hist( freq, flux, plotParams, linelistFile=None ) :
   # locate spectral lines, find plot limits
     cnv = findLines( flux, 0.5 )
     cmin,cmax = yminmax( cnv )
-    print cmin,cmax
-    cmin = -cmax
-    cmax = 1.2 * cmax
+    print "actual cmin,cmax: ",cmin,cmax
+    cmin = 1.04 * cmin
+    cmax = 1.04 * cmax
+    print "rescaled cmin,cmax: ",cmin,cmax
  
     npanels = plotParams["npanels"]
     maxPanelsPerPage = plotParams["maxPanelsPerPage"]
@@ -134,26 +137,51 @@ def hist( freq, flux, plotParams, linelistFile=None ) :
       # nch1 and nch2 increment by this number each time
     nch1 = 0
     nch2 = nincr + nlap - 1
+
     for npanel in range(0,npanels) :
       np = npanel % maxPanelsPerPage + 1
       p = pyplot.subplot(maxPanelsPerPage,1,np)
       p2 = p.twinx()
-        # a twin of Axes sharing the same x-axis
+      p3 = p.twiny()   
+        # p2 shares the same x-axis, p3 the same y-axis
       p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+
       fmin = freq[nch1]
       fmax = freq[nch2]
       delta = fmax - fmin
       fmin = fmin - .04*delta
       fmax = fmax + .04*delta
+
+      chmin = chan[nch1]
+      chmax = chan[nch2]
+      delta = chmax - chmin
+      chmin = chmin - .04*delta
+      chmax = chmax + .04*delta
+
       p.axis( [fmin, fmax, ymin, ymax] )
       p2.axis( [fmin, fmax, cmin, cmax] )
-      p2.plot( freq[nch1:nch2], cnv[nch1:nch2], color="b", linewidth=0.2 )
+      p3.axis( [chmin, chmax, ymin, ymax] )
+
       x_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
       p.xaxis.set_major_formatter( x_formatter )
+      x_locator = matplotlib.ticker.AutoMinorLocator()
+
+    # this is weird, but the minor axes will appear only on the 2nd of these (whichever their order)
+      p3.xaxis.set_minor_locator( x_locator )
+      p.xaxis.set_minor_locator( x_locator )
+
       p.tick_params( axis='both', which='major', labelsize=8 )
+      p2.tick_params( axis='y', which='major', labelsize=8, colors='blue' )
+      p3.tick_params( axis='x', which='major', labelsize=8 )
+
       p.plot( freq[nch1:nch2], flux[nch1:nch2], color="r", linewidth=0.5 )
-      p.axhline( y=0.52, linestyle='--', color='blue')
+      if plotParams["continuumAmp"] :
+        p.axhline( y=plotParams["continuumAmp"], linestyle='--', color='blue')
+      p2.plot( freq[nch1:nch2], cnv[nch1:nch2], color="b", linewidth=0.2, alpha=0.5 )
+
       ann( p, plotParams["linelistFile"], freq, flux, fmin, fmax, ymax )
+      pyplot.suptitle( plotParams["title"], fontsize=8 )
+
       if (np == maxPanelsPerPage) :
         if plotParams["pdf"] :
           #pyplot.savefig( pp, format='pdf', bbox_inches='tight' )
@@ -175,14 +203,17 @@ plotParams = { "npanels" : 3,
                "ymin" : -.2,
                "ymax" : 2.,
                "linelistFile" : "splatalogue.csv", 
+               "title" : "Title",      # placeholder for title, to be filled in later
+               "continuumAmp" : .3,
                "pdf" : True }
 
 def doit( infile, region='relpix,box(-2,-2,0,0)', vsource=5.0, plotParams=plotParams ) :
 # def doit( infile, region='relpix,box(151,197,153,199)', plotParams=plotParams ) :
 # def doit( infile, region='relpix,box(-30,0,-10,20)', vsource=6., plotParams=plotParams ) :
 # def doit( infile, plotParams=plotParams ) :
-   [freq, flux] = getspec( infile, region=region, vsource=vsource )
-   hist( freq, flux, plotParams )
+   [chan, freq, flux] = getspec( infile, region=region, vsource=vsource )
+   plotParams["title"] = infile + " region=" + region + " vsource=%.1d km/sec" % vsource
+   hist( chan, freq, flux, plotParams )
 
 # check definitions of line intensities
 # Sij is line strength in Debyes (esu-cm)
@@ -207,7 +238,9 @@ def processLineList( lineListFile ) :
     for line in fin :
       if len(line) > 0 :
         a = line.split(":")
-        if a[0] == "#Species" :
+
+      # process header line; figure out what data are in what column
+        if (a[0] == "#Species") or (a[0] == "Species") :
           nameCol = 0
           for n in range(1,len(a)) :
             if a[n] == "Freq-GHz" :
@@ -218,15 +251,20 @@ def processLineList( lineListFile ) :
 			  intensityCol = n
             if a[n] == "Meas Freq-GHz" :
 			  altFreqCol = n
-          print "nameCol = %d, freqCol = %d, TLcol = %d, intensityCol = %d" % (nameCol,freqCol, TLcol,intensityCol)
+          #print "nameCol = %d, freqCol = %d, TLcol = %d, intensityCol = %d" % (nameCol,freqCol, TLcol,intensityCol)
+
+      # process data lines
         elif not line.startswith("#") :
           name.append( a[nameCol] )
+
+        # sometimes NRAO-recommended freq corresponds to calculated freq, but other times to measured freq
           if len(a[freqCol]) > 0 :
             freq.append( float(a[freqCol]) )
           else :
             freq.append( float(a[altFreqCol]) )
+
           TL.append( float(a[TLcol]) )
           intensity.append( float(a[intensityCol]) )
-          print "%15s %12.5f %5.0f %6.4f" % ( name[-1], freq[-1], TL[-1], intensity[-1] )  
+          #print "%15s %12.5f %5.0f %6.4f" % ( name[-1], freq[-1], TL[-1], intensity[-1] )  
     fin.close()
     return name,freq,TL,intensity
