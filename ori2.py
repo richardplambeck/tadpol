@@ -96,25 +96,62 @@ def yvalue( freq, flux, fline ) :
         return flux[n]
     return 1000.
 
-def ann( p, linelistFile, freq, flux, fmin, fmax, ymax ) :
+def ann( p, freq, flux, fmin, fmax, plotParams ) :
     '''annotates plot with spectral line labels'''
-    name,linefreq,TL,intensity,vlsr = processLineList( linelistFile )
-    for n in range(0,len(name)) :
+    if plotParams["linelistFile"] :
+      name,linefreq,TL,intensity,vlsr,shadeVel = processLineList( plotParams["linelistFile"] )
+      for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
           yval = yvalue( freq, flux, linefreq[n] )
-          #p.annotate( "%s %.0fK %.3f" % (name[n],TL[n],intensity[n]), xy=(linefreq[n],yval), \
           p.annotate( "%s  %.0fK  %.0fkm/sec" % (name[n],TL[n],vlsr[n]), xy=(linefreq[n],yval), \
-             xytext=(linefreq[n],0.95*ymax), horizontalalignment="center", rotation="vertical", size=8, \
+             xytext=(linefreq[n],0.95*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=8, \
              arrowprops=dict( arrowstyle="->", linewidth=0.2 ) )
+          if shadeVel[n] != 0. :
+            shadeColor = "yellow"
+            if shadeVel[n] < 0. :
+              shadeColor = "blue"
+            deltaGHz = abs(shadeVel[n])/(2.*2.998e5) * linefreq[n]
+            p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor, alpha=1.0, \
+              where=numpy.abs(freq-linefreq[n]) < deltaGHz )
+            
+             
+#    contLevel,rms = findRms( chan, flux, flagtable )
+def findRMS( chan, flux, flagtable ) :
+    flaggedBad = numpy.zeros( len(chan), dtype=int )
+    if flagtable :
+      try :
+        fin = open( flagtable, "r" )
+      except :
+        print "couldn't find flagtable %s - skipping rms and contLevel calculation" % flagtable
+        return [0.,0.,flaggedBad] 
 
-def findLines( fluxArray, continuum ) :
+      for line in fin :
+        if not line.startswith("#") :
+          a=line.split(",")
+          nbstart = int(a[0])
+          nbstop = int(a[1])
+          for n in range(0, len(chan)) :
+            if (chan[n] >= nbstart) and (chan[n] <= nbstop) :
+              flaggedBad[n] = 1
+      fin.close()
+      maskedFlux = numpy.ma.array( flux, mask=flaggedBad )
+      contLevel = numpy.ma.mean( maskedFlux )
+      rms = numpy.ma.std( maskedFlux )
+      print "calculated contLevel = %.2f" % contLevel
+      print "calculated rms = %.3f" % rms
+      return [contLevel,rms,flaggedBad] 
+    
+
+def findLines( fluxArray, contLevel, rms, chansToConvolve ) :
     '''return convolution of spectrum with lineshape, to locate centers of spectral lines'''
-    shape = numpy.zeros(160)
-    for n in range( 40,120 ) : 
-      shape[n] = 1.
+
+  # normFlux is excess over continuum expressed in terms of rms
+    normFlux = (fluxArray-contLevel)/(math.sqrt(chansToConvolve)*rms)
+
+    shape = numpy.ones(chansToConvolve)
     # shape = signal.gaussian( 100, 10.)
     # return signal.deconvolve( fluxArray-continuum, shape)
-    return numpy.convolve( fluxArray-continuum, shape, mode='same')
+    return numpy.convolve( normFlux, shape, mode='same')
 
 # plotParams dictionary controls plotting details
 plotParams = { "npanels" : 2,
@@ -124,18 +161,17 @@ plotParams = { "npanels" : 2,
                "ymax" : 5.,
                "linelistFile" : "splatalogue.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
-               "contLevel" : 1.5,
-               "shadeBad" : False,     # if true, shading shows bad channels, if False shows good channels
-               "shadeHgt" : 0.01,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
+               "contLevel" : 0.,
+               "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
                "convolve" : True,
-               "flagtable" : "flags_a0",
+               "flagtable" : None,
                "pdf" : True }
 
 # fluxList is list of 1D amplitude arrays
 # each of these is supposed to match the single chan and freq arrays
 # the goal is to overlay uvspec or imspec spectra obtained with different resolutions
 
-def hist( chan, freq, fluxList, plotParams, linelistFile=None ) :
+def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
     if plotParams["pdf"] :
       pyplot.ioff()
       pp = PdfPages("spectrum.pdf")
@@ -144,16 +180,18 @@ def hist( chan, freq, fluxList, plotParams, linelistFile=None ) :
     if ymin == ymax :
       ymin,ymax = yminmax( fluxList[0] )
       ymax = 1.2*ymax
-    print "using ymin,ymax = ",ymin,ymax
+    plotParams["ymin"] = ymin
+    plotParams["ymax"] = ymax
 
   # locate spectral lines, find plot limits
     if plotParams["convolve"] :
-      cnv = findLines( fluxList[0], 0.5 )
+      chansToConvolve = round( (36./3.e5)*freq[ len(freq)/2 ]/(freq[1]-freq[0]) )
+         # expect emission lines from SrcI to be 36 km/sec wide
+      print "convolve %d chans" % chansToConvolve
+      cnv = findLines( fluxList[0], plotParams["contLevel"], plotParams["rms"], chansToConvolve )
       cmin,cmax = yminmax( cnv )
-      #print "actual cmin,cmax: ",cmin,cmax
       cmin = 1.04 * cmin
       cmax = 1.04 * cmax
-      #print "rescaled cmin,cmax: ",cmin,cmax
  
     npanels = plotParams["npanels"]
     maxPanelsPerPage = plotParams["maxPanelsPerPage"]
@@ -207,47 +245,30 @@ def hist( chan, freq, fluxList, plotParams, linelistFile=None ) :
       if plotParams["contLevel"] :
         p.axhline( y=plotParams["contLevel"], linestyle='--', color='blue')
 
-    # indicate channels that were flagged bad for continuum map
+    # indicate channels that were NOT flagged bad for continuum map
       if plotParams["flagtable"] :
-        y0 = numpy.zeros( len(chan) )
-        flaggedBad = numpy.zeros( len(chan), dtype=int )
-        fin = open( plotParams["flagtable"], "r" )
-        for line in fin :
-          if not line.startswith("#") :
-            a=line.split(",")
-            nbstart = int(a[0])
-            nbstop = int(a[1])
-            for n in range(0, len(chan)) :
-              if (chan[n] >= nbstart) and (chan[n] <= nbstop) :
-                flaggedBad[n] = 1
-        fin.close()
-        if plotParams["shadeBad"] :
-          p.fill_between( freq, y0, fluxList[0], where=flaggedBad==1, color='red', alpha=0.2 )
-        else :
-          y1 = plotParams["contLevel"] - plotParams["shadeHgt"]
-          y2 = plotParams["contLevel"] + plotParams["shadeHgt"]
-          p.fill_between( freq, y1, y2, where=flaggedBad==0, color='blue', alpha=0.1 )
+        y1 = plotParams["contLevel"] - plotParams["rms"]
+        y2 = plotParams["contLevel"] + plotParams["rms"]
+        p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
 
+    # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
-        ann( p, plotParams["linelistFile"], freq, fluxList[0], fmin, fmax, ymax )
-      pyplot.suptitle( plotParams["title"], fontsize=8 )
+        ann( p, freq, fluxList[0], fmin, fmax, plotParams )
 
+      pyplot.suptitle( plotParams["title"], fontsize=10 )
       if (np == maxPanelsPerPage) :
         if plotParams["pdf"] :
-          #pyplot.savefig( pp, format='pdf', bbox_inches='tight' )
           pyplot.savefig( pp, format='pdf' )
         pyplot.show()
       nch1 = nch1 + nincr
       nch2 = nch2 + nincr
     if (np != maxPanelsPerPage ) :
       if plotParams["pdf"] :
-        # pyplot.savefig( pp, format='pdf', bbox_inches='tight' )
         pyplot.savefig( pp, format='pdf' )
       pyplot.show() 
     if plotParams["pdf"] :
       pp.close()
 
-def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, flagtable="flags_a0", ymin=-.5, ymax=5.,  plotParams=plotParams ) :
 # ori2.doit("sp1ch300.cm", region='relpix,box(-172,-5,-170,-3)', flagtable="flags_b1", contLevel=0.11, ymax=0.3, ymin=-.02)  E Src
 # ori2.doit("sp2ch300.cm", region='relpix,box(51,-117,53,-115)', flagtable="flags_b2", contLevel=0.065, ymax=0.2, ymin=-.02)  SW Src
 # ori2.doit("sp0ch300.cm", flagtable='flags_a0', contLevel=.35, vsource=5.0, region='arcsec,box(4.3,-.2,4.2,-.1)' )
@@ -257,15 +278,27 @@ def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, fl
 # def doit( infile, region='relpix,box(151,197,153,199)', plotParams=plotParams ) :
 # def doit( infile, region='relpix,box(-30,0,-10,20)', vsource=6., plotParams=plotParams ) :
 
-# def doit( infile, plotParams=plotParams ) :
-   [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
-   plotParams["title"] = infile + " region=" + region + " vsource=%.1d km/sec" % vsource
-   plotParams["contLevel"] = contLevel
-   plotParams["flagtable"] = flagtable
-   plotParams["ymin"] = ymin
-   plotParams["ymax"] = ymax
-   fluxList = [flux]
-   hist( chan, freq, fluxList, plotParams )
+      
+def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, flagtable="flags_a0", ymin=-.5, ymax=5.,  plotParams=plotParams ) :
+
+  # fill in plotParams from input keywords 
+    plotParams["title"] = infile + " region=" + region + " vsource=%.1d km/sec" % vsource
+    plotParams["contLevel"] = contLevel
+    plotParams["flagtable"] = flagtable
+    plotParams["ymin"] = ymin
+    plotParams["ymax"] = ymax
+
+  # retrieve the spectrum
+    [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
+
+  # compute contLevel and rms from unflagged channels
+    [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+    plotParams["contLevel"] = contLevel
+    plotParams["rms"] = rms
+
+    fluxList = [flux]
+    hist( chan, freq, fluxList, flaggedBad, plotParams )
+
 
 # check definitions of line intensities
 # Sij is line strength in Debyes (esu-cm)
@@ -290,6 +323,7 @@ def processLineList( lineListFile, vsource=5. ) :
     TL = []
     intensity = []
     vdop = []
+    shadeVel = []
     dopfac = 1.
     vlsr = vsource
     fin = open( lineListFile, "r" )
@@ -321,7 +355,7 @@ def processLineList( lineListFile, vsource=5. ) :
         elif not line.startswith("#") :
           name.append( a[nameCol] )
 
-        # sometimes NRAO-recommended freq corresponds to calculated freq, but other times to measured freq
+        # sometimes freq shows up as calculated freq, other times as measured freq
           if len(a[freqCol]) > 0 :
             freq.append( dopfac * float(a[freqCol]) )
           else :
@@ -331,8 +365,16 @@ def processLineList( lineListFile, vsource=5. ) :
           intensity.append( float(a[intensityCol]) )
           vdop.append( vlsr )
           #print "%15s %12.5f %5.0f %6.4f" % ( name[-1], freq[-1], TL[-1], intensity[-1] )  
+ 
+        # lines to be shaded are indicated by "SHADE", then vlsr to be shaded in next column
+          shadeVel.append( 0. )
+          for i in range( 0, len(a)-1 ) :
+            if a[i] == "SHADE" :
+              print "setting shadeVel for %s" % (name[-1])
+              shadeVel[-1] = float(a[i+1] )
+
     fin.close()
-    return name,freq,TL,intensity,vdop
+    return name,freq,TL,intensity,vdop,shadeVel
 
 def savethese() :
   doit( "sp3ch250.cm", vsource=7., contLevel=0.12, region='arcsec,box(4.46,-.20,4.2,0.04)', flagtable="flags_b3")
