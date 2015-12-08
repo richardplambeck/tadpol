@@ -27,7 +27,6 @@ ckms = 2.99792e5    # speed of light in km/sec
 # Note: - axis3 of spectral line data cube is LSR velocity relative to restfreq (at LSR=0)
 #       - from this, one can compute the restfreq of that channel in the LSR=0 frame (the lab frame) 
 #       - getspec divides by doppler factor to compute restfreq in the source frame (lsr=vsource) 
-
 def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=5., hann=5, tmpfile="junk" ):
     '''dump out spectrum of selected region with imspec, return [chan, freqLSR, flux] arrays'''
 
@@ -86,6 +85,59 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=5., hann=5, tmpfile
 
         #print nchan, vlsrcalc, fqLSR, freq[-1]
           # freq in rest frame of source
+    fin.close()
+    print "read in %d lines" % len(freq)
+
+  # step 4: sort in frequency order, return arrays
+    spectrum = numpy.array(sorted(zip(freq,chan,flux)))
+      # this sorts the chan,freq,flux triplets in freq order
+    a,b,c = numpy.split( spectrum, 3, axis=1 )
+      # this returns separate freq and flux arrays
+    return numpy.reshape(b,len(a)), numpy.reshape(a,len(b)), numpy.reshape(c,len(c))
+      # unless I do this the arrays are officially 2D arrays?!
+
+
+# getuvspec is retrieves visibility spectra using uvspec
+
+def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200)' ):
+    '''dump out spectrum of selected region with uvspec, return [chan, freqLSR, flux] arrays'''
+
+  # step 1: use uvlist to retrieve veldop from the header
+    veldop = 0.
+    p= subprocess.Popen( ( shlex.split('uvlist vis=%s options=var,full' % infile) ), \
+        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    for line in lines :
+      if line.startswith("veldop") :
+        a = line.split(":")
+        veldop = float( a[1] )
+    print "veldop = %.3f km/sec" % veldop       
+
+  # step 2: use uvspec to dump out the spectrum for the selected region to tmpfile
+    chan = []
+    freq = []
+    flux = []
+    p= subprocess.Popen( ( shlex.split("uvspec vis=%s select=%s axis=freq,amp stokes=i \
+      options=ampscalar,avall,nobase interval=100000 hann=%d log=%s" % \
+      (infile,select,hann,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+    print result
+    if "Fatal Error" in result :
+      print " --- fatal --- "
+      return
+
+  # step 3: read velocities and flux densities from tmpfile, create arrays
+    fin = open( tmpfile, "r" )
+    nline = 0
+    for line in fin :
+      nline = nline + 1
+      a = line.split()
+      chan.append( nline )
+      freq.append( float( a[0] )/(1.-(vsource-veldop)/ckms) )
+        # correct to doppler frame of source
+      flux.append( float( a[1] ) )
     fin.close()
     print "read in %d lines" % len(freq)
 
@@ -329,12 +381,13 @@ def findLines( fluxArray, contLevel, rms, chansToConvolve ) :
     return numpy.convolve( normFlux, shape, mode='same')
 
 # plotParams dictionary controls plotting details
-plotParams = { "npanels" : 0,
+plotParams = { "npanels" : 10,
                "maxPanelsPerPage" : 1,
                "nlap" : 100,
                "ymin" : -.5,
                "ymax" : 5.,
-               "linelistFile" : "/o/plambeck/OriALMA/Spectra/splatalogue.csv", 
+               #"linelistFile" : "/o/plambeck/OriALMA/Spectra/splatalogue.csv", 
+               "linelistFile" : "/o/plambeck/Downloads/splatalogue.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
@@ -472,12 +525,20 @@ def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, fl
     plotParams["ymax"] = ymax
 
   # retrieve the spectrum
-    [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
+    if infile.endswith( ".uv" ) :
+      [chan, freq, flux ] = getuvspec( infile, vsource=vsource )
+    else :
+      [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
 
   # compute contLevel and rms from unflagged channels
-    [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
-    plotParams["contLevel"] = contLevel
-    plotParams["rms"] = rms
+    if flagtable :
+      [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+      plotParams["contLevel"] = contLevel
+      plotParams["rms"] = rms
+    else :
+      plotParams["contLevel"] = 0.
+      plotParams["rms"] = 0. 
+      flaggedBad = []
 
     fluxList = [flux]
     hist( chan, freq, fluxList, flaggedBad, plotParams )
@@ -563,3 +624,105 @@ def checkresid( vis, model, resid, outfile ) :
     fout.write("%8.4f %8.4f  %8.4f %8.4f\n" % (vr[n]-mr[n], vi[n]-mi[n], rr[n], ri[n]))
   fout.close()
 
+# returns line intensities in LINEAR units for a particular temperature T
+def calcIntensity( infile, T ) :
+  T0 = 300.
+  hPlanck = 6.62607e-27 
+  kBoltzmann = 1.38065e-16
+  name,freq,TL,intensity,vdop,shadeVel = processLineList( infile )
+  Iba = numpy.zeros( len(name) )
+  for n in range(0, len(name) ) :
+    TU = TL[n] + (hPlanck * freq[n]*1.e9 / kBoltzmann)   # upper state energy in K
+    Iba[n] = pow(10.,intensity[n]) * \
+      (math.exp(-TU/T) - math.exp(-TL[n]/T)) / (math.exp(-TU/T0) - math.exp(-TL[n]/T0))
+  return Iba
+
+def plotIntensity( infile ) :
+  name,freq,TL,intensity,vdop,shadeVel = processLineList( infile )
+  T = 100
+  Iba = calcIntensity( infile, T) * 37424./pow(T,1.5)
+  fig,ax = pyplot.subplots()
+  pyplot.bar( freq, Iba, .01, color="red", edgecolor="red" )
+  pyplot.show()
+
+# snippet extracts sections of spectra centered on lines in splatalogue list
+# create a 'Line' dictionary for each one
+# pickle the 'Line' dictionaries one by one, append to outfile
+
+def snippet( infile, outfile, region='relpix,box(-1,-1,1,1)', vsource=5.0, flagtable="flags_a0", \
+     linelistFile="/o/plambeck/OriALMA/Spectra/splatalogue.csv", vrange=80. ) :
+
+  # retrieve the spectrum
+    if infile.endswith( ".uv" ) :
+      [chan, freq, flux ] = getuvspec( infile, vsource=vsource )
+    else :
+      [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
+
+  # compute contLevel and rms from unflagged channels
+    if flagtable :
+      [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+    else :
+      contLevel = 0.
+
+    name,linefreq,TL,intensity,vlsr,shadeVel = processLineList( linelistFile )
+    for n in range(0,len(name)) :
+      FillingIn = False
+      Line = {}
+      for i in range(0,len(freq)-1) :
+        dv = (freq[i]-linefreq[n])/linefreq[n] * ckms   # velocity relative to line center (if line is at nominal VLSR)
+        if abs(dv) < vrange/2. :
+          if not FillingIn :
+            FillingIn = True
+            Line["name"] = name[n]
+            Line["TL"] = TL[n]
+            Line["linefreq"] = linefreq[n]
+            Line["intensity"] = intensity[n]
+            Line["contLevel"] = contLevel
+            vlsr0 = vlsr[n]
+            Line["vel"] = []
+            Line["flux"] = []
+          Line["vel"].append( dv + vlsr0 )
+          Line["flux"].append( flux[i] )
+        else :     # past end of snippet
+          if FillingIn :
+            print "dumping to pickle", Line
+            fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
+            pickle.dump( Line, fout )
+            fout.close() 
+            FillingIn = False
+      if FillingIn :     # past end of spectrum
+        print "dumping to pickle", Line
+        fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
+        pickle.dump( Line, fout )
+        FillingIn = False
+        fout.close() 
+
+# plot the snippets 
+
+def plotSnippets( infile ) :
+  npanels = 1
+  maxPanelsPerPage = 1
+  Lines = []   # list of Line dictionaries
+  fin = open( infile, "rb" )
+  while (True) :
+    try :
+      Line = pickle.load( fin )
+      Lines.append( Line )
+    except :
+      break 
+  print "read in %d Line objects" % ( len(Lines) )
+
+  for npanel in range(0,npanels) :
+    np = npanel % maxPanelsPerPage + 1
+    p = pyplot.subplot(maxPanelsPerPage,1,np)
+    p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    vmin = -60.
+    vmax = 70.
+    p.axis( [-60., 70., -0.2, 8.] )
+    off = 0.
+    for Line in Lines :
+      offset = off * numpy.ones(len(Line["flux"]))
+      p.plot( Line["vel"], Line["flux"]+offset, color="r", linewidth=1. )
+      p.axhline( y=Line["contLevel"]+off, linestyle='--', color='blue')
+      off = off + .5
+    pyplot.show()
