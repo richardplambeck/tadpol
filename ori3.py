@@ -726,3 +726,54 @@ def plotSnippets( infile ) :
       p.axhline( y=Line["contLevel"]+off, linestyle='--', color='blue')
       off = off + .5
     pyplot.show()
+
+# special-purpose routine to read fluxes from xxGHz.csv files and plot
+csvFileList = [ '90GHz.csv', '229GHz.csv', '350GHz.csv', '660GHz.csv' ]
+srcNameList = [ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'BN' ]
+def plotFluxes( ) :
+  nplot=0
+  for srcName in srcNameList :
+    nplot = nplot+1
+    p = pyplot.subplot(3,5,nplot)
+    p.axis( [70., 1000., 2., 10000.] )
+    p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    frqGHz = []
+    SmJy = []
+    uncSmJy = []
+    print " "
+    for csvFile in csvFileList :
+      fin = open( csvFile, 'r' )
+      for line in fin :
+        if len(line) > 0 :
+          a = line.split(',')
+          if (len(a[0]) > 0 ) and (a[0] == srcName) :
+            try :
+              mJy = 1000. * float(a[10]) * float(a[16]) 
+              if mJy > 0. :
+                n = csvFile.find("GHz") 
+                frqGHz.append( float( csvFile[0:n] ) )
+                SmJy.append( mJy )
+                unc = 1000. * float(a[11]) * float(a[16]) 
+                uncSmJy.append( math.sqrt( pow(unc,2.) + pow(0.1*SmJy[-1],2.) ) )
+              else :
+                pass     # don't include if flux is zero
+            except :             # handles case where flux = '-'
+              pass
+    if len(frqGHz) == len(SmJy) :
+      Sf2 = []
+      for frq,S in zip(frqGHz,SmJy) : 
+        if frq > 200. and frq < 240. :
+          fref = frq
+          Sref = S
+      for frq,S in zip(frqGHz,SmJy) : 
+          Sf2.append( pow(frq/fref, 2.) * Sref )
+      p.loglog( frqGHz, SmJy )
+      p.loglog( frqGHz, Sf2, linestyle='dashed')
+      p.errorbar( frqGHz, SmJy, yerr=uncSmJy)
+      p.text( .1, .8, "%s" % srcName, transform=p.transAxes )
+      p.tick_params( axis='both', which='major', labelsize=8 )
+    else :
+      print srcName, frqGHz, SmJy
+  pyplot.show()
+
+
