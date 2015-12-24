@@ -595,68 +595,6 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 # ----------------------------------------------------------------------------------------------
 def savethese() :
   doit( "sp3ch250.cm", vsource=7., contLevel=0.12, region='arcsec,box(4.46,-.20,4.2,0.04)', flagtable="flags_b3")
-
-# plot visibilities (raw, model, or residuals) in 3D
-# infile must be logfile created by uvlist
-def visplot( infile ) :
-  uin = []
-  vin = []
-  ampin = []
-  header = True
-  fin = open(infile, "r")
-  for line in fin:
-    if header :
-      if "Vis" in line : 
-        header = False
-    else :
-      a = line.split()                   
-      if float(a[7]) > 0.0 :
-        uin.append( float(a[5]) )
-        vin.append( float(a[6]) )
-        ampin.append( float(a[7]) )
-  fin.close()
-  u = numpy.array(uin)
-  v = numpy.array(vin)
-  amp = numpy.array(ampin)
-  fig = pyplot.figure()
-  ax = Axes3D(fig)
-  ax.scatter(u,v,amp,c=amp,cmap=cm.rainbow)
-  #fig.colorbar(q)
-  pyplot.show()
-
-# this is a helper file for checkresid, below
-# it reads log created by uvlist, returns real and imaginary parts of each visibility
-def readvis( infile ) :
-  ampin = []
-  phsin = []
-  header = True
-  fin = open(infile, "r")
-  for line in fin:
-    if header :
-      if "Vis" in line : 
-        header = False
-    else :
-      a = line.split()                      # split line into string tokens
-      ampin.append( float(a[7]) )
-      phsin.append( math.pi/180.*float(a[8]) )
-  fin.close()
-  amp = numpy.array(ampin)
-  phs = numpy.array(phsin)
-  return [amp*numpy.cos(phsin), amp*numpy.sin(phsin)]
-
-# I had doubts about whether uvfit returned correct residuals, so wrote this to check
-# this is a very fragile routine, depends on the 3 input files containing exactly the
-#    same number of lines, with listings in exactly the same order... but it was
-#    adequate for a quick check
-def checkresid( vis, model, resid, outfile ) :
-  vr,vi = readvis( vis )
-  mr,mi = readvis( model )
-  rr,ri = readvis( resid )
-  fout = open( outfile, "w")
-  for n in range(0,len(vr)) :
-    fout.write("%8.4f %8.4f  %8.4f %8.4f\n" % (vr[n]-mr[n], vi[n]-mi[n], rr[n], ri[n]))
-  fout.close()
-
 # returns line intensities in LINEAR units for a particular temperature T
 def calcIntensity( infile, T ) :
   T0 = 300.
@@ -809,11 +747,13 @@ def plotFluxes( ) :
       print srcName, frqGHz, SmJy
   pyplot.show()
 
-def getuvamps( infile, tmpfile="junk", select='uvrange(0,1000)' ):
+def getuvamps( infile, select, tmpfile="junk" ):
     '''dump out visibility amplitudes'''
     u = []
     v = []
     amp = []
+    if select == None :
+      select = "uvrange(0,10000)"
     p= subprocess.Popen( ( shlex.split("uvlist vis=%s select=%s recnum=1000000 log=%s" % \
       (infile,select,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
     time.sleep(1)
@@ -825,9 +765,58 @@ def getuvamps( infile, tmpfile="junk", select='uvrange(0,1000)' ):
     fin = open( tmpfile, "r" )
     for line in fin :
       a = line.split()
-      if (len(a) > 8) and ("XX" in a[4] or "YY" in a[4]) :
+      if (len(a) > 8) and ("XX" in a[4] or "YY" in a[4] or "I" in a[4] or "LL" in a[4] or "RR" in a[4] ) :
         u.append( float(a[5]) )
         v.append( float(a[6]) )
         amp.append( float(a[7]) )
     fin.close()
     return numpy.array(u), numpy.array(v), numpy.array(amp)
+
+# plot visibilities (raw, model, or residuals) in 3D
+# infile is a visibility file with XX, YY (won't work for LL, RR)
+def visplot( infile, select=None ) :
+  u,v,amp = getuvamps( infile, select=select )
+  fig = pyplot.figure()
+  ax = Axes3D(fig)
+  ax.scatter(u,v,amp,c=amp,cmap=cm.rainbow)
+  ax.scatter(-u,-v,amp,c=amp,cmap=cm.rainbow)
+  #fig.colorbar(q)
+  pyplot.show()
+
+# this is a helper file for checkresid, below
+# it reads log created by uvlist, returns real and imaginary parts of each visibility
+def readvis( infile ) :
+  ampin = []
+  phsin = []
+  header = True
+  fin = open(infile, "r")
+  for line in fin:
+    if header :
+      if "Vis" in line : 
+        header = False
+    else :
+      a = line.split()                      # split line into string tokens
+      ampin.append( float(a[7]) )
+      phsin.append( math.pi/180.*float(a[8]) )
+  fin.close()
+  amp = numpy.array(ampin)
+  phs = numpy.array(phsin)
+  return [amp*numpy.cos(phsin), amp*numpy.sin(phsin)]
+
+# I had doubts about whether uvfit returned correct residuals, so wrote this to check
+# this is a very fragile routine, depends on the 3 input files containing exactly the
+#    same number of lines, with listings in exactly the same order... but it was
+#    adequate for a quick check
+def checkresid( vis, model, resid, outfile ) :
+  vr,vi = readvis( vis )
+  mr,mi = readvis( model )
+  rr,ri = readvis( resid )
+  fout = open( outfile, "w")
+  for n in range(0,len(vr)) :
+    fout.write("%8.4f %8.4f  %8.4f %8.4f\n" % (vr[n]-mr[n], vi[n]-mi[n], rr[n], ri[n]))
+  fout.close()
+
+def visrms( infile, select=None ) :
+  u,v,amp = getuvamps( infile, select=select )
+  print numpy.std(amp)
+
