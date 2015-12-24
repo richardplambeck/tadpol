@@ -16,6 +16,7 @@ matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
+from matplotlib.patches import Rectangle
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from scipy import signal
@@ -338,7 +339,6 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
             deltaGHz = abs(shadeVel[n])/(2.*2.998e5) * linefreq[n]
             p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor, alpha=1.0, \
               where=numpy.abs(freq-linefreq[n]) < deltaGHz )
-            
              
 # ----------------------------------------------------------------------------------------------
 #    contLevel,rms = findRms( chan, flux, flagtable )
@@ -380,18 +380,47 @@ def findLines( fluxArray, contLevel, rms, chansToConvolve ) :
     # return signal.deconvolve( fluxArray-continuum, shape)
     return numpy.convolve( normFlux, shape, mode='same')
 
+# ---------------------------------------------------------
+# draw dotted boxes around good channel ranges
+# flaggedBad is array; good channels are 0, bad are 1
+
+def boxBase( ax, y1, y2, freq, flaggedBad ) :
+  Good = False    
+  goodStart = 0
+  goodStop = 3839
+    # ... Good = True indicates that we are processing a Good range (part of future rectange)
+  for n in range(0,len(flaggedBad)) :
+    print "n = %d, flaggedBad = %d, Good = %d, GoodStart = %d, GoodStop = %d" % (n, flaggedBad[n], Good, goodStart, goodStop)
+    if Good and flaggedBad[n] :   # new bad chan range is starting; finish Good rectangle, if any
+      goodStop = n-1
+      goodRect = Rectangle( (freq[goodStart],y1), (freq[goodStop]-freq[goodStart]), (y2-y1), \
+        fill=True, edgecolor='red', facecolor='yellow', alpha=1.)   # target range
+      ax.add_patch( goodRect )
+      Good = False
+      print "new good range: %d to %d" % (goodStart,goodStop)
+    elif not Good and not flaggedBad[n] :   # new good chan range is starting
+      goodStart = n
+      Good = True
+  if Good :
+    goodStop = n
+    goodRect = Rectangle( (freq[goodStart],y1), (freq[goodStop]-freq[goodStart]), (y2-y1), \
+        fill=True, edgecolor='red', facecolor='yellow', alpha=0.8, linewidth=1 )   # target range
+    ax.add_patch( goodRect )
+ 
+# ----------------------------------------------------------------------------------------------
 # plotParams dictionary controls plotting details
-plotParams = { "npanels" : 10,
+plotParams = { "npanels" : 1,
                "maxPanelsPerPage" : 1,
                "nlap" : 100,
                "ymin" : -.5,
                "ymax" : 5.,
                #"linelistFile" : "/o/plambeck/OriALMA/Spectra/splatalogue.csv", 
-               "linelistFile" : "/o/plambeck/Downloads/splatalogue.csv", 
+               #"linelistFile" : "/o/plambeck/Downloads/splatalogue.csv", 
+               "linelistFile" : None,
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
-               "convolve" : True,
+               "convolve" : False,
                "flagtable" : None,
                "pdf" : True }
 
@@ -441,8 +470,8 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
     for npanel in range(0,npanels) :
       np = npanel % maxPanelsPerPage + 1
       p = pyplot.subplot(maxPanelsPerPage,1,np)
-      p2 = p.twinx()
-      p3 = p.twiny()   
+      #p2 = p.twinx()
+      #p3 = p.twiny()   
         # p2 shares the same x-axis, p3 the same y-axis
       p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
 
@@ -458,25 +487,27 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       chmin = chmin - .04*delta
       chmax = chmax + .04*delta
 
-      p.axis( [fmin, fmax, ymin, ymax] )
+      p.axis( [fmin, fmax, ymin, ymax], color='black', linewidth=1 )
       if plotParams["convolve"] :
         p2.axis( [fmin, fmax, cmin, cmax] )
         p2.tick_params( axis='y', which='major', labelsize=8, colors='blue' )
         p2.plot( freq[nch1:nch2], cnv[nch1:nch2], color="b", linewidth=0.2, alpha=0.5 )
-      p3.axis( [chmin, chmax, ymin, ymax] )
+      #p3.axis( [chmin, chmax, ymin, ymax] )
 
       x_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
       p.xaxis.set_major_formatter( x_formatter )
       x_locator = matplotlib.ticker.AutoMinorLocator()
 
     # this is weird, but the minor axes will appear only on the 2nd of these (whichever their order)
-      p3.xaxis.set_minor_locator( x_locator )
+      #p3.xaxis.set_minor_locator( x_locator )
       p.xaxis.set_minor_locator( x_locator )
 
-      p.tick_params( axis='both', which='major', labelsize=8 )
-      p3.tick_params( axis='x', which='major', labelsize=8 )
+      p.tick_params( axis='both', which='major', labelsize=12 )
+      #p3.tick_params( axis='x', which='major', labelsize=8 )
 
-      p.plot( freq[nch1:nch2], fluxList[0][nch1:nch2], color="r", linewidth=0.5 )
+      p.plot( freq[nch1:nch2], fluxList[0][nch1:nch2], color="black", linewidth=1 )
+      p.set_xlabel( "frequency (GHz)" )
+      p.set_ylabel( "flux density (Jy)" )
       if plotParams["contLevel"] :
         p.axhline( y=plotParams["contLevel"], linestyle='--', color='blue')
 
@@ -484,13 +515,17 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       if plotParams["flagtable"] :
         y1 = plotParams["contLevel"] - plotParams["rms"]
         y2 = plotParams["contLevel"] + plotParams["rms"]
-        p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
+        #p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.4' )
+
+      # alternative for Fig 1 of paper: draw dotted rectanges around good ranges
+        boxBase( p, y1, y2, freq, flaggedBad )      
+
 
     # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
         ann( p, freq, fluxList[0], fmin, fmax, plotParams )
 
-      pyplot.suptitle( plotParams["title"], fontsize=10 )
+      #pyplot.suptitle( plotParams["title"], fontsize=10 )
       if (np == maxPanelsPerPage) :
         if plotParams["pdf"] :
           pyplot.savefig( pp, format='pdf' )
@@ -510,8 +545,6 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
 # doit( infile, region='relpix,box(-2,-2,0,0)', vsource=5.0, contLevel=.35, flagtable=None, plotParams=plotParams ) :
 # ori2.doit("sp0ch0.cm", flagtable='flags_a0', contLevel=1.55, vsource=5.0, region='relpix,box(-175,-11,-165,-1)')   # E point source
 # ori2.doit( "sp0ch250.cm", vsource=7., contLevel=0.05, region="arcsec,box(-1.1,-3.1,-1.4,-2.8)", flagtable="flags_b0")
-# def doit( infile, region='relpix,box(151,197,153,199)', plotParams=plotParams ) :
-# def doit( infile, region='relpix,box(-30,0,-10,20)', vsource=6., plotParams=plotParams ) :
 
       
 # ----------------------------------------------------------------------------------------------
@@ -776,4 +809,25 @@ def plotFluxes( ) :
       print srcName, frqGHz, SmJy
   pyplot.show()
 
-
+def getuvamps( infile, tmpfile="junk", select='uvrange(0,1000)' ):
+    '''dump out visibility amplitudes'''
+    u = []
+    v = []
+    amp = []
+    p= subprocess.Popen( ( shlex.split("uvlist vis=%s select=%s recnum=1000000 log=%s" % \
+      (infile,select,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+    print result
+    if "Fatal Error" in result :
+      print " --- fatal --- "
+      return
+    fin = open( tmpfile, "r" )
+    for line in fin :
+      a = line.split()
+      if (len(a) > 8) and ("XX" in a[4] or "YY" in a[4]) :
+        u.append( float(a[5]) )
+        v.append( float(a[6]) )
+        amp.append( float(a[7]) )
+    fin.close()
+    return numpy.array(u), numpy.array(v), numpy.array(amp)
