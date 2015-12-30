@@ -842,3 +842,26 @@ def visrms( infile, select=None ) :
   u,v,amp = getuvamps( infile, select )
   print numpy.std(amp)
 
+def TbPixel( Jy, sizeArcsec, freqGHz ) :
+  clight = 2.998e10
+  hPlanck = 6.62e-27
+  kB = 1.38e-16
+  dOmega = pow( sizeArcsec*math.pi/(180.*60.*60.), 2.)
+  B = Jy*1.e-23/dOmega   # brightness in cgs units
+  exponent = math.log(1. + 2.*hPlanck*pow(freqGHz*1.e9,3.)/(B * pow(clight,2.)))
+  Tb = hPlanck*freqGHz*1.e9/(kB * exponent)
+  print "Tb = %.1f" % Tb
+  return Tb
+
+def TbDisk( Jy, majArcsec, minArcsec, freqGHz ) :
+  area = math.pi * majArcsec * minArcsec / 4.
+  sizeArcsec = math.sqrt(area)
+  Tb = TbPixel( Jy, sizeArcsec, freqGHz)
+  actualDiam = majArcsec * 410. * 1.5e13
+     # disk diameter in cm
+  pradiated = 2. * math.pi * pow(actualDiam/2.,2.) * 5.67e-5 * pow(Tb,4.) / 2.e33
+     # power radiated from top and bottom of disk in solar luminosities
+  print "luminosity = %.2e Lo" % pradiated
+  
+
+
