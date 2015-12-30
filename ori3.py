@@ -360,6 +360,7 @@ def findRMS( chan, flux, flagtable ) :
             if (chan[n] >= nbstart) and (chan[n] <= nbstop) :
               flaggedBad[n] = 1
       fin.close()
+      print "%d channels are flagged bad" % numpy.sum(flaggedBad)
       maskedFlux = numpy.ma.array( flux, mask=flaggedBad )
       contLevel = numpy.ma.mean( maskedFlux )
       rms = numpy.ma.std( maskedFlux )
@@ -367,6 +368,26 @@ def findRMS( chan, flux, flagtable ) :
       print "calculated rms = %.3f" % rms
       return [contLevel,rms,flaggedBad] 
     
+def badChans( flagtable) : 
+    chan = range(1,3841)
+    flaggedBad = numpy.zeros( 3840, dtype=int )
+    try :
+      fin = open( flagtable, "r" )
+    except :
+      print "couldn't find flagtable %s - skipping rms and contLevel calculation" % flagtable
+      return [0.,0.,flaggedBad] 
+    for line in fin :
+      if not line.startswith("#") :
+        a=line.split(",")
+        nbstart = int(a[0])
+        nbstop = int(a[1])
+        for n in range(0, len(chan)) :
+          if (chan[n] >= nbstart) and (chan[n] <= nbstop) :
+            flaggedBad[n] = 1
+    fin.close()
+    nbad = numpy.sum(flaggedBad)
+    print "%d channels (%.2f percent) are flagged bad" % (nbad, nbad/3840.)
+    return flaggedBad
 
 # ----------------------------------------------------------------------------------------------
 def findLines( fluxArray, contLevel, rms, chansToConvolve ) :
@@ -780,6 +801,7 @@ def visplot( infile, select=None ) :
   ax = Axes3D(fig)
   ax.scatter(u,v,amp,c=amp,cmap=cm.rainbow)
   ax.scatter(-u,-v,amp,c=amp,cmap=cm.rainbow)
+  ax.auto_scale_xyz( [-900,900], [-900,900], [0,2] )
   #fig.colorbar(q)
   pyplot.show()
 
@@ -817,6 +839,6 @@ def checkresid( vis, model, resid, outfile ) :
   fout.close()
 
 def visrms( infile, select=None ) :
-  u,v,amp = getuvamps( infile, select=select )
+  u,v,amp = getuvamps( infile, select )
   print numpy.std(amp)
 
