@@ -863,5 +863,50 @@ def TbDisk( Jy, majArcsec, minArcsec, freqGHz ) :
      # power radiated from top and bottom of disk in solar luminosities
   print "luminosity = %.2e Lo" % pradiated
   
+# processes file produced by casaplotms
+# averages XX and YY; could hanning smooth or resort, if desired
+def casaAmp( infile, outfile, vlsr=5 ) :
+  frq = numpy.zeros( 3840, dtype=float)
+  amp = numpy.zeros( 3840, dtype=float)
+  npts = numpy.zeros( 3840, dtype=int)
+  fin = open( infile, "r" )
+  for line in fin :
+    if not line.startswith("#") :
+      a = line.split()
+      nchn = int(a[2])
+      if (nchn < 0) or (nchn > 3839) :
+        print "error: nchn = %d", nchn
+      else :
+        frq[nchn] = frq[nchn] + float(a[10])
+        amp[nchn] = amp[nchn] + float(a[1])
+        npts[nchn] = npts[nchn]+1
+  fin.close()
+  print "npts:", npts
+  fout = open( outfile, "w" )
+  fout.write("# output of ori3.casaAmp( '%s', '%s', vlsr=%.2f\n" % (infile,outfile,vlsr) )
+  fout.write("# vlsr is the assumed source velocity in km/sec\n")
+  fout.write("# chan  freq(VLSR=0.00) freq(VLSR=%.2f)    amp\n" % vlsr)
+  for n in range(0, 3840) :
+    f = frq[n]/npts[n]
+    fvlsr = f * (1.+ vlsr/2.998e5)
+       # this is the rest freq of the line that would be observed in this 
+       # channel if it were emitted by a source moving at VLSR=vlsr km/sec
+    fout.write("%4d  %14.9f  %14.9f %10.6f\n" % (n, f, fvlsr, amp[n]/npts[n]) )
+  fout.close()
 
-
+# reads miriad style flag file with channels numbered from 1-3840;
+# subtracts 1 to put in casa style with chans numbered 0-3839, then appends into big list
+# NOTE: BUG - last semicolon in each list needs to be replaced by comma
+def casaFlags( flagFileList ) :
+  n = 0
+  fout = open("casaFlags","w")
+  for flagFile in flagFileList :
+    fout.write("%d:" % n)
+    n = n+1
+    fin = open( flagFile, "r" )
+    for line in fin :
+      a = line.split(',')
+      fout.write("%d~%d;" % (int(a[0])-1,int(a[1])-1) )
+    fin.close()
+  fout.close()
+  
