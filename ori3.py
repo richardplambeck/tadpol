@@ -720,13 +720,14 @@ def plotSnippets( infile ) :
     pyplot.show()
 
 # special-purpose routine to read fluxes from xxGHz.csv files and plot
-csvFileList = [ '90GHz.csv', '229GHz.csv', '350GHz.csv', '660GHz.csv' ]
-srcNameList = [ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'BN' ]
+# csvFileList = [ '90GHz.csv', '229GHz.csv', '350GHz.csv', '660GHz.csv' ]
+csvFileList = [ '229GHz_500.csv', '350GHz_500.csv', '660GHz_500.csv' ]
+srcNameList = [ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' ]
 def plotFluxes( ) :
   nplot=0
   for srcName in srcNameList :
     nplot = nplot+1
-    p = pyplot.subplot(3,5,nplot)
+    p = pyplot.subplot(2,4,nplot)
     p.axis( [70., 1000., 2., 10000.] )
     p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
     frqGHz = []
@@ -767,6 +768,19 @@ def plotFluxes( ) :
     else :
       print srcName, frqGHz, SmJy
   pyplot.show()
+
+def makeEllintList( csvFile ) :
+  fin = open( csvFile, 'r' )
+  n = csvFile.find("GHz") 
+  frqGHz = csvFile[0:n] 
+  for line in fin :
+    if len(line) > 0 :
+      a = line.split(',')
+      if (len(a) > 16 ) :
+        print "# source %s" % a[0]
+        print "ellint in=$FILE center=%s,%s radius=.025,1.,.025 scale=%s log=ellint_%s_%s" % \
+          (a[14],a[15],a[16],frqGHz,a[0])
+  fin.close()
 
 def getuvamps( infile, select, tmpfile="junk" ):
     '''dump out visibility amplitudes'''
