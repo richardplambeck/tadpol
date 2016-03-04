@@ -16,6 +16,13 @@ import matplotlib
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
+#matplotlib.use('GTKAgg')
+import matplotlib.pyplot as pyplot
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Circle
+from matplotlib.patches import Rectangle
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
 from scipy import signal
 
 ckms = 2.99792e5    # speed of light in km/sec
@@ -124,6 +131,59 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=3, tmpfile
     return numpy.reshape(b,len(a)), numpy.reshape(a,len(b)), numpy.reshape(c,len(c))
       # unless I do this the arrays are officially 2D arrays?!
 
+
+# getuvspec is retrieves visibility spectra using uvspec
+
+def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200)' ):
+    '''dump out spectrum of selected region with uvspec, return [chan, freqLSR, flux] arrays'''
+
+  # step 1: use uvlist to retrieve veldop from the header
+    veldop = 0.
+    p= subprocess.Popen( ( shlex.split('uvlist vis=%s options=var,full' % infile) ), \
+        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    for line in lines :
+      if line.startswith("veldop") :
+        a = line.split(":")
+        veldop = float( a[1] )
+    print "veldop = %.3f km/sec" % veldop       
+
+  # step 2: use uvspec to dump out the spectrum for the selected region to tmpfile
+    chan = []
+    freq = []
+    flux = []
+    p= subprocess.Popen( ( shlex.split("uvspec vis=%s select=%s axis=freq,amp stokes=i \
+      options=ampscalar,avall,nobase interval=100000 hann=%d log=%s" % \
+      (infile,select,hann,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+    print result
+    if "Fatal Error" in result :
+      print " --- fatal --- "
+      return
+
+  # step 3: read velocities and flux densities from tmpfile, create arrays
+    fin = open( tmpfile, "r" )
+    nline = 0
+    for line in fin :
+      nline = nline + 1
+      a = line.split()
+      chan.append( nline )
+      freq.append( float( a[0] )/(1.-(vsource-veldop)/ckms) )
+        # correct to doppler frame of source
+      flux.append( float( a[1] ) )
+    fin.close()
+    print "read in %d lines" % len(freq)
+
+  # step 4: sort in frequency order, return arrays
+    spectrum = numpy.array(sorted(zip(freq,chan,flux)))
+      # this sorts the chan,freq,flux triplets in freq order
+    a,b,c = numpy.split( spectrum, 3, axis=1 )
+      # this returns separate freq and flux arrays
+    return numpy.reshape(b,len(a)), numpy.reshape(a,len(b)), numpy.reshape(c,len(c))
+      # unless I do this the arrays are officially 2D arrays?!
+
 # ----------------------------------------------------------------------------------------------
 # processLineList reads in file produced by splatalogue
 # the goal is to compare lab frequencies from splatalogue with observed frequencies that
@@ -146,7 +206,6 @@ def processLineList( lineListFile, vsource=5. ) :
     intensity = []
     vdop = []
     shadeCol = []
-
     vlsr = vsource   
     print "default LSR velocity of spectral lines is %.1f" % vsource
       # ... the default vlsr is vsource, in which case no doppler correction will be applied
@@ -208,7 +267,6 @@ def processLineList( lineListFile, vsource=5. ) :
     fin.close()
     print shadeCol
     return name,freq,TL,intensity,vdop,shadeCol
-
 
 # ----------------------------------------------------------------------------------------------
 # parse splatalogue output, remove unobserved frequencies, duplicates
@@ -277,7 +335,7 @@ def pruneLineList( infile, outfile ) :
     n = 0
     for line in fin :
       if copy[n] :
-        fout.write("%s:SHADE:40.\n" % line.rstrip('\n'))
+        fout.write("%s:SHADE:yellow:\n" % line.rstrip('\n'))
       n = n+1
     fin.close()
     fout.close()
@@ -345,7 +403,6 @@ def findRMS( chan, flux, flagtable, nscale=2 ) :
       print "calculated rms = %.3f" % rms
       return [contLevel,rms,flaggedBad] 
     
-
 # ----------------------------------------------------------------------------------------------
 def findLines( fluxArray, contLevel, rms, chansToConvolve ) :
     '''return convolution of spectrum with lineshape, to locate centers of spectral lines'''
@@ -372,6 +429,33 @@ plotParams = { "npanels" : 2,
                "flagtable" : None,
                "pdf" : True }
 
+# ---------------------------------------------------------
+# draw dotted boxes around good channel ranges
+# flaggedBad is array; good channels are 0, bad are 1
+
+def boxBase( ax, y1, y2, freq, flaggedBad ) :
+  Good = False    
+  goodStart = 0
+  goodStop = 3839
+    # ... Good = True indicates that we are processing a Good range (part of future rectange)
+  for n in range(0,len(flaggedBad)) :
+    print "n = %d, flaggedBad = %d, Good = %d, GoodStart = %d, GoodStop = %d" % (n, flaggedBad[n], Good, goodStart, goodStop)
+    if Good and flaggedBad[n] :   # new bad chan range is starting; finish Good rectangle, if any
+      goodStop = n-1
+      goodRect = Rectangle( (freq[goodStart],y1), (freq[goodStop]-freq[goodStart]), (y2-y1), \
+        fill=True, edgecolor='red', facecolor='yellow', alpha=1.)   # target range
+      ax.add_patch( goodRect )
+      Good = False
+      print "new good range: %d to %d" % (goodStart,goodStop)
+    elif not Good and not flaggedBad[n] :   # new good chan range is starting
+      goodStart = n
+      Good = True
+  if Good :
+    goodStop = n
+    goodRect = Rectangle( (freq[goodStart],y1), (freq[goodStop]-freq[goodStart]), (y2-y1), \
+        fill=True, edgecolor='red', facecolor='yellow', alpha=0.8, linewidth=1 )   # target range
+    ax.add_patch( goodRect )
+ 
 # ----------------------------------------------------------------------------------------------
 # fluxList is list of 1D amplitude arrays
 # each of these is supposed to match the single chan and freq arrays
@@ -457,6 +541,9 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
         y1 = plotParams["contLevel"] - plotParams["rms"]
         y2 = plotParams["contLevel"] + plotParams["rms"]
         p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
+
+      # alternative for Fig 1 of paper: draw dotted rectanges around good ranges
+      #  boxBase( p, y1, y2, freq, flaggedBad )      
 
     # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
@@ -627,3 +714,312 @@ def makespec() :
   dumpspec( "spw2.100plus.cm", "spw2.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
   #dumpspec( "spw3.100plus.cm", "spw3.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
   dumpspec( "spw3.100plus.cm", "spw3.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+
+# returns line intensities in LINEAR units for a particular temperature T
+def calcIntensity( infile, T ) :
+  T0 = 300.
+  hPlanck = 6.62607e-27 
+  kBoltzmann = 1.38065e-16
+  name,freq,TL,intensity,vdop,shadeVel = processLineList( infile )
+  Iba = numpy.zeros( len(name) )
+  for n in range(0, len(name) ) :
+    TU = TL[n] + (hPlanck * freq[n]*1.e9 / kBoltzmann)   # upper state energy in K
+    Iba[n] = pow(10.,intensity[n]) * \
+      (math.exp(-TU/T) - math.exp(-TL[n]/T)) / (math.exp(-TU/T0) - math.exp(-TL[n]/T0))
+  return Iba
+
+def plotIntensity( infile ) :
+  name,freq,TL,intensity,vdop,shadeVel = processLineList( infile )
+  T = 100
+  Iba = calcIntensity( infile, T) * 37424./pow(T,1.5)
+  fig,ax = pyplot.subplots()
+  pyplot.bar( freq, Iba, .01, color="red", edgecolor="red" )
+  pyplot.show()
+
+# snippet extracts sections of spectra centered on lines in splatalogue list
+# create a 'Line' dictionary for each one
+# pickle the 'Line' dictionaries one by one, append to outfile
+
+def snippet( infile, outfile, region='relpix,box(-1,-1,1,1)', vsource=5.0, flagtable="flags_a0", \
+     linelistFile="/o/plambeck/OriALMA/Spectra/splatalogue.csv", vrange=80. ) :
+
+  # retrieve the spectrum
+    if infile.endswith( ".uv" ) :
+      [chan, freq, flux ] = getuvspec( infile, vsource=vsource )
+    else :
+      [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
+
+  # compute contLevel and rms from unflagged channels
+    if flagtable :
+      [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+    else :
+      contLevel = 0.
+
+    name,linefreq,TL,intensity,vlsr,shadeVel = processLineList( linelistFile )
+    for n in range(0,len(name)) :
+      FillingIn = False
+      Line = {}
+      for i in range(0,len(freq)-1) :
+        dv = (freq[i]-linefreq[n])/linefreq[n] * ckms   # velocity relative to line center (if line is at nominal VLSR)
+        if abs(dv) < vrange/2. :
+          if not FillingIn :
+            FillingIn = True
+            Line["name"] = name[n]
+            Line["TL"] = TL[n]
+            Line["linefreq"] = linefreq[n]
+            Line["intensity"] = intensity[n]
+            Line["contLevel"] = contLevel
+            vlsr0 = vlsr[n]
+            Line["vel"] = []
+            Line["flux"] = []
+          Line["vel"].append( dv + vlsr0 )
+          Line["flux"].append( flux[i] )
+        else :     # past end of snippet
+          if FillingIn :
+            print "dumping to pickle", Line
+            fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
+            pickle.dump( Line, fout )
+            fout.close() 
+            FillingIn = False
+      if FillingIn :     # past end of spectrum
+        print "dumping to pickle", Line
+        fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
+        pickle.dump( Line, fout )
+        FillingIn = False
+        fout.close() 
+
+# plot the snippets 
+
+def plotSnippets( infile ) :
+  npanels = 1
+  maxPanelsPerPage = 1
+  Lines = []   # list of Line dictionaries
+  fin = open( infile, "rb" )
+  while (True) :
+    try :
+      Line = pickle.load( fin )
+      Lines.append( Line )
+    except :
+      break 
+  print "read in %d Line objects" % ( len(Lines) )
+
+  for npanel in range(0,npanels) :
+    np = npanel % maxPanelsPerPage + 1
+    p = pyplot.subplot(maxPanelsPerPage,1,np)
+    p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    vmin = -60.
+    vmax = 70.
+    p.axis( [-60., 70., -0.2, 8.] )
+    off = 0.
+    for Line in Lines :
+      offset = off * numpy.ones(len(Line["flux"]))
+      p.plot( Line["vel"], Line["flux"]+offset, color="r", linewidth=1. )
+      p.axhline( y=Line["contLevel"]+off, linestyle='--', color='blue')
+      off = off + .5
+    pyplot.show()
+
+# special-purpose routine to read fluxes from xxGHz.csv files and plot
+# csvFileList = [ '90GHz.csv', '229GHz.csv', '350GHz.csv', '660GHz.csv' ]
+csvFileList = [ '229GHz_500.csv', '350GHz_500.csv', '660GHz_500.csv' ]
+srcNameList = [ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' ]
+def plotFluxes( ) :
+  nplot=0
+  for srcName in srcNameList :
+    nplot = nplot+1
+    p = pyplot.subplot(2,4,nplot)
+    p.axis( [70., 1000., 2., 10000.] )
+    p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    frqGHz = []
+    SmJy = []
+    uncSmJy = []
+    print " "
+    for csvFile in csvFileList :
+      fin = open( csvFile, 'r' )
+      for line in fin :
+        if len(line) > 0 :
+          a = line.split(',')
+          if (len(a[0]) > 0 ) and (a[0] == srcName) :
+            try :
+              mJy = 1000. * float(a[10]) * float(a[16]) 
+              if mJy > 0. :
+                n = csvFile.find("GHz") 
+                frqGHz.append( float( csvFile[0:n] ) )
+                SmJy.append( mJy )
+                unc = 1000. * float(a[11]) * float(a[16]) 
+                uncSmJy.append( math.sqrt( pow(unc,2.) + pow(0.1*SmJy[-1],2.) ) )
+              else :
+                pass     # don't include if flux is zero
+            except :             # handles case where flux = '-'
+              pass
+    if len(frqGHz) == len(SmJy) :
+      Sf2 = []
+      for frq,S in zip(frqGHz,SmJy) : 
+        if frq > 200. and frq < 240. :
+          fref = frq
+          Sref = S
+      for frq,S in zip(frqGHz,SmJy) : 
+          Sf2.append( pow(frq/fref, 2.) * Sref )
+      p.loglog( frqGHz, SmJy )
+      p.loglog( frqGHz, Sf2, linestyle='dashed')
+      p.errorbar( frqGHz, SmJy, yerr=uncSmJy)
+      p.text( .1, .8, "%s" % srcName, transform=p.transAxes )
+      p.tick_params( axis='both', which='major', labelsize=8 )
+    else :
+      print srcName, frqGHz, SmJy
+  pyplot.show()
+
+def makeEllintList( csvFile ) :
+  fin = open( csvFile, 'r' )
+  n = csvFile.find("GHz") 
+  frqGHz = csvFile[0:n] 
+  for line in fin :
+    if len(line) > 0 :
+      a = line.split(',')
+      if (len(a) > 16 ) :
+        print "# source %s" % a[0]
+        print "ellint in=$FILE center=%s,%s radius=.025,1.,.025 scale=%s log=ellint_%s_%s" % \
+          (a[14],a[15],a[16],frqGHz,a[0])
+  fin.close()
+
+def getuvamps( infile, select, tmpfile="junk" ):
+    '''dump out visibility amplitudes'''
+    u = []
+    v = []
+    amp = []
+    if select == None :
+      select = "uvrange(0,10000)"
+    p= subprocess.Popen( ( shlex.split("uvlist vis=%s select=%s recnum=1000000 log=%s" % \
+      (infile,select,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+    print result
+    if "Fatal Error" in result :
+      print " --- fatal --- "
+      return
+    fin = open( tmpfile, "r" )
+    for line in fin :
+      a = line.split()
+      if (len(a) > 8) and ("XX" in a[4] or "YY" in a[4] or "I" in a[4] or "LL" in a[4] or "RR" in a[4] ) :
+        u.append( float(a[5]) )
+        v.append( float(a[6]) )
+        amp.append( float(a[7]) )
+    fin.close()
+    return numpy.array(u), numpy.array(v), numpy.array(amp)
+
+# plot visibilities (raw, model, or residuals) in 3D
+# infile is a visibility file with XX, YY (won't work for LL, RR)
+def visplot( infile, select=None ) :
+  u,v,amp = getuvamps( infile, select=select )
+  fig = pyplot.figure()
+  ax = Axes3D(fig)
+  ax.scatter(u,v,amp,c=amp,cmap=cm.rainbow)
+  ax.scatter(-u,-v,amp,c=amp,cmap=cm.rainbow)
+  ax.auto_scale_xyz( [-900,900], [-900,900], [0,2] )
+  #fig.colorbar(q)
+  pyplot.show()
+
+# this is a helper file for checkresid, below
+# it reads log created by uvlist, returns real and imaginary parts of each visibility
+def readvis( infile ) :
+  ampin = []
+  phsin = []
+  header = True
+  fin = open(infile, "r")
+  for line in fin:
+    if header :
+      if "Vis" in line : 
+        header = False
+    else :
+      a = line.split()                      # split line into string tokens
+      ampin.append( float(a[7]) )
+      phsin.append( math.pi/180.*float(a[8]) )
+  fin.close()
+  amp = numpy.array(ampin)
+  phs = numpy.array(phsin)
+  return [amp*numpy.cos(phsin), amp*numpy.sin(phsin)]
+
+# I had doubts about whether uvfit returned correct residuals, so wrote this to check
+# this is a very fragile routine, depends on the 3 input files containing exactly the
+#    same number of lines, with listings in exactly the same order... but it was
+#    adequate for a quick check
+def checkresid( vis, model, resid, outfile ) :
+  vr,vi = readvis( vis )
+  mr,mi = readvis( model )
+  rr,ri = readvis( resid )
+  fout = open( outfile, "w")
+  for n in range(0,len(vr)) :
+    fout.write("%8.4f %8.4f  %8.4f %8.4f\n" % (vr[n]-mr[n], vi[n]-mi[n], rr[n], ri[n]))
+  fout.close()
+
+def visrms( infile, select=None ) :
+  u,v,amp = getuvamps( infile, select )
+  print numpy.std(amp)
+
+def TbPixel( Jy, sizeArcsec, freqGHz ) :
+  clight = 2.998e10
+  hPlanck = 6.62e-27
+  kB = 1.38e-16
+  dOmega = pow( sizeArcsec*math.pi/(180.*60.*60.), 2.)
+  B = Jy*1.e-23/dOmega   # brightness in cgs units
+  exponent = math.log(1. + 2.*hPlanck*pow(freqGHz*1.e9,3.)/(B * pow(clight,2.)))
+  Tb = hPlanck*freqGHz*1.e9/(kB * exponent)
+  print "Tb = %.1f" % Tb
+  return Tb
+
+def TbDisk( Jy, majArcsec, minArcsec, freqGHz ) :
+  area = math.pi * majArcsec * minArcsec / 4.
+  sizeArcsec = math.sqrt(area)
+  Tb = TbPixel( Jy, sizeArcsec, freqGHz)
+  actualDiam = majArcsec * 410. * 1.5e13
+     # disk diameter in cm
+  pradiated = 2. * math.pi * pow(actualDiam/2.,2.) * 5.67e-5 * pow(Tb,4.) / 2.e33
+     # power radiated from top and bottom of disk in solar luminosities
+  print "luminosity = %.2e Lo" % pradiated
+  
+# processes file produced by casaplotms
+# averages XX and YY; could hanning smooth or resort, if desired
+def casaAmp( infile, outfile, vlsr=5 ) :
+  frq = numpy.zeros( 3840, dtype=float)
+  amp = numpy.zeros( 3840, dtype=float)
+  npts = numpy.zeros( 3840, dtype=int)
+  fin = open( infile, "r" )
+  for line in fin :
+    if not line.startswith("#") :
+      a = line.split()
+      nchn = int(a[2])
+      if (nchn < 0) or (nchn > 3839) :
+        print "error: nchn = %d", nchn
+      else :
+        frq[nchn] = frq[nchn] + float(a[10])
+        amp[nchn] = amp[nchn] + float(a[1])
+        npts[nchn] = npts[nchn]+1
+  fin.close()
+  print "npts:", npts
+  fout = open( outfile, "w" )
+  fout.write("# output of ori3.casaAmp( '%s', '%s', vlsr=%.2f\n" % (infile,outfile,vlsr) )
+  fout.write("# vlsr is the assumed source velocity in km/sec\n")
+  fout.write("# chan  freq(VLSR=0.00) freq(VLSR=%.2f)    amp\n" % vlsr)
+  for n in range(0, 3840) :
+    f = frq[n]/npts[n]
+    fvlsr = f * (1.+ vlsr/2.998e5)
+       # this is the rest freq of the line that would be observed in this 
+       # channel if it were emitted by a source moving at VLSR=vlsr km/sec
+    fout.write("%4d  %14.9f  %14.9f %10.6f\n" % (n, f, fvlsr, amp[n]/npts[n]) )
+  fout.close()
+
+# reads miriad style flag file with channels numbered from 1-3840;
+# subtracts 1 to put in casa style with chans numbered 0-3839, then appends into big list
+# NOTE: BUG - last semicolon in each list needs to be replaced by comma
+def casaFlags( flagFileList ) :
+  n = 0
+  fout = open("casaFlags","w")
+  for flagFile in flagFileList :
+    fout.write("%d:" % n)
+    n = n+1
+    fin = open( flagFile, "r" )
+    for line in fin :
+      a = line.split(',')
+      fout.write("%d~%d;" % (int(a[0])-1,int(a[1])-1) )
+    fin.close()
+  fout.close()
+  

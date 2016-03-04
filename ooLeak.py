@@ -177,7 +177,7 @@ class Leak:
         if (abs(f1-f2) > .24) or (self.avgchan == "0") :
           if first :
             p.plot( [f1,f2], [y,y] , color=self.color, \
-              linestyle='solid', linewidth=4, label=self.legend )
+              linestyle='solid', linewidth=2, label=self.legend )
             first = False
           else :
             p.plot( [f1,f2], [y,y] , color=self.color, \
@@ -406,7 +406,8 @@ class LkSet:
     pp = PdfPages( 'ComplexCmp.pdf' )
     fout = open( "ComplexCmp.dat", "w" )
     fout2 = open( "ComplexCmpDelta.dat", "w" )
-    for f1ref,f2ref in zip ( Lktemplate.f1, Lktemplate.f2 ) :
+    fout3 = open( "LkAvg", "w" )
+    for f1ref,f2ref,lineStr in zip ( Lktemplate.f1, Lktemplate.f2, Lktemplate.lineStr ) :
       if (f1ref > fmin) and (f2ref < fmax) :
         finterval = f2ref-f1ref
         fout.write("\n ******************************************************************* \n")
@@ -460,6 +461,13 @@ class LkSet:
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" )
           fout.write( "%3d  (%+5.3f%+5.3fj) %5.3f   (%+5.3f%+5.3fj) %5.3f   %s\n" % \
            ( ant, DRmean.real, DRmean.imag, rmsDR, DLmean.real, DLmean.imag, rmsDL, "AVG" ))
+          percentQ = 0.
+          percentU = 0.
+          RLgainRatio = 0.
+          fout3.write("C%02d %8.3f %8.3f %8.3f %6.3f %8.3f %6.3f %8.3f %6.3f   %s   %5.3f\n" % \
+           ( ant, f1ref, f2ref, DRmean.real, DRmean.imag, DLmean.real, \
+             DLmean.imag, percentQ, percentU, lineStr, RLgainRatio) )
+
 
         # if delta=True, subtract average before plotting
           if (delta) :
@@ -502,6 +510,7 @@ class LkSet:
     pp.close()
     fout.close()
     fout2.close()
+    fout3.close()
          
 
 # average together leakages in the LkSet object, write out avg to new LkFile; optionally, add offset

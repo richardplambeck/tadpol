@@ -13,6 +13,7 @@ import leakSolve
 import paPlot
 import pickle
 import copy
+import vCal
 import scipy.optimize
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
@@ -447,12 +448,13 @@ class SS :
     return [ Iavg, Istd, p0, p0rms, frac_avg, frac_rms ]
 
   def plot( self ) :
+    print "entering plot routine"
     pyplot.clf()
-    pyplot.ion()
+    pyplot.ioff()
     Ymax = abs(1.5 * numpy.concatenate( (self.Q, self.U, -1.*self.Q, -1*self.U) ).max())
     fig = pyplot.subplot(1,1,1)
     self.plot2( fig, Ymax, labelsize=12 ) 
-    pyplot.draw()                 # plots and continues...
+    pyplot.show()                 # plots and continues...
 
   def plot2( self, fig, Ymax, labelsize ) :
     fmin = numpy.concatenate( (self.f1,self.f2) ).min()
@@ -567,6 +569,7 @@ class SS :
 # pickle the results and append to outfile
 # renamed - was makeTable
 # change: LkListFile can be either the name of a single LkFile, or a list of LkFile names
+# if schedFile == "all", just select by source (enables solution if visFile contains more than one miriad datset)
 
 def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, schedFile=None, plot=False, preavg='copy' ) :
 
@@ -588,7 +591,10 @@ def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, 
   print "LkList = ", LkList
 
   # --- Generate list of selectStrings (time ranges, usually) --- #
-  if schedFile :
+  if schedFile == "all" :
+    print "no time selection in selectList"
+    selectList = [ "source(%s)" % srcName ]
+  elif schedFile :
     print "making list according to vlbi schedFile %s" % schedFile 
     selectList = paPlot.makeSelectList2( schedFile, srcName )
   else :
@@ -620,6 +626,7 @@ def appendToSSfile( visFile, LkListFile, srcName, extra, nint, maxgap, outfile, 
         pickle.dump( ss, fout )
         fout.close()
         if plot : 
+          print "I should be plotting now"
           ss.plot()
 
 # -----------------------------------------------------------------------------------------------------------------------#
@@ -751,6 +758,17 @@ def summarizeFits( infile, outfile, plot=False ) :
           ss.frac, ss.fracrms, Vfrac, Vfracstd, ss.LkFile) )
   # Print averages and rms; here the rms is from the dispersion in the means!
     if (len(I) > 1) :
+
+    # deal with possible 180 degree flips in PA 
+      if (len(pa) > 1) :
+        for i in range(1,len(pa)) :
+          if (pa[i] - pa[0]) > 90. : 
+             pa[i] = pa[i] - 180.
+             print "subtracting 180 from PA"
+          elif (pa[i] - pa[0]) < -90. :
+             pa[i] = pa[i] + 180.
+             print "adding 180 to PA"
+
       fout.write("#*%8s  %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %7.3f %5.3f  AVG\n" % \
         ( src, numpy.mean(I), numpy.std(I), numpy.mean(p0), numpy.std(p0), numpy.mean(pa), numpy.std(pa), \
         numpy.mean(rm)/1.e5, numpy.std(rm)/1.e5, numpy.mean(frac), numpy.std(frac), numpy.mean(Vf), numpy.std(Vf) ) )
@@ -815,33 +833,27 @@ def summary( paList, outfile ) :
       nstart = nstop + 1
   fin.close()
 
-# read in one or more PA files, write summary file for wip (this is geared toward vlbi)
+# read in file of pickled SS spectra
+# write summary file (geared for SgrA*)
 def summary2( SSfile, outfile ) :
   fout = open( outfile, "a" )
   color = 0
-  fout.write("#  src     dechr  parang    HA        S    sigma   poli  sigma     PA  sigma     RM  sigma   frac  sigma  col   selectString\n")
-  fout.close()
-  fout = open( "QUVsummary", "a" )
   fout.write("#\n")
-  fout.write("# %s\n" % SSfile)
-  fout.write("#  dechr  parang    HA        S    sigma     Q   sigma      U  sigma      V  sigma    col   selectString\n")
-  fout.close()
+  fout.write("#  %s\n" % SSfile)
+  fout.write("#  dechr  parang    HA        S    sigma     PA  sigma      RM  sigma    frac sigma  col  selectString\n")
 
   ssList = []
   readSSfile( SSfile, ssList )
   for ss in ssList : 
     Iavg = numpy.average(ss.I )
-    Istd = numpy.std(ss.I, ddof=1)
+    Istd = numpy.std(ss.I, ddof=1)   # this is an average across FREQUENCY space
+    if ss.pa0 < 0. :
+     ss.pa0 = ss.pa0 + 180.
     fout = open(outfile, 'a')
-    fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f %2d   %s\n" % \
-      (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.p0, ss.p0rms, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
+    fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.1f %5.1f %8.2f %5.2f %7.3f %5.3f  %2d   %s\n" % \
+      (ss.UT, ss.parang, ss.HA, Iavg, Istd, ss.pa0, ss.pa0rms, ss.RM/1.e5, ss.RMrms/1.e5, \
       ss.frac, ss.fracrms, color, ss.selectStr) )
     fout.close()
-
-    #fout = open("QUVsummary", 'a')
-    #fout.write("%8.3f %7.2f %7.3f %8.3f %6.3f %7.3f %5.3f %7.3f %5.3f %7.3f %5.3f  %2d   %s\n" % \
-    #  (ss.UT, ss.parang, ss.HA, Iavg, Istd, numpy.avg(ss.Q), ss.rmsQ, ss.U, ss.rmsU, ss.V, ss.rmsV, color, ss.selectStr) )
-    #fout.close()
 
 def summary2SB( SSfile, outfile, PAoffLSB, PAoffUSB ) :
   first = True
@@ -1084,4 +1096,32 @@ def RMcalc( dPA, f1GHz, f2GHz, unc=0. ) :
     RMunc = abs(RMplus-RMminus)/2.
   #print "RM = %.2e (%.2e)" % (RM,RMunc)
   return [RM,RMunc]
-     
+   
+def SgrSumm( date, outfile="SgrA_flux_pol.txt" ) :
+  [t,g] = vCal.getGains( "%s/wide.av" % date )
+  gamp = numpy.abs(g)
+  gm = numpy.ma.masked_outside( gamp, 0.2, 3. )
+  gsq = pow( numpy.ma.average( gm ), 2. )
+  print "mean gain = %5.3f" % gsq
+  fout = open( outfile, "a" )
+  fout.write( "#\n# %s2015 (day %s)  gain correction: %5.3f\n" % (date, vCal.getDayNo(date), gsq ) ) 
+  fout.write( "# scan   UTstart  UTstop   elev ")
+  fout.write("  UThrs  parang    HA        S    sigma     PA  sigma      RM  sigma   frac  sigma\n")
+  fina = open( "%s/SgrA.summary" % date )
+  for linea in fina:
+    print linea
+    if not linea.startswith( '#' ) :
+      aa = linea.split()
+      uthrs = float( aa[0] )
+    # search for scan number in Sched.date
+      finb = open( "%s/Sched.%s" % (date,date) )
+      for lineb in finb :
+        if not lineb.startswith( '#' ) :
+          ab = lineb.split()
+          if (len(ab) > 11) and (ab[0] == "SGRA") and (ab[4] == "vlb") :
+            if (vCal.dechrs(ab[1]) < uthrs) and (vCal.dechrs(ab[2]) > uthrs) :
+              fout.write("  %s  %s %s  %s" % (ab[7],ab[1],ab[2],ab[10]) )
+              fout.write("%s\n" % linea[0:86])
+      finb.close()
+  fina.close()
+  fout.close()

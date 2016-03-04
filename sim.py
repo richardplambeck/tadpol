@@ -2,6 +2,7 @@
 
 import math
 import numpy
+import matplotlib.pyplot as pyplot
 
 # pick random point on surface of a sphere, compute PA of projection along the line of sight
 # coordinate system: +Z points at observer; +X, +Y as in polarization measurements; PA = atan(y/x);
@@ -128,3 +129,25 @@ def bimodal( f1, thetaMin1, thetaMax1, thetaMin2, thetaMax2, outfile, ntrials=10
 
 def examples( ) :
   bimodal( 0.5, 0., 15., 75., 105., "bimodal15", ntrials=100000, nbins=1000)
+
+
+# this is a quick test of Karto's intensity mapping result where average of 3 noisy
+#   channels seems to give a mean that is much more consistent than I would expect
+def karto() :
+  pyplot.clf()
+  size = 45
+  y = numpy.random.normal( size=size )     # array of 45 Gaussian numbers
+  x = numpy.arange(0, size, 1)             # index ranges from 0 to size-1
+  print x,y
+  fig = pyplot.subplot(1,1,1)
+  fig.axis( [-2,size+2,-3.,3.] )
+  fig.grid( True, linewidth=0.1, color="0.15" ) 
+  fig.plot(x,y,'o')
+  yy = numpy.mean(numpy.reshape( y, (-1,3) ), axis=1)
+  print yy 
+  x = numpy.arange(1, len(y), 3)		   # new index 1,3,7... for yy
+  print x
+  yerr = numpy.std(yy)
+  fig.errorbar(x, yy, yerr=yerr, xerr=1., color='red', fmt="+" )
+  pyplot.show()
+

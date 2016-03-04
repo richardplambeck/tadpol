@@ -71,6 +71,7 @@ def copytoSStmp( visFile, selectStr ) :
   p= subprocess.Popen( ( shlex.split('rm -rf sstmp' ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
   time.sleep(1)
+  print selectStr
   p=subprocess.Popen( ( shlex.split('uvcat vis=%s select=%s out=sstmp options=nopol' \
      % (visFile, selectStr) ) ), \
      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
@@ -256,14 +257,14 @@ def makeLk( visin ) :
 def restoreLk( LkFile, lineStr, outfile ) :
   """Copies Lk specified by lineStr from LkFile to outfile"""
   print "restoreLk: copy leakages for lineStr = %s from %s to %s" % (lineStr, LkFile, outfile)
-  delHd( outfile )
+  #delHd( outfile )  # apparently this lags and deletes the very file I am installing
   failed = True
   try:
     fin = open( LkFile, "r" )
   except :
     print "couldn't locate file %s" % LkFile
     return
-  lk = numpy.zeros( 60 )
+  lk = numpy.zeros( 60, dtype=float )
   for line in fin :
     if not line.startswith("#") :
       a = line.split()
@@ -283,7 +284,7 @@ def restoreLk( LkFile, lineStr, outfile ) :
     leakStr = struct.pack( ">ii", 7, 0 )   # this is the preamble for all leakage items
     for i in range(0,60) :
       leakStr = leakStr + struct.pack( ">f", lk[i] )
-    fout = open( outfile+"/leakage", "wb" )
+    fout = open( outfile + "/leakage", "wb")
     fout.write( leakStr )
     fout.close()
 
@@ -300,8 +301,11 @@ def restoreLk( LkFile, lineStr, outfile ) :
     # result = p.communicate()[0]
     # if (len(result) > 1) : print result 
     # -------------------------------------------------------------------------- #
-
   return [fstart,fstop]
+
+def testopen( ) :
+  fout = open( "sstmp/leakage", "wb")
+  fout.close()
 
 # make table of D_R and D_L for the phased sum of ants in antList (or for single ant)
 # over the freq range f1-f2, and produce the vector avg over that freq interval
@@ -315,6 +319,7 @@ def stripout( Lkfile, antList, fstart, fstop, outfile ) :
   ngrandavg = 0
   DRgrandavg = 0. + 1j * 0.
   DLgrandavg = 0. + 1j * 0.
+  bandlabel = " "
   for line in fin :
     if (len(line) > 2) and line.startswith("#") :
       print line[0:-1]
@@ -328,7 +333,7 @@ def stripout( Lkfile, antList, fstart, fstop, outfile ) :
           DLavg = DLavg/navg
           fout.write(" %8.3f %8.3f  %8.3f %8.3f %6.3f   %8.3f %8.3f %6.3f    %s\n" % \
             (f1, f2, abs(DRavg), DRavg.real, DRavg.imag, abs(DLavg), DLavg.real, \
-            DLavg.imag, a[9] ) )
+            DLavg.imag, bandlabel ) )
           DRgrandavg = DRgrandavg + DRavg
           DLgrandavg = DLgrandavg + DLavg
           ngrandavg = ngrandavg + 1
@@ -338,6 +343,7 @@ def stripout( Lkfile, antList, fstart, fstop, outfile ) :
         navg = 0
         DRavg = 0. + 1j * 0.
         DLavg = 0. + 1j * 0.
+        bandlabel = a[9]
       if (ant in antList) and ((( f1 >= fstart ) and (f1 <= fstop)) or ((f2 >= fstart) and (f2 <= fstop))) :
         DR = float(a[3]) + 1j * float(a[4])
         DL = float(a[5]) + 1j * float(a[6])
@@ -354,7 +360,7 @@ def stripout( Lkfile, antList, fstart, fstop, outfile ) :
     DLavg = DLavg/navg
     fout.write(" %8.3f %8.3f  %8.3f %8.3f %6.3f   %8.3f %8.3f %6.3f    %s\n" % \
       (f1, f2, abs(DRavg), DRavg.real, DRavg.imag, abs(DLavg), DLavg.real, \
-      DLavg.imag, a[9] ) )
+      DLavg.imag, bandlabel ) )
     DRgrandavg = DRgrandavg + DRavg
     DLgrandavg = DLgrandavg + DLavg
     print ngrandavg, DRgrandavg, DLgrandavg
