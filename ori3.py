@@ -271,7 +271,7 @@ def processLineList( lineListFile, vsource=5. ) :
 # ----------------------------------------------------------------------------------------------
 # parse splatalogue output, remove unobserved frequencies, duplicates
 
-def pruneLineList( infile, outfile ) :
+def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/plambeck/OriALMA/Spectra/splat_ann.csv" ) :
     freqRanges = [ [340.545, 344.310], [352.665, 356.430], [649.282, 651.177], [661.303, 665.067], [665.922, 667.817] ]
     copy = []
     name = []
@@ -329,7 +329,7 @@ def pruneLineList( infile, outfile ) :
             elif "SLAIM" in cat[m] :
               copy[m] = 0
             
-  # pass 2: open file again, write out valid lines to output file
+  # pass 2: open file again, append valid lines to output file
     fin = open( infile, "r" )
     fout = open( outfile, "a" )
     n = 0
@@ -365,14 +365,22 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
       for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
           yval = yvalue( freq, flux, linefreq[n] )
+          if yval < plotParams["contLevel"] : yval = plotParams["contLevel"]
+          if yval > plotParams["ymax"] : yval = plotParams["contLevel"]
           #p.annotate( "%s  %.0fK  %.0fkm/sec" % (name[n],TL[n],vlsr[n]), xy=(linefreq[n],yval), \
           p.annotate( "%s  %.0fK" % (name[n],TL[n]), xy=(linefreq[n],yval), \
-             xytext=(linefreq[n],0.95*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=6, \
+             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=8, \
              arrowprops=dict( arrowstyle="->", linewidth=0.2 ) )
           if shadeCol[n] :
             deltaGHz = shadeVel/(2.*2.998e5) * linefreq[n]
+            fillmax = linefreq[n]+deltaGHz
+            if fillmax > fmax : fillmax = fmax
+            fillmin = linefreq[n]-deltaGHz
+            if fillmin < fmin : fillmin = fmin
+            midpt = (fillmax + fillmin)/2.
+            diff = (fillmax - fillmin)/2.
             p.fill_between( freq, plotParams["contLevel"], flux, color=shadeCol[n], alpha=1.0, \
-              where=numpy.abs(freq-linefreq[n]) < deltaGHz )
+              where=numpy.abs(freq-midpt) < diff )
             
              
 # ----------------------------------------------------------------------------------------------
@@ -421,7 +429,7 @@ plotParams = { "npanels" : 2,
                "nlap" : 100,
                "ymin" : -.15,
                "ymax" : 1.5,
-               "linelistFile" : "splatalogue.csv", 
+               "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
@@ -465,6 +473,8 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
     if plotParams["pdf"] :
       pyplot.ioff()
       pp = PdfPages("spectrum.pdf")
+    else :
+      pyplot.ion()
     ymin = plotParams["ymin"]
     ymax = plotParams["ymax"]
     if ymin == ymax :
@@ -497,7 +507,7 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       np = npanel % maxPanelsPerPage + 1
       p = pyplot.subplot(maxPanelsPerPage,1,np)
       # p2 = p.twinx()
-      # p3 = p.twiny()   
+      p3 = p.twiny()   
         # p2 shares the same x-axis, p3 the same y-axis
       p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
 
@@ -518,18 +528,18 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       #   p2.axis( [fmin, fmax, cmin, cmax] )
       #   p2.tick_params( axis='y', which='major', labelsize=8, colors='blue' )
       #   p2.plot( freq[nch1:nch2], cnv[nch1:nch2], color="b", linewidth=0.2, alpha=0.5 )
-      # p3.axis( [chmin, chmax, ymin, ymax] )
+      p3.axis( [chmin, chmax, ymin, ymax] )
 
       x_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
       p.xaxis.set_major_formatter( x_formatter )
       x_locator = matplotlib.ticker.AutoMinorLocator()
 
     # this is weird, but the minor axes will appear only on the 2nd of these (whichever their order)
-      # p3.xaxis.set_minor_locator( x_locator )
+      p3.xaxis.set_minor_locator( x_locator )
       p.xaxis.set_minor_locator( x_locator )
 
       p.tick_params( axis='both', which='major', labelsize=8 )
-      # p3.tick_params( axis='x', which='major', labelsize=8 )
+      p3.tick_params( axis='x', which='major', labelsize=8 )
 
       for flux in fluxList :
         p.plot( freq[nch1:nch2], flux[nch1:nch2], color="r", linewidth=0.5 )
@@ -540,14 +550,14 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       if plotParams["flagtable"] :
         y1 = plotParams["contLevel"] - plotParams["rms"]
         y2 = plotParams["contLevel"] + plotParams["rms"]
-        p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
+        # p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
 
       # alternative for Fig 1 of paper: draw dotted rectanges around good ranges
       #  boxBase( p, y1, y2, freq, flaggedBad )      
 
     # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
-        ann( p, freq, fluxList[0], fmin, fmax, plotParams )
+        ann( p, freq, fluxList[0], freq[nch1], freq[nch2], plotParams )
 
       pyplot.suptitle( plotParams["title"], fontsize=10 )
       if (np == maxPanelsPerPage) :
@@ -598,7 +608,7 @@ def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, fl
 
 # -----------------------------------------------------------------------------------------------
 # this is a faster version that retrieves spectrum from text file, rather than running imspec each time
-def doit2( inspec, inspec2=None, vsource=5.0, contLevelOverride=0., flagtable="flags_b0", ymin=-.1, ymax=1.6,  plotParams=plotParams ) :
+def doit2( inspec, inspec2=None, vsource=5.0, contLevelOverride=0., flagtable="flags_b0", ymin=-.1, ymax=1.5,  plotParams=plotParams ) :
 
   # fill in plotParams from input keywords 
     plotParams["title"] = inspec + " vsource=%.1d km/sec" % vsource
