@@ -27,6 +27,21 @@ from scipy import signal
 
 ckms = 2.99792e5    # speed of light in km/sec
 
+# plotParams dictionary controls plotting details
+plotParams = { "npanels" : 2,
+               "maxPanelsPerPage" : 2,
+               "nlap" : 100,
+               "ymin" : -.15,
+               "ymax" : 3.,
+               "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
+               "title" : "Title",      # placeholder for title, to be filled in later
+               "contLevel" : 0.,
+               "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
+               "convolve" : False,
+               "flagtable" : None,
+               "pdf" : True }
+
+
 # dump out spectrum to a text file
 def dumpspec( infile, outfile, region='arcsec,box(.1)', vsource=0., hann=3 ):
     [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
@@ -261,11 +276,9 @@ def processLineList( lineListFile, vsource=5. ) :
           for i in range( 0, len(a)-1 ) :
             if "SHADE" in a[i] :
               shade = a[i+1]
-          print "SHADE = %s" % shade
           shadeCol.append( shade )
 
     fin.close()
-    print shadeCol
     return name,freq,TL,intensity,vdop,shadeCol
 
 # ----------------------------------------------------------------------------------------------
@@ -386,7 +399,10 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
 # ----------------------------------------------------------------------------------------------
 # WARNING: new parameter nscale
 # if maps made with line=chan,1920,1,2,2  nscale=2
-def findRMS( chan, flux, flagtable, nscale=2 ) :
+# if maps made with line=chan,960,1,4,4   nscale=4
+# DANGER - partial spectra will be messed up
+
+def findRMS( chan, flux, flagtable, nscale=4 ) :
     flaggedBad = numpy.zeros( len(chan), dtype=int )
     if flagtable :
       try :
@@ -395,6 +411,8 @@ def findRMS( chan, flux, flagtable, nscale=2 ) :
         print "couldn't find flagtable %s - skipping rms and contLevel calculation" % flagtable
         return [0.,0.,flaggedBad] 
 
+    # note that flagtable is based on 3840 chans/spectrum, whereas spectrum may be based
+	#  on maps made with line=chan,3840/nscale,1,nscale,nscale
       for line in fin :
         if not line.startswith("#") :
           a=line.split(",")
@@ -422,20 +440,6 @@ def findLines( fluxArray, contLevel, rms, chansToConvolve ) :
     # shape = signal.gaussian( 100, 10.)
     # return signal.deconvolve( fluxArray-continuum, shape)
     return numpy.convolve( normFlux, shape, mode='same')
-
-# plotParams dictionary controls plotting details
-plotParams = { "npanels" : 2,
-               "maxPanelsPerPage" : 2,
-               "nlap" : 100,
-               "ymin" : -.15,
-               "ymax" : 1.5,
-               "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
-               "title" : "Title",      # placeholder for title, to be filled in later
-               "contLevel" : 0.,
-               "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
-               "convolve" : False,
-               "flagtable" : None,
-               "pdf" : True }
 
 # ---------------------------------------------------------
 # draw dotted boxes around good channel ranges
@@ -550,7 +554,7 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       if plotParams["flagtable"] :
         y1 = plotParams["contLevel"] - plotParams["rms"]
         y2 = plotParams["contLevel"] + plotParams["rms"]
-        # p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
+        p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
 
       # alternative for Fig 1 of paper: draw dotted rectanges around good ranges
       #  boxBase( p, y1, y2, freq, flaggedBad )      
@@ -608,7 +612,7 @@ def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, fl
 
 # -----------------------------------------------------------------------------------------------
 # this is a faster version that retrieves spectrum from text file, rather than running imspec each time
-def doit2( inspec, inspec2=None, vsource=5.0, contLevelOverride=0., flagtable="flags_b0", ymin=-.1, ymax=1.5,  plotParams=plotParams ) :
+def doit2( inspec, inspec2=None, vsource=5.0, contLevelOverride=0., flagtable="flags_b1", ymin=-.1, ymax=3.,  plotParams=plotParams ) :
 
   # fill in plotParams from input keywords 
     plotParams["title"] = inspec + " vsource=%.1d km/sec" % vsource
@@ -716,14 +720,14 @@ def pubFig( plotParams=plotParams ) :
 # "b" series is an 0.3 arcsec box
 
 def makespec() :
-  #dumpspec( "spw0.100plus.cm", "spw0.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
+  dumpspec( "spw0.100plus.cm", "spw0.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
   #dumpspec( "spw0.100plus.cm", "spw0.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
   #dumpspec( "spw1.100plus.cm", "spw1.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  dumpspec( "spw1.100plus.cm", "spw1.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+  #dumpspec( "spw1.100plus.cm", "spw1.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
   #dumpspec( "spw2.100plus.cm", "spw2.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  dumpspec( "spw2.100plus.cm", "spw2.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+  #dumpspec( "spw2.100plus.cm", "spw2.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
   #dumpspec( "spw3.100plus.cm", "spw3.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  dumpspec( "spw3.100plus.cm", "spw3.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+  #dumpspec( "spw3.100plus.cm", "spw3.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
 
 # returns line intensities in LINEAR units for a particular temperature T
 def calcIntensity( infile, T ) :
