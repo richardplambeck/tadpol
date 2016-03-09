@@ -5,7 +5,6 @@ import math
 import time
 import cmath
 import numpy
-import pylab
 import sys
 import pickle
 import subprocess
@@ -13,10 +12,7 @@ import shlex
 import string
 import random
 import matplotlib
-import matplotlib.pyplot as pyplot
-from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.patches import Circle
-#matplotlib.use('GTKAgg')
+matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
@@ -220,14 +216,16 @@ def processLineList( lineListFile, vsource=5. ) :
     TL = []
     intensity = []
     vdop = []
-    shadeCol = []
+    shadeColor = []     # color to shade line
+    shadeWidth = []     # shade this width in km/sec
+
     vlsr = vsource   
     print "default LSR velocity of spectral lines is %.1f" % vsource
       # ... the default vlsr is vsource, in which case no doppler correction will be applied
 
     fin = open( lineListFile, "r" )
     for line in fin :
-      if len(line) > 0 :
+      if len(line) > 1 :
         a = line.split(":")
 
       # process header line; figure out what data are in what column
@@ -244,8 +242,12 @@ def processLineList( lineListFile, vsource=5. ) :
 			  intensityCol = n
             if "Resolved QNs" in a[n] :
 			  QNcol = n
-          print "nameCol = %d, freqCol = %d, TLcol = %d, QNcol = %d, intensityCol = %d" % \
-             (nameCol,freqCol,QNcol,TLcol,intensityCol)
+            if "Width" in a[n] :
+              widthCol = n
+            if "Color" in a[n] :
+              colorCol = n
+          print "nameCol = %d, freqCol = %d, TLcol = %d, QNcol = %d, intensityCol = %d, colorCol = %d, widthCol = %d" % \
+             (nameCol,freqCol,QNcol,TLcol,intensityCol,colorCol,widthCol)
 
       # vlsr line gives vlsr of all lines that follow, until next vlsr line
         elif "VLSR" in line : 
@@ -268,18 +270,12 @@ def processLineList( lineListFile, vsource=5. ) :
           QN.append( a[QNcol] )
           TL.append( float(a[TLcol]) )
           intensity.append( float(a[intensityCol]) )
+          shadeColor.append( a[colorCol] )
+          shadeWidth.append( float(a[widthCol]) )
           #print "%15s %12.5f %5.0f %6.4f" % ( name[-1], freq[-1], TL[-1], intensity[-1] )  
- 
-        # lines to be shaded are indicated by "SHADE", then vlsr to be shaded in next column
-          shade = None
-            # ... default is not to shade the line
-          for i in range( 0, len(a)-1 ) :
-            if "SHADE" in a[i] :
-              shade = a[i+1]
-          shadeCol.append( shade )
 
     fin.close()
-    return name,freq,TL,intensity,vdop,shadeCol
+    return name,freq,TL,intensity,vdop,shadeColor,shadeWidth
 
 # ----------------------------------------------------------------------------------------------
 # parse splatalogue output, remove unobserved frequencies, duplicates
@@ -372,27 +368,27 @@ def yvalue( freq, flux, fline ) :
 # ----------------------------------------------------------------------------------------------
 def ann( p, freq, flux, fmin, fmax, plotParams ) :
     '''annotates plot with spectral line labels'''
-    shadeVel = 40.  # same velocity range will be shaded for all lines
     if plotParams["linelistFile"] :
-      name,linefreq,TL,intensity,vlsr,shadeCol = processLineList( plotParams["linelistFile"] )
+      name,linefreq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
       for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
           yval = yvalue( freq, flux, linefreq[n] )
           if yval < plotParams["contLevel"] : yval = plotParams["contLevel"]
           if yval > plotParams["ymax"] : yval = plotParams["contLevel"]
-          #p.annotate( "%s  %.0fK  %.0fkm/sec" % (name[n],TL[n],vlsr[n]), xy=(linefreq[n],yval), \
           p.annotate( "%s  %.0fK" % (name[n],TL[n]), xy=(linefreq[n],yval), \
              xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=8, \
              arrowprops=dict( arrowstyle="->", linewidth=0.2 ) )
-          if shadeCol[n] :
-            deltaGHz = shadeVel/(2.*2.998e5) * linefreq[n]
+          if shadeColor[n] :
+            deltaGHz = shadeWidth[n]/(2.*2.998e5) * linefreq[n]
             fillmax = linefreq[n]+deltaGHz
             if fillmax > fmax : fillmax = fmax
             fillmin = linefreq[n]-deltaGHz
             if fillmin < fmin : fillmin = fmin
             midpt = (fillmax + fillmin)/2.
             diff = (fillmax - fillmin)/2.
-            p.fill_between( freq, plotParams["contLevel"], flux, color=shadeCol[n], alpha=1.0, \
+            alpha = 1.0
+            if shadeColor[n] == "green" : alpha=0.5
+            p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor[n], alpha=alpha, \
               where=numpy.abs(freq-midpt) < diff )
             
              
@@ -715,26 +711,12 @@ def pubFig( plotParams=plotParams ) :
       pp.close()
     pyplot.show()
 
-# dump out text files with spectra
-# "a" series is an 0.2 arcsec box
-# "b" series is an 0.3 arcsec box
-
-def makespec() :
-  dumpspec( "spw0.100plus.cm", "spw0.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  #dumpspec( "spw0.100plus.cm", "spw0.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
-  #dumpspec( "spw1.100plus.cm", "spw1.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  #dumpspec( "spw1.100plus.cm", "spw1.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
-  #dumpspec( "spw2.100plus.cm", "spw2.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  #dumpspec( "spw2.100plus.cm", "spw2.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
-  #dumpspec( "spw3.100plus.cm", "spw3.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  #dumpspec( "spw3.100plus.cm", "spw3.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
-
 # returns line intensities in LINEAR units for a particular temperature T
 def calcIntensity( infile, T ) :
   T0 = 300.
   hPlanck = 6.62607e-27 
   kBoltzmann = 1.38065e-16
-  name,freq,TL,intensity,vdop,shadeVel = processLineList( infile )
+  name,freq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   Iba = numpy.zeros( len(name) )
   for n in range(0, len(name) ) :
     TU = TL[n] + (hPlanck * freq[n]*1.e9 / kBoltzmann)   # upper state energy in K
@@ -743,7 +725,7 @@ def calcIntensity( infile, T ) :
   return Iba
 
 def plotIntensity( infile ) :
-  name,freq,TL,intensity,vdop,shadeVel = processLineList( infile )
+  name,freq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   T = 100
   Iba = calcIntensity( infile, T) * 37424./pow(T,1.5)
   fig,ax = pyplot.subplots()
@@ -769,7 +751,7 @@ def snippet( infile, outfile, region='relpix,box(-1,-1,1,1)', vsource=5.0, flagt
     else :
       contLevel = 0.
 
-    name,linefreq,TL,intensity,vlsr,shadeVel = processLineList( linelistFile )
+    name,freq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( linelistFile )
     for n in range(0,len(name)) :
       FillingIn = False
       Line = {}
@@ -829,7 +811,7 @@ def plotSnippets( infile ) :
       offset = off * numpy.ones(len(Line["flux"]))
       p.plot( Line["vel"], Line["flux"]+offset, color="r", linewidth=1. )
       p.axhline( y=Line["contLevel"]+off, linestyle='--', color='blue')
-      off = off + .5
+      off = off + 3.
     pyplot.show()
 
 # special-purpose routine to read fluxes from xxGHz.csv files and plot
@@ -1037,3 +1019,86 @@ def casaFlags( flagFileList ) :
     fin.close()
   fout.close()
   
+# dump out text files with spectra
+# "a" series is an 0.2 arcsec box
+# "b" series is an 0.3 arcsec box
+
+def makespec() :
+  #dumpspec( "spw0.100plus.cm", "spw0.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
+  #dumpspec( "spw0.100plus.cm", "spw0.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+  #dumpspec( "spw1.100plus.cm", "spw1.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
+  #dumpspec( "spw1.100plus.cm", "spw1.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+  dumpspec( "spw2.100plus.cm", "spw2.100plus.a.txt", region='arcsec,box(.1)', vsource=5., hann=3 )
+  #dumpspec( "spw2.100plus.cm", "spw2.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+  #dumpspec( "spw3.100plus.cm", "spw3.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
+  #dumpspec( "spw3.100plus.cm", "spw3.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+
+# snippet2 plots snippets of spectra centered on lines in splatalogue list
+# create a 'Line' dictionary for each one
+# pickle the 'Line' dictionaries one by one, append to outfile
+
+B7spw0 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw0.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b0"}
+B7spw1 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw1.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b1"}
+B7spw2 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw2.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b2"}
+B7spw3 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw3.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b3"}
+B9spw0 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw0.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a0"}
+B9spw1 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw1.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a1"}
+B9spw2 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw2.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a2"}
+B9spw3 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw3.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a3"}
+specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
+
+def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
+    specList=specList, outfile="snip",
+    vrange=150., vsource=5.0 ) :
+
+  # read the lineList file
+    name,linefreq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
+
+  # extract snippet for each line in the file
+    for n in range(0,len(name)) :
+ 
+    # find spectral window that contains the line
+      for spectrum in specList :
+        [chan, freq, flux ] = readspec( spectrum["file"], vsource=vsource )
+        if (linefreq[n] > freq[0]) and (linefreq[n] < freq[-1]) :
+          print "found %.3f GHz in file %s" % (linefreq[n],spectrum["file"])
+          [contLevel, rms, flaggedBad] = findRMS( chan, flux, spectrum["flag"] )
+          FillingIn = False
+          Line = {}
+          for i in range(0,len(freq)-1) :
+            dv = (freq[i]-linefreq[n])/linefreq[n] * ckms   # velocity relative to line center (if line is at nominal VLSR)
+            if abs(dv) < vrange/2. :
+              if not FillingIn :
+                FillingIn = True
+                Line["name"] = name[n]
+                Line["TL"] = TL[n]
+                Line["linefreq"] = linefreq[n]
+                Line["intensity"] = intensity[n]
+                Line["contLevel"] = contLevel
+                vlsr0 = vdop[n]
+                Line["vel"] = []
+                Line["flux"] = []
+              Line["vel"].append( dv + vlsr0 )
+              Line["flux"].append( flux[i] )
+            else :     # past end of snippet
+              if FillingIn :
+                #print "dumping to pickle", Line
+                fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
+                pickle.dump( Line, fout )
+                fout.close() 
+                FillingIn = False
+          if FillingIn :     # past end of spectrum
+            #print "dumping to pickle", Line
+            fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
+            pickle.dump( Line, fout )
+            FillingIn = False
+            fout.close() 
+
