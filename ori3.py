@@ -37,8 +37,7 @@ plotParams = { "npanels" : 2,
                "flagtable" : None,
                "pdf" : True }
 
-
-# dump out spectrum to a text file
+# run getspec, dump spectrum to a text file; adjust freq scale to be correct for source at LSR velocity vsource
 def dumpspec( infile, outfile, region='arcsec,box(.1)', vsource=0., hann=3 ):
     [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
     fout = open( outfile, "w" )
@@ -51,7 +50,7 @@ def dumpspec( infile, outfile, region='arcsec,box(.1)', vsource=0., hann=3 ):
       fout.write("%5d  %12.6f  %9.7f\n" % (chn,frq,flx))
     fout.close() 
 
-# read spectrum from a text file
+# retrieve spectrum from a text file; adjust freq scale to be correct for source at LSR velocity vsource
 def readspec( inspec, vsource=5. ) :
     chan = []
     freq = []
@@ -69,6 +68,8 @@ def readspec( inspec, vsource=5. ) :
     return numpy.array(chan), numpy.array(freq), numpy.array(flux)
 
 # ----------------------------------------------------------------------------------------------
+# getspec dumps out spectrum of selected region from spectral line cube; note that region
+#  command could also select channel range, if desired
 # Note: - axis3 of spectral line data cube is LSR velocity relative to restfreq (at LSR=0)
 #       - from this, one can compute the restfreq of that channel in the LSR=0 frame (the lab frame) 
 #       - getspec divides by doppler factor to compute restfreq in the source frame (lsr=vsource) 
@@ -143,6 +144,7 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=3, tmpfile
       # unless I do this the arrays are officially 2D arrays?!
 
 
+# ----------------------------------------------------------------------------------------------
 # getuvspec is retrieves visibility spectra using uvspec
 
 def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200)' ):
@@ -199,8 +201,10 @@ def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200
 # processLineList reads in file produced by splatalogue
 # the goal is to compare lab frequencies from splatalogue with observed frequencies that
 #   are reported in the vlsr=vsource frame
-# so if line is emitted by gas at LSR velocity vsource, return lab freq directly
-# if line is emitted at a different LSR velocity, doppler correct the frequency
+# so if line is emitted by gas at LSR velocity vsource, return lab freq directly; this
+#   is the usual situation
+# if line is emitted at a different LSR velocity, doppler correct the frequency; IN THIS
+#   CASE THE FREQUENCY WILL NOT BE THE LAB FREQUENCY
 #
 # used by two routines:
 #   - ann uses it to annotate the plot (all outputs needed)
@@ -218,6 +222,7 @@ def processLineList( lineListFile, vsource=5. ) :
     vdop = []
     shadeColor = []     # color to shade line
     shadeWidth = []     # shade this width in km/sec
+    colorCol = widthCol = None
 
     vlsr = vsource   
     print "default LSR velocity of spectral lines is %.1f" % vsource
@@ -254,7 +259,7 @@ def processLineList( lineListFile, vsource=5. ) :
           vlsr = float(a[1])
           print "VLSR = %.1f km/sec for data that follow" % vlsr
 
-      # process data lines
+      # process data lines; this can crash if one of the required columns is not present
         elif not line.startswith("#") :
           name.append( a[nameCol] )
           vdop.append( vlsr )
@@ -270,15 +275,23 @@ def processLineList( lineListFile, vsource=5. ) :
           QN.append( a[QNcol] )
           TL.append( float(a[TLcol]) )
           intensity.append( float(a[intensityCol]) )
-          shadeColor.append( a[colorCol] )
-          shadeWidth.append( float(a[widthCol]) )
+
+        # colorCol and widthCol will be None if we are processing raw splatalogue file
+          if colorCol :
+            shadeColor.append( a[colorCol] )
+          else :
+            shadeColor.append( None )
+          if widthCol :
+            shadeWidth.append( float(a[widthCol]) )
+          else :
+            shadeWidth.append( None )
           #print "%15s %12.5f %5.0f %6.4f" % ( name[-1], freq[-1], TL[-1], intensity[-1] )  
 
     fin.close()
-    return name,freq,TL,intensity,vdop,shadeColor,shadeWidth
+    return name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth
 
 # ----------------------------------------------------------------------------------------------
-# parse splatalogue output, remove unobserved frequencies, duplicates
+# parse splatalogue output, remove unobserved frequencies, duplicates 
 
 def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/plambeck/OriALMA/Spectra/splat_ann.csv" ) :
     freqRanges = [ [340.545, 344.310], [352.665, 356.430], [649.282, 651.177], [661.303, 665.067], [665.922, 667.817] ]
@@ -344,7 +357,7 @@ def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/p
     n = 0
     for line in fin :
       if copy[n] :
-        fout.write("%s:SHADE:yellow:\n" % line.rstrip('\n'))
+        fout.write("%s:None:None:\n" % line.rstrip('\n'))
       n = n+1
     fin.close()
     fout.close()
@@ -368,17 +381,20 @@ def yvalue( freq, flux, fline ) :
 # ----------------------------------------------------------------------------------------------
 def ann( p, freq, flux, fmin, fmax, plotParams ) :
     '''annotates plot with spectral line labels'''
+    print "annotating freq range %.3f to %.3f GHz" % (fmin,fmax)
     if plotParams["linelistFile"] :
-      name,linefreq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
+      name,linefreq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
       for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
           yval = yvalue( freq, flux, linefreq[n] )
           if yval < plotParams["contLevel"] : yval = plotParams["contLevel"]
           if yval > plotParams["ymax"] : yval = plotParams["contLevel"]
+          print "yvalue at frequency %.3f is %.2f" % (linefreq[n],yval)
           p.annotate( "%s  %.0fK" % (name[n],TL[n]), xy=(linefreq[n],yval), \
              xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=8, \
              arrowprops=dict( arrowstyle="->", linewidth=0.2 ) )
           if shadeColor[n] :
+            print "shade %s" % shadeColor[n]
             deltaGHz = shadeWidth[n]/(2.*2.998e5) * linefreq[n]
             fillmax = linefreq[n]+deltaGHz
             if fillmax > fmax : fillmax = fmax
@@ -386,19 +402,18 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
             if fillmin < fmin : fillmin = fmin
             midpt = (fillmax + fillmin)/2.
             diff = (fillmax - fillmin)/2.
-            alpha = 1.0
+            alpha = 0.7 
             if shadeColor[n] == "green" : alpha=0.5
             p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor[n], alpha=alpha, \
               where=numpy.abs(freq-midpt) < diff )
             
              
 # ----------------------------------------------------------------------------------------------
-# WARNING: new parameter nscale
-# if maps made with line=chan,1920,1,2,2  nscale=2
-# if maps made with line=chan,960,1,4,4   nscale=4
-# DANGER - partial spectra will be messed up
+# return continuum level, continuum rms, and flaggedBad array
+# DANGER - spectra are expected to cover the entire spectral window; partial spectra will mess up
 
-def findRMS( chan, flux, flagtable, nscale=4 ) :
+def findRMS( chan, freq, flux, flagtable ) :
+
     flaggedBad = numpy.zeros( len(chan), dtype=int )
     if flagtable :
       try :
@@ -407,8 +422,19 @@ def findRMS( chan, flux, flagtable, nscale=4 ) :
         print "couldn't find flagtable %s - skipping rms and contLevel calculation" % flagtable
         return [0.,0.,flaggedBad] 
 
-    # note that flagtable is based on 3840 chans/spectrum, whereas spectrum may be based
-	#  on maps made with line=chan,3840/nscale,1,nscale,nscale
+    # note that flagtable is based on 3840 chans/spectrum, whereas spectrum we are
+    #   evaluating may have been made with line=chan,3840/nscale,1,nscale,nscale
+    # figure out nscale from number of channels in spectrum; then, to prevent mistakes,
+    #   confirm that frequency increment makes sense
+    # note that there is no protection against mixing up flagtables
+      
+      nscale = 3840/len(chan)
+      freqStep = (freq[-1] - freq[0])/len(freq)
+      expectedFreqStep = nscale * 1.875/3840.
+      if abs(freqStep - expectedFreqStep) > 1.e-5 :
+        print "ERROR: incorrect freqStep - skippin grms and contLevel calculation"
+        return [0.,0.,flaggedBad]
+ 
       for line in fin :
         if not line.startswith("#") :
           a=line.split(",")
@@ -519,7 +545,7 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
 
       chmin = chan[nch1]
       chmax = chan[nch2]
-      delta = chmax - chmin
+      delta = chmax - chmin    # note that delta can be negative!
       chmin = chmin - .04*delta
       chmax = chmax + .04*delta
 
@@ -599,7 +625,7 @@ def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, fl
     [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
 
   # compute contLevel and rms from unflagged channels
-    [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+    [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, flagtable )
     plotParams["contLevel"] = contLevel
     plotParams["rms"] = rms
 
@@ -622,7 +648,7 @@ def doit2( inspec, inspec2=None, vsource=5.0, contLevelOverride=0., flagtable="f
       [chan2, freq2, flux2 ] = readspec( inspec2, vsource=vsource )
 
   # compute contLevel and rms from unflagged channels
-    [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+    [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, flagtable )
     plotParams["contLevel"] = contLevel
     plotParams["rms"] = rms
 
@@ -691,7 +717,7 @@ def pubFig( plotParams=plotParams ) :
       p.xaxis.set_minor_locator( x_locator )
       p.tick_params( axis='both', which='major', labelsize=8 )
       p.plot( freq, flux, color="r", linewidth=0.5 )
-      [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+      [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, flagtable )
       plotParams["contLevel"] = contLevel
       p.axhline( y=plotParams["contLevel"], linestyle='--', color='blue')
 
@@ -716,7 +742,7 @@ def calcIntensity( infile, T ) :
   T0 = 300.
   hPlanck = 6.62607e-27 
   kBoltzmann = 1.38065e-16
-  name,freq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
+  name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   Iba = numpy.zeros( len(name) )
   for n in range(0, len(name) ) :
     TU = TL[n] + (hPlanck * freq[n]*1.e9 / kBoltzmann)   # upper state energy in K
@@ -725,7 +751,7 @@ def calcIntensity( infile, T ) :
   return Iba
 
 def plotIntensity( infile ) :
-  name,freq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
+  name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   T = 100
   Iba = calcIntensity( infile, T) * 37424./pow(T,1.5)
   fig,ax = pyplot.subplots()
@@ -747,11 +773,11 @@ def snippet( infile, outfile, region='relpix,box(-1,-1,1,1)', vsource=5.0, flagt
 
   # compute contLevel and rms from unflagged channels
     if flagtable :
-      [contLevel, rms, flaggedBad] = findRMS( chan, flux, flagtable )
+      [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, flagtable )
     else :
       contLevel = 0.
 
-    name,freq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( linelistFile )
+    name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( linelistFile )
     for n in range(0,len(name)) :
       FillingIn = False
       Line = {}
@@ -1060,7 +1086,7 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
     vrange=150., vsource=5.0 ) :
 
   # read the lineList file
-    name,linefreq,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
+    name,linefreq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
 
   # extract snippet for each line in the file
     for n in range(0,len(name)) :
@@ -1070,27 +1096,32 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
         [chan, freq, flux ] = readspec( spectrum["file"], vsource=vsource )
         if (linefreq[n] > freq[0]) and (linefreq[n] < freq[-1]) :
           print "found %.3f GHz in file %s" % (linefreq[n],spectrum["file"])
-          [contLevel, rms, flaggedBad] = findRMS( chan, flux, spectrum["flag"] )
+          [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, spectrum["flag"] )
           FillingIn = False
           Line = {}
           for i in range(0,len(freq)-1) :
-            dv = (freq[i]-linefreq[n])/linefreq[n] * ckms   # velocity relative to line center (if line is at nominal VLSR)
+            dv = (1. - freq[i]/linefreq[n]) * ckms   # velocity relative to line center (if line is at nominal VLSR)
             if abs(dv) < vrange/2. :
               if not FillingIn :
                 FillingIn = True
                 Line["name"] = name[n]
+                Line["QN"] = QN[n]
                 Line["TL"] = TL[n]
                 Line["linefreq"] = linefreq[n]
                 Line["intensity"] = intensity[n]
                 Line["contLevel"] = contLevel
+                Line["shadeColor"] = shadeColor[n]
+                Line["shadeWidth"] = shadeWidth[n]
                 vlsr0 = vdop[n]
                 Line["vel"] = []
                 Line["flux"] = []
+                Line["freq"] = []
               Line["vel"].append( dv + vlsr0 )
               Line["flux"].append( flux[i] )
+              Line["freq"].append( freq[i] )
             else :     # past end of snippet
               if FillingIn :
-                #print "dumping to pickle", Line
+                print "dumping to pickle", Line
                 fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
                 pickle.dump( Line, fout )
                 fout.close() 
@@ -1101,4 +1132,47 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
             pickle.dump( Line, fout )
             FillingIn = False
             fout.close() 
+
+
+def plotSnippets2( infile, nrows=4, ncols=4 ) :
+  maxPanelsPerPage = nrows * ncols
+  Lines = []   # list of Line dictionaries
+  fin = open( infile, "rb" )
+  while (True) :
+    try :
+      Line = pickle.load( fin )
+      Lines.append( Line )
+    except :
+      break 
+  print "read in %d Line objects" % ( len(Lines) )
+
+  np = 0
+  for Line in Lines :
+    print Line  
+    vel = numpy.array( Line["vel"] )
+    flux = numpy.array( Line["flux"] )
+    np = np + 1
+    if np > nrows * ncols :
+      pyplot.show()
+      np = 1
+    p = pyplot.subplot(nrows,ncols,np)
+    ymin,ymax = yminmax( numpy.array(Line["flux"]) )
+    ymax = 1.5*ymax
+    plotParams["ymin"] = ymin
+    plotParams["ymax"] = ymax
+    plotParams["contLevel"] = Line["contLevel"]
+    vmin = -60.
+    vmax = 70.
+    p.axis( [vmin, vmax, ymin, ymax] )
+    p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    p.plot( vel, flux, color="r", linewidth=1. )
+    p.axhline( y=Line["contLevel"], linestyle='--', color='blue')
+  
+  # annotate plot, shade the line
+    p.text(.04, .9,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes)
+    p.text(.97, .9,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='right', transform=p.transAxes)
+    p.text(.04, .82,  "%.4f GHz" % Line["linefreq"], horizontalalignment='left', transform=p.transAxes)
+    p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.8, \
+              where=numpy.abs(vel-5.) < Line["shadeWidth"]/2. )
+  pyplot.show()
 
