@@ -404,7 +404,7 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
             diff = (fillmax - fillmin)/2.
             alpha = 0.7 
             if shadeColor[n] == "green" : alpha=0.5
-            p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor[n], alpha=alpha, \
+            p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor[n], alpha=alpha, lw=0, \
               where=numpy.abs(freq-midpt) < diff )
             
              
@@ -496,6 +496,7 @@ def boxBase( ax, y1, y2, freq, flaggedBad ) :
 # the goal is to overlay uvspec or imspec spectra obtained with different resolutions
 
 def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
+    colorTable = ["red","blue","orange","black"]
     if plotParams["pdf"] :
       pyplot.ioff()
       pp = PdfPages("spectrum.pdf")
@@ -567,8 +568,8 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       p.tick_params( axis='both', which='major', labelsize=8 )
       p3.tick_params( axis='x', which='major', labelsize=8 )
 
-      for flux in fluxList :
-        p.plot( freq[nch1:nch2], flux[nch1:nch2], color="r", linewidth=0.5 )
+      for flux,color in zip(fluxList,colorTable) :
+        p.plot( freq[nch1:nch2], flux[nch1:nch2], color=color, linewidth=0.5 )
       if plotParams["contLevel"] :
         p.axhline( y=plotParams["contLevel"], linestyle='--', color='blue')
 
@@ -585,7 +586,7 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       if plotParams["linelistFile"] :
         ann( p, freq, fluxList[0], freq[nch1], freq[nch2], plotParams )
 
-      pyplot.suptitle( plotParams["title"], fontsize=10 )
+      pyplot.suptitle( plotParams["title"], fontsize=8 )
       if (np == maxPanelsPerPage) :
         if plotParams["pdf"] :
           pyplot.savefig( pp, format='pdf' )
@@ -634,10 +635,11 @@ def doit( infile, region='relpix,box(0,-4,2,-2)', vsource=5.0, contLevel=1.7, fl
 
 # -----------------------------------------------------------------------------------------------
 # this is a faster version that retrieves spectrum from text file, rather than running imspec each time
-def doit2( inspec, inspec2=None, vsource=5.0, contLevelOverride=0., flagtable="flags_b1", ymin=-.1, ymax=3.,  plotParams=plotParams ) :
+def doit2( inspec, inspec2=None, inspec3=None, vsource=5.0, contLevelOverride=0.,\
+   flagtable="flags_b1", ymin=-.1, ymax=3.,  plotParams=plotParams ) :
 
   # fill in plotParams from input keywords 
-    plotParams["title"] = inspec + " vsource=%.1d km/sec" % vsource
+    plotParams["title"] = inspec + "(red), " + inspec2 + "(blu), " + inspec3 + "(org), vsource=%.1d km/sec" % vsource
     plotParams["flagtable"] = flagtable
     plotParams["ymin"] = ymin
     plotParams["ymax"] = ymax
@@ -646,13 +648,17 @@ def doit2( inspec, inspec2=None, vsource=5.0, contLevelOverride=0., flagtable="f
     [chan, freq, flux ] = readspec( inspec, vsource=vsource )
     if (inspec2) :
       [chan2, freq2, flux2 ] = readspec( inspec2, vsource=vsource )
+    if (inspec3) :
+      [chan3, freq3, flux3 ] = readspec( inspec3, vsource=vsource )
 
   # compute contLevel and rms from unflagged channels
     [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, flagtable )
     plotParams["contLevel"] = contLevel
     plotParams["rms"] = rms
-
+    
     fluxList = [flux]
+    if inspec2 : fluxList.append( flux2 )
+    if inspec3 : fluxList.append( flux3 )
     hist( chan, freq, fluxList, flaggedBad, plotParams )
 
 # ----------------------------------------------------------------------------------------------
@@ -798,13 +804,11 @@ def snippet( infile, outfile, region='relpix,box(-1,-1,1,1)', vsource=5.0, flagt
           Line["flux"].append( flux[i] )
         else :     # past end of snippet
           if FillingIn :
-            print "dumping to pickle", Line
             fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
             pickle.dump( Line, fout )
             fout.close() 
             FillingIn = False
       if FillingIn :     # past end of spectrum
-        print "dumping to pickle", Line
         fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
         pickle.dump( Line, fout )
         FillingIn = False
@@ -1049,15 +1053,16 @@ def casaFlags( flagFileList ) :
 # "a" series is an 0.2 arcsec box
 # "b" series is an 0.3 arcsec box
 
+regiona = "arcsec,box(.1)"
+regionb = "arcsec,box(.15)"
+regionc = "arcsec,box(-.3,-.45,-.45,-.3)"
+regiond = "arcsec,box(1.3,2,1,2.3)"
+
 def makespec() :
-  #dumpspec( "spw0.100plus.cm", "spw0.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  #dumpspec( "spw0.100plus.cm", "spw0.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
-  #dumpspec( "spw1.100plus.cm", "spw1.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  #dumpspec( "spw1.100plus.cm", "spw1.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
-  dumpspec( "spw2.100plus.cm", "spw2.100plus.a.txt", region='arcsec,box(.1)', vsource=5., hann=3 )
-  #dumpspec( "spw2.100plus.cm", "spw2.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
-  #dumpspec( "spw3.100plus.cm", "spw3.100plus.a.txt", region='arcsec,box(.1)', vsource=0., hann=3 )
-  #dumpspec( "spw3.100plus.cm", "spw3.100plus.b.txt", region='arcsec,box(.15)', vsource=0., hann=3 )
+  dumpspec( "spw0.100plus.cm", "spw0.100plus.c.txt", region=regionc, vsource=0., hann=3 )
+  dumpspec( "spw1.100plus.cm", "spw1.100plus.c.txt", region=regionc, vsource=0., hann=3 )
+  dumpspec( "spw2.100plus.cm", "spw2.100plus.c.txt", region=regionc, vsource=0., hann=3 )
+  dumpspec( "spw3.100plus.cm", "spw3.100plus.c.txt", region=regionc, vsource=0., hann=3 )
 
 # snippet2 plots snippets of spectra centered on lines in splatalogue list
 # create a 'Line' dictionary for each one
@@ -1121,13 +1126,11 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
               Line["freq"].append( freq[i] )
             else :     # past end of snippet
               if FillingIn :
-                print "dumping to pickle", Line
                 fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
                 pickle.dump( Line, fout )
                 fout.close() 
                 FillingIn = False
           if FillingIn :     # past end of spectrum
-            #print "dumping to pickle", Line
             fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
             pickle.dump( Line, fout )
             FillingIn = False
@@ -1148,7 +1151,6 @@ def plotSnippets2( infile, nrows=4, ncols=4 ) :
 
   np = 0
   for Line in Lines :
-    print Line  
     vel = numpy.array( Line["vel"] )
     flux = numpy.array( Line["flux"] )
     np = np + 1
@@ -1156,8 +1158,9 @@ def plotSnippets2( infile, nrows=4, ncols=4 ) :
       pyplot.show()
       np = 1
     p = pyplot.subplot(nrows,ncols,np)
-    ymin,ymax = yminmax( numpy.array(Line["flux"]) )
-    ymax = 1.5*ymax
+    # ymin,ymax = yminmax( numpy.array(Line["flux"]) )
+    ymin = -.1 * Line["contLevel"]
+    ymax = 2.1*Line["contLevel"]
     plotParams["ymin"] = ymin
     plotParams["ymax"] = ymax
     plotParams["contLevel"] = Line["contLevel"]
@@ -1172,7 +1175,8 @@ def plotSnippets2( infile, nrows=4, ncols=4 ) :
     p.text(.04, .9,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes)
     p.text(.97, .9,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='right', transform=p.transAxes)
     p.text(.04, .82,  "%.4f GHz" % Line["linefreq"], horizontalalignment='left', transform=p.transAxes)
-    p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.8, \
+    p.text(.97, .82,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
+    p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.8, linewidth=0, \
               where=numpy.abs(vel-5.) < Line["shadeWidth"]/2. )
   pyplot.show()
 
