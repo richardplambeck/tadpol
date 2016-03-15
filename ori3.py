@@ -26,16 +26,39 @@ ckms = 2.99792e5    # speed of light in km/sec
 # plotParams dictionary controls plotting details
 plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
-               "nlap" : 100,
-               "ymin" : -.15,
-               "ymax" : 3.,
+               "nlap" : 20,
+               "ymin" : -.1,
+               "ymax" : 1.9,
                "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
                "convolve" : False,
                "flagtable" : None,
+               "shadeUnflagged" : False,	  # show which channels were unflagged?
+               "labelChanAxis" : False,        # show channel axis along top of plots?
                "pdf" : True }
+
+# create a 'Line' dictionary for use by snippet2 and pubFig
+# pickle the 'Line' dictionaries one by one, append to outfile
+B7spw0 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw0.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b0"}
+B7spw1 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw1.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b1"}
+B7spw2 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw2.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b2"}
+B7spw3 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw3.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b3"}
+B9spw0 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw0.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a0"}
+B9spw1 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw1.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a1"}
+B9spw2 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw2.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a2"}
+B9spw3 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw3.100plus.a.txt", 
+          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a3"}
+specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
+
 
 # run getspec, dump spectrum to a text file; adjust freq scale to be correct for source at LSR velocity vsource
 def dumpspec( infile, outfile, region='arcsec,box(.1)', vsource=0., hann=3 ):
@@ -386,15 +409,19 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
       name,linefreq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
       for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
+          print "fmin = %.4f, fmax = %.4f, linefreq = %.4f" % (fmin,fmax,linefreq[n])
           yval = yvalue( freq, flux, linefreq[n] )
           if yval < plotParams["contLevel"] : yval = plotParams["contLevel"]
           if yval > plotParams["ymax"] : yval = plotParams["contLevel"]
-          print "yvalue at frequency %.3f is %.2f" % (linefreq[n],yval)
-          p.annotate( "%s  %.0fK" % (name[n],TL[n]), xy=(linefreq[n],yval), \
-             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=8, \
-             arrowprops=dict( arrowstyle="->", linewidth=0.2 ) )
+          if TL[n] > 0. :
+            p.annotate( "%s  %.0fK" % (name[n],TL[n]), xy=(linefreq[n],yval), \
+             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=6, \
+             arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )    # use arrowstyle="->" to get arrow
+          else :
+            p.annotate( "%s" % (name[n]), xy=(linefreq[n],yval), \
+             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=6, \
+             arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )
           if shadeColor[n] :
-            print "shade %s" % shadeColor[n]
             deltaGHz = shadeWidth[n]/(2.*2.998e5) * linefreq[n]
             fillmax = linefreq[n]+deltaGHz
             if fillmax > fmax : fillmax = fmax
@@ -404,6 +431,7 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
             diff = (fillmax - fillmin)/2.
             alpha = 0.7 
             if shadeColor[n] == "green" : alpha=0.5
+            if shadeColor[n] == "blue" : alpha=0.2
             p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor[n], alpha=alpha, lw=0, \
               where=numpy.abs(freq-midpt) < diff )
             
@@ -534,11 +562,14 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       np = npanel % maxPanelsPerPage + 1
       p = pyplot.subplot(maxPanelsPerPage,1,np)
       # p2 = p.twinx()
-      p3 = p.twiny()   
         # p2 shares the same x-axis, p3 the same y-axis
       p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+      if npanel == npanels-1 :
+         p.set_xlabel("freq (GHz)", fontsize=8)
+      p.set_ylabel("flux density (Jy)", fontsize=8)
 
       fmin = freq[nch1]
+      print "nch1 = %d, fmin = %.5f" % (nch1,fmin)
       fmax = freq[nch2]
       delta = fmax - fmin
       fmin = fmin - .04*delta
@@ -555,18 +586,20 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
       #   p2.axis( [fmin, fmax, cmin, cmax] )
       #   p2.tick_params( axis='y', which='major', labelsize=8, colors='blue' )
       #   p2.plot( freq[nch1:nch2], cnv[nch1:nch2], color="b", linewidth=0.2, alpha=0.5 )
-      p3.axis( [chmin, chmax, ymin, ymax] )
+      if plotParams["labelChanAxis"] :
+        p3 = p.twiny()   
+        p3.axis( [chmin, chmax, ymin, ymax] )
+        p3.xaxis.set_minor_locator( x_locator )
+        p3.tick_params( axis='x', which='major', labelsize=8 )
 
       x_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
       p.xaxis.set_major_formatter( x_formatter )
       x_locator = matplotlib.ticker.AutoMinorLocator()
 
     # this is weird, but the minor axes will appear only on the 2nd of these (whichever their order)
-      p3.xaxis.set_minor_locator( x_locator )
       p.xaxis.set_minor_locator( x_locator )
 
       p.tick_params( axis='both', which='major', labelsize=8 )
-      p3.tick_params( axis='x', which='major', labelsize=8 )
 
       for flux,color in zip(fluxList,colorTable) :
         p.plot( freq[nch1:nch2], flux[nch1:nch2], color=color, linewidth=0.5 )
@@ -574,7 +607,7 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
         p.axhline( y=plotParams["contLevel"], linestyle='--', color='blue')
 
     # indicate channels that were NOT flagged bad for continuum map
-      if plotParams["flagtable"] :
+      if plotParams["flagtable"] and plotParams["shadeUnflagged"] :
         y1 = plotParams["contLevel"] - plotParams["rms"]
         y2 = plotParams["contLevel"] + plotParams["rms"]
         p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
@@ -639,7 +672,8 @@ def doit2( inspec, inspec2=None, inspec3=None, vsource=5.0, contLevelOverride=0.
    flagtable="flags_b1", ymin=-.1, ymax=3.,  plotParams=plotParams ) :
 
   # fill in plotParams from input keywords 
-    plotParams["title"] = inspec + "(red), " + inspec2 + "(blu), " + inspec3 + "(org), vsource=%.1d km/sec" % vsource
+    #plotParams["title"] = inspec + "(red), " + inspec2 + "(blu), " + inspec3 + "(org), vsource=%.1d km/sec" % vsource
+    plotParams["title"] = inspec + "  vsource=%.1d km/sec" % vsource
     plotParams["flagtable"] = flagtable
     plotParams["ymin"] = ymin
     plotParams["ymax"] = ymax
@@ -681,32 +715,23 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 # designed to make figures for publication
 # each figure is a full page with 4 panels, each covering a single spectral window
 
-def pubFig( plotParams=plotParams ) :
-    region="arcsec,box(.2)"
+#def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams ) :
+def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
+
     vsource=5.
     if plotParams["pdf"] :
       pyplot.ioff()
       pp = PdfPages("spectrum.pdf")
     ymin = plotParams["ymin"]
     ymax = plotParams["ymax"]
-    if ymin == ymax :
-      ymin,ymax = yminmax( fluxList[0] )
-      ymax = 1.2*ymax
-    plotParams["ymin"] = ymin
-    plotParams["ymax"] = ymax
     npanels = 4
     fig = pyplot.figure( figsize=(8,11) )
 
-    for npanel in range(0,4) :
-
-    # retrieve the spectrum for this spw0
-      infile = "spw%d.ch300.cm" % npanel
-      flagtable = "flags_b%d" % npanel
-      print "opening %s" % infile
-    
-      [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
-      p = pyplot.subplot(npanels,1,npanel+1)
-      p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    npanel = 1
+    for spectrum in specList: 
+      [chan, freq, flux ] = readspec( spectrum["file"], vsource=vsource )
+      p = pyplot.subplot(npanels,1,npanel)
+      p.grid( True, linewidth=0.05, color="0.01" )   # color=0.1 is a light gray
 
       fmin = freq[0]
       fmax = freq[-1]
@@ -715,29 +740,29 @@ def pubFig( plotParams=plotParams ) :
       fmax = fmax + .04*delta
 
       p.axis( [fmin, fmax, ymin, ymax] )
-
       x_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
       p.xaxis.set_major_formatter( x_formatter )
       x_locator = matplotlib.ticker.AutoMinorLocator()
-
       p.xaxis.set_minor_locator( x_locator )
       p.tick_params( axis='both', which='major', labelsize=8 )
       p.plot( freq, flux, color="r", linewidth=0.5 )
-      [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, flagtable )
+      [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, spectrum["flag"] )
       plotParams["contLevel"] = contLevel
       p.axhline( y=plotParams["contLevel"], linestyle='--', color='blue')
 
-    # indicate channels that were NOT flagged bad for continuum map
-      #if plotParams["flagtable"] :
-      #  y1 = plotParams["contLevel"] - plotParams["rms"]
-      #  y2 = plotParams["contLevel"] + plotParams["rms"]
-      #  p.fill_between( freq, y1, y2, where=flaggedBad==0, color='0.9' )
+    # label the spw
+      ii = string.find( spectrum["file"], "spw" )
+      p.text( .99, .91, "%s" % spectrum["file"][ii:ii+4], transform=p.transAxes, \
+        horizontalalignment='right', fontsize=7) # rotation='vertical' )
 
     # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
-        ann( p, freq, flux, fmin, fmax, plotParams )
+        ann( p, freq, flux, freq[0], freq[-1], plotParams )
+      if npanel == npanels :
+         p.set_xlabel("freq (GHz)", fontsize=8)
+      p.set_ylabel("flux density (Jy)", fontsize=8)
+      npanel = npanel + 1
 
-      #pyplot.suptitle( plotParams["title"], fontsize=10 )
     if plotParams["pdf"] :
       pyplot.savefig( pp, format='pdf' )
       pp.close()
@@ -1064,28 +1089,6 @@ def makespec() :
   dumpspec( "spw2.100plus.cm", "spw2.100plus.c.txt", region=regionc, vsource=0., hann=3 )
   dumpspec( "spw3.100plus.cm", "spw3.100plus.c.txt", region=regionc, vsource=0., hann=3 )
 
-# snippet2 plots snippets of spectra centered on lines in splatalogue list
-# create a 'Line' dictionary for each one
-# pickle the 'Line' dictionaries one by one, append to outfile
-
-B7spw0 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw0.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b0"}
-B7spw1 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw1.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b1"}
-B7spw2 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw2.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b2"}
-B7spw3 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw3.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b3"}
-B9spw0 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw0.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a0"}
-B9spw1 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw1.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a1"}
-B9spw2 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw2.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a2"}
-B9spw3 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw3.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a3"}
-specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
-
 def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
     specList=specList, outfile="snip",
     vrange=150., vsource=5.0 ) :
@@ -1136,7 +1139,35 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
             FillingIn = False
             fout.close() 
 
-
+# compute integrated intensity and write all results to csv file
+def evalSnippets( infile="snip", outfile="snipEval" ) :
+    Lines = []
+    fin = open( infile, "rb" )
+    while (True) :
+      try :
+        Line = pickle.load( fin )
+        Lines.append( Line )
+      except :
+        break 
+    fin.close()
+    print "read in %d Line objects" % ( len(Lines) )
+   
+    fout = open( outfile, "w" ) 
+    for Line in Lines :
+      v = numpy.array( Line["vel"] )
+      flux = numpy.array( Line["flux"] )
+      intfluxRed = intfluxBlue = 0.
+      for n in range(0, len(v) ) :
+        if (v[n] > 5.) and (v[n] <= 23.) :
+           intfluxRed = intfluxRed + (flux[n] - Line["contLevel"])
+           print "red wing :  %.3f  %.3f" % (v[n], flux[n]-Line["contLevel"] )
+        if (v[n] > -13.) and (v[n] <= 5.) :
+           intfluxBlue = intfluxBlue + (flux[n] - Line["contLevel"])
+           print "blue wing:  %.3f  %.3f" % (v[n], flux[n]-Line["contLevel"] )
+      fout.write("%.4f : %10s : %30s : %.0f : %.3f : %7.3f : %7.3f : %7.3f :\n" % \
+        (Line["linefreq"],Line["name"], Line["QN"], Line["TL"], Line["intensity"], intfluxRed, intfluxBlue, intfluxRed+intfluxBlue) )  
+    fout.close()
+     
 def plotSnippets2( infile, nrows=4, ncols=4 ) :
   maxPanelsPerPage = nrows * ncols
   Lines = []   # list of Line dictionaries
