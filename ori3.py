@@ -28,7 +28,7 @@ plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
                "ymin" : -.1,
-               "ymax" : 1.9,
+               "ymax" : 1.8,
                "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
@@ -397,7 +397,7 @@ def yminmax( yarray ) :
 def yvalue( freq, flux, fline ) :
     '''find amplitude of spectrum at freq fline - use for annotating lines'''
     for n in range(0,len(freq)-1) :
-      if (fline >= freq[n]) and (fline < freq[n+1]) : 
+      if ((fline >= freq[n]) and (fline < freq[n+1])) or ((fline <= freq[n]) and (fline > freq[n+1])) : 
         return flux[n]
     return 1000.
 
@@ -1168,8 +1168,13 @@ def evalSnippets( infile="snip", outfile="snipEval" ) :
         (Line["linefreq"],Line["name"], Line["QN"], Line["TL"], Line["intensity"], intfluxRed, intfluxBlue, intfluxRed+intfluxBlue) )  
     fout.close()
      
-def plotSnippets2( infile, nrows=4, ncols=4 ) :
-  maxPanelsPerPage = nrows * ncols
+# set up to plot 5 panels wide by 8 panels high on 8 x 11 sheet, but use only nrows x ncols in upper left corner of sheet;
+
+def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
+
+  nrowpage = 7
+  ncolpage = 4
+
   Lines = []   # list of Line dictionaries
   fin = open( infile, "rb" )
   while (True) :
@@ -1180,15 +1185,29 @@ def plotSnippets2( infile, nrows=4, ncols=4 ) :
       break 
   print "read in %d Line objects" % ( len(Lines) )
 
-  np = 0
+  if plotParams["pdf"] :
+    pyplot.ioff()
+    pp = PdfPages("snippets.pdf")
+  ymin = plotParams["ymin"]
+  ymax = plotParams["ymax"]
+  fig = pyplot.figure( figsize=(8,11) )
+
+# figure out list of positions that will be used
+  npList = []
+  for np in range(1,nrowpage*ncolpage+1,1) :
+    if (np%ncolpage > 0) and (np%ncolpage <= ncols) :
+      npList.append( np )
+  nn = 0
+
   for Line in Lines :
     vel = numpy.array( Line["vel"] )
     flux = numpy.array( Line["flux"] )
-    np = np + 1
-    if np > nrows * ncols :
+    if nn > len(npList) :
+      if plotParams["pdf"] :
+        pyplot.savefig( pp, format='pdf' )
       pyplot.show()
-      np = 1
-    p = pyplot.subplot(nrows,ncols,np)
+      nn = 0
+    p = pyplot.subplot(nrowpage,ncolpage,npList[nn])
     # ymin,ymax = yminmax( numpy.array(Line["flux"]) )
     ymin = -.1 * Line["contLevel"]
     ymax = 2.1*Line["contLevel"]
@@ -1197,17 +1216,40 @@ def plotSnippets2( infile, nrows=4, ncols=4 ) :
     plotParams["contLevel"] = Line["contLevel"]
     vmin = -60.
     vmax = 70.
-    p.axis( [vmin, vmax, ymin, ymax] )
-    p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    p.axis( [vmin, vmax, ymin, ymax], fontsize=6 )
+    p.grid( True, linewidth=.01, color="0.8" )   # bigger color numbers give lighter grays!
     p.plot( vel, flux, color="r", linewidth=1. )
     p.axhline( y=Line["contLevel"], linestyle='--', color='blue')
+    p.tick_params( axis='both', which='major', labelsize=6, length=1 )
+    if npList[nn]%ncols == 1 : 
+      p.set_ylabel("flux density (Jy)", fontsize=6)
+    if npList[nn]-(nrows-1)*ncols > 0  : 
+      p.set_xlabel("V$_{LSR}$ (km/sec)", fontsize=6)
   
   # annotate plot, shade the line
-    p.text(.04, .9,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes)
-    p.text(.97, .9,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='right', transform=p.transAxes)
-    p.text(.04, .82,  "%.4f GHz" % Line["linefreq"], horizontalalignment='left', transform=p.transAxes)
-    p.text(.97, .82,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
-    p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.8, linewidth=0, \
+    p.text(.04, .87,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+  # comment out following line for recomb line plot
+    #p.text(.04, .77,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+    p.text(.97, .87,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6 )
+    #p.text(.97, .82,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
+    yval = yvalue( vel, flux, 5. )
+    if yval < Line["contLevel"] : yval = Line["contLevel"]
+    print 'yval = %.3f' % yval
+    p.annotate( "", xy=(5.,yval), \
+             xytext=(5.,0.75*ymax), horizontalalignment="center", rotation="vertical", size=6, \
+             arrowprops=dict( arrowstyle="->", linewidth=0.3 ) )
+    p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.5, linewidth=0, \
               where=numpy.abs(vel-5.) < Line["shadeWidth"]/2. )
+  # comment in following line for recomb line plot
+    goodRect = Rectangle( (-13.,Line["contLevel"]), 36., 0.2*(ymax-ymin), \
+        fill=True, edgecolor='orange',linewidth=0.1, facecolor='yellow', alpha=.5)   # target range
+    p.add_patch( goodRect )
+
+  # advance panel number at the very end
+    nn = nn + 1
+    
+  if plotParams["pdf"] :
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
   pyplot.show()
 
