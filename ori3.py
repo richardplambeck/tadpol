@@ -1265,7 +1265,10 @@ def extractParameter( instring, param ) :
     else :
       return None
   
+# ----------------------------------------------------------------------------------------- #
+# process pv diagram written out by velplot as a miriad map
 # axis1 is VELO; axis2 is position; axis3 is intensity
+
 def readpv( imageFile ) :
     '''read pos-vel map in Miriad format created by velplot, convert to numpy array'''
 
@@ -1297,15 +1300,19 @@ def readpv( imageFile ) :
     fin.close()
     return [ numpy.array(vel), numpy.array(pos), numpy.array(flx) ]
 
-def plotArray( p, p2, array, arcsecBox, vrange=0. ) :
-  nsq = int( math.sqrt(len(array)) + .0001 )
-  p.tick_params( labelsize=10 )
-  if vrange > 0. :
-    imgplot = p.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
-        extent=[-arcsecBox,arcsecBox,-arcsecBox,arcsecBox], vmin=-1.*vrange,vmax=vrange )
-  else : 
-    imgplot = p.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
-        extent=[-arcsecBox,arcsecBox,-arcsecBox,arcsecBox] )
-  if not p2 == None :
+# plot the array
+def plotpv( imageFile ) :
+    fig = pyplot.figure()
+    p = fig.add_axes( [.08,.55,.35,.35])
+    p2 = fig.add_axes([.41,.55,.015,.35])
+    p2.tick_params( labelsize=10 )
+    p.tick_params( labelsize=10 )
+    [vel, pos, flx] = readpv( imageFile )
+    nv = 64
+    np = 25
+    print "nv = %d, np = %d" % (nv,np)
+    imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', \
+        extent=[0,nv,0,np] )
     pyplot.colorbar( imgplot, cax=p2  )
+    pyplot.show()
  
