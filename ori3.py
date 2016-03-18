@@ -1172,7 +1172,7 @@ def evalSnippets( infile="snip", outfile="snipEval" ) :
 
 def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
 
-  nrowpage = 7
+  nrowpage = 6
   ncolpage = 4
 
   Lines = []   # list of Line dictionaries
@@ -1220,6 +1220,7 @@ def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
     p.grid( True, linewidth=.01, color="0.8" )   # bigger color numbers give lighter grays!
     p.plot( vel, flux, color="r", linewidth=1. )
     p.axhline( y=Line["contLevel"], linestyle='--', color='blue')
+    p.axhline( y=0, linestyle='-', lw=0.1, color='blue')
     p.tick_params( axis='both', which='major', labelsize=6, length=1 )
     if npList[nn]%ncols == 1 : 
       p.set_ylabel("flux density (Jy)", fontsize=6)
@@ -1227,11 +1228,11 @@ def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
       p.set_xlabel("V$_{LSR}$ (km/sec)", fontsize=6)
   
   # annotate plot, shade the line
-    p.text(.04, .87,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+    p.text(.04, .9,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+    p.text(.97, .9,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6 )
   # comment out following line for recomb line plot
-    #p.text(.04, .77,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
-    p.text(.97, .87,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6 )
-    #p.text(.97, .82,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
+    # p.text(.04, .8,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+    #p.text(.97, .8,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
     yval = yvalue( vel, flux, 5. )
     if yval < Line["contLevel"] : yval = Line["contLevel"]
     print 'yval = %.3f' % yval
@@ -1240,9 +1241,9 @@ def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
              arrowprops=dict( arrowstyle="->", linewidth=0.3 ) )
     p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.5, linewidth=0, \
               where=numpy.abs(vel-5.) < Line["shadeWidth"]/2. )
-  # comment in following line for recomb line plot
+  # comment in following lines for recomb line plot
     goodRect = Rectangle( (-13.,Line["contLevel"]), 36., 0.2*(ymax-ymin), \
-        fill=True, edgecolor='orange',linewidth=0.1, facecolor='yellow', alpha=.5)   # target range
+       fill=True, edgecolor='orange',linewidth=0.1, facecolor='yellow', alpha=.5)   # target range
     p.add_patch( goodRect )
 
   # advance panel number at the very end
@@ -1253,3 +1254,58 @@ def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
     pp.close()
   pyplot.show()
 
+# ========================== plot position velocity diagram ========================== #
+
+def extractParameter( instring, param ) :
+    '''extract parameter "param" from imlist output, passed to this routine as instring'''
+    n = instring.find( param )
+    if n > 0 :
+      a = instring[n:].split()
+      return float( a[2] )
+    else :
+      return None
+  
+# axis1 is VELO; axis2 is position; axis3 is intensity
+def readpv( imageFile ) :
+    '''read pos-vel map in Miriad format created by velplot, convert to numpy array'''
+
+  # begin by figuring out axes
+    p = subprocess.Popen( ( shlex.split('imlist in=%s' % imageFile ) ), \
+       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    vstart = extractParameter( result, "crval1" )
+    pstart = extractParameter( result, "crval2" )
+    vstep = extractParameter( result, "cdelt1" )
+    pstart = extractParameter( result, "cdelt2" )
+
+  # now dump the data and assign to array
+    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog format=(3F12.5)" % imageFile ) ), \
+       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+    result = p.communicate()[0]
+    print result
+
+  # open the logfile, fill out lists, then convert to array
+    vel = []
+    pos = []
+    flx = []
+    fin = open("imtablog", "r")
+    for line in fin :
+      a = line.split()
+      vel.append( float(a[0]) )   # reverse RA to get arcsec on sky
+      pos.append( float(a[1]) )
+      flx.append( float(a[2]) )
+    fin.close()
+    return [ numpy.array(vel), numpy.array(pos), numpy.array(flx) ]
+
+def plotArray( p, p2, array, arcsecBox, vrange=0. ) :
+  nsq = int( math.sqrt(len(array)) + .0001 )
+  p.tick_params( labelsize=10 )
+  if vrange > 0. :
+    imgplot = p.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
+        extent=[-arcsecBox,arcsecBox,-arcsecBox,arcsecBox], vmin=-1.*vrange,vmax=vrange )
+  else : 
+    imgplot = p.imshow(numpy.reshape(array, (nsq,nsq) ), origin='lower', \
+        extent=[-arcsecBox,arcsecBox,-arcsecBox,arcsecBox] )
+  if not p2 == None :
+    pyplot.colorbar( imgplot, cax=p2  )
+ 
