@@ -221,13 +221,14 @@ def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200
       # unless I do this the arrays are officially 2D arrays?!
 
 # ----------------------------------------------------------------------------------------------
-# processLineList reads in file produced by splatalogue
+# processLineList reads in file in splatalogue.csv format
 # the goal is to compare lab frequencies from splatalogue with observed frequencies that
 #   are reported in the vlsr=vsource frame
 # so if line is emitted by gas at LSR velocity vsource, return lab freq directly; this
 #   is the usual situation
-# if line is emitted at a different LSR velocity, doppler correct the frequency; IN THIS
-#   CASE THE FREQUENCY WILL NOT BE THE LAB FREQUENCY
+# it is possible to add "VLSR:xx:" lines to splatalogue.csv; if such a line is read, all
+#    subsequent data (until another VLSR line is read) will be Doppler corrected by
+#    1 - (vlsr-vsource)/c frame; IN THIS CASE THE FREQUENCY WILL NOT BE THE LAB FREQUENCY
 #
 # used by two routines:
 #   - ann uses it to annotate the plot (all outputs needed)
@@ -241,6 +242,8 @@ def processLineList( lineListFile, vsource=5. ) :
     freq = []
     QN = []		# note: this routine does not return QN currently
     TL = []
+    TU = []     # not returned 
+    Smusq = []  # not returned
     intensity = []
     vdop = []
     shadeColor = []     # color to shade line
@@ -252,6 +255,7 @@ def processLineList( lineListFile, vsource=5. ) :
       # ... the default vlsr is vsource, in which case no doppler correction will be applied
 
     fin = open( lineListFile, "r" )
+    #freqCol = altFreqCol = TLcol = TUcol = intensityCol = SmusqCol = QNcol = None
     for line in fin :
       if len(line) > 1 :
         a = line.split(":")
@@ -266,16 +270,20 @@ def processLineList( lineListFile, vsource=5. ) :
 			  altFreqCol = n
             if "E_L (K)" in a[n] :
               TLcol = n
+            if "E_U (K)" in a[n] :
+              TUcol = n
             if "CDMS/JPL Intensity" in a[n] :
 			  intensityCol = n
+            if "S<sub>ij</sub>&#956;" in a[n] :
+              SmusqCol = n
             if "Resolved QNs" in a[n] :
 			  QNcol = n
             if "Width" in a[n] :
               widthCol = n
             if "Color" in a[n] :
               colorCol = n
-          print "nameCol = %d, freqCol = %d, TLcol = %d, QNcol = %d, intensityCol = %d, colorCol = %d, widthCol = %d" % \
-             (nameCol,freqCol,QNcol,TLcol,intensityCol,colorCol,widthCol)
+          #print "nameCol = %d, freqCol = %d, TLcol = %d, QNcol = %d, intensityCol = %d, colorCol = %d, widthCol = %d" % \
+          #   (nameCol,freqCol,QNcol,TLcol,intensityCol,colorCol,widthCol)
 
       # vlsr line gives vlsr of all lines that follow, until next vlsr line
         elif "VLSR" in line : 
@@ -296,8 +304,27 @@ def processLineList( lineListFile, vsource=5. ) :
             freq.append( dopfac * float(a[altFreqCol]) )
 
           QN.append( a[QNcol] )
-          TL.append( float(a[TLcol]) )
-          intensity.append( float(a[intensityCol]) )
+
+          if SmusqCol :
+            Smusq.append( float(a[SmusqCol]) )
+          else :
+            Smusq.append( 0. )
+
+          if TUcol :
+            TU.append( float(a[TUcol]) )
+          else :
+            TU.append( -1. )
+
+          if TLcol :
+            TL.append( float(a[TLcol]) )
+          else :
+            TL.append( -1. )
+
+          if intensityCol :
+            intensity.append( float(a[intensityCol]) )
+          else :
+            intensity.append( 0. )
+          
 
         # colorCol and widthCol will be None if we are processing raw splatalogue file
           if colorCol :
@@ -311,7 +338,7 @@ def processLineList( lineListFile, vsource=5. ) :
           #print "%15s %12.5f %5.0f %6.4f" % ( name[-1], freq[-1], TL[-1], intensity[-1] )  
 
     fin.close()
-    return name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth
+    return name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth
 
 # ----------------------------------------------------------------------------------------------
 # parse splatalogue output, remove unobserved frequencies, duplicates 
@@ -1303,8 +1330,8 @@ def readpv( imageFile ) :
 # plot the array
 def plotpv( imageFile ) :
     fig = pyplot.figure()
-    p = fig.add_axes( [.08,.55,.35,.35])
-    p2 = fig.add_axes([.41,.55,.015,.35])
+    p = fig.add_axes( [.1,.1,.7,.7])
+    p2 = fig.add_axes([.85,.1,.015,.7])
     p2.tick_params( labelsize=10 )
     p.tick_params( labelsize=10 )
     [vel, pos, flx] = readpv( imageFile )
