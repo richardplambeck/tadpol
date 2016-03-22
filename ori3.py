@@ -39,8 +39,9 @@ plotParams = { "npanels" : 2,
                "labelChanAxis" : False,        # show channel axis along top of plots?
                "pdf" : True }
 
-# create a 'Line' dictionary for use by snippet2 and pubFig
-# pickle the 'Line' dictionaries one by one, append to outfile
+# create a "specList" dictionary for use by snippet2 and pubFig
+#   'file' is text file containing the spectrum integrated over some region
+#   'flag' is flags file indicating which spectra were flagged for continuum maps
 B7spw0 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw0.100plus.a.txt", 
           'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b0"}
 B7spw1 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw1.100plus.a.txt", 
@@ -91,7 +92,7 @@ def readspec( inspec, vsource=5. ) :
     return numpy.array(chan), numpy.array(freq), numpy.array(flux)
 
 # ----------------------------------------------------------------------------------------------
-# getspec dumps out spectrum of selected region from spectral line cube; note that region
+# getspec returns spectrum of selected region from spectral line cube; note that region
 #  command could also select channel range, if desired
 # Note: - axis3 of spectral line data cube is LSR velocity relative to restfreq (at LSR=0)
 #       - from this, one can compute the restfreq of that channel in the LSR=0 frame (the lab frame) 
@@ -162,7 +163,7 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=3, tmpfile
     spectrum = numpy.array(sorted(zip(freq,chan,flux)))
       # this sorts the chan,freq,flux triplets in freq order
     a,b,c = numpy.split( spectrum, 3, axis=1 )
-      # this returns separate freq and flux arrays
+      # this returns separate freq and flux array
     return numpy.reshape(b,len(a)), numpy.reshape(a,len(b)), numpy.reshape(c,len(c))
       # unless I do this the arrays are officially 2D arrays?!
 
@@ -433,7 +434,7 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
     '''annotates plot with spectral line labels'''
     print "annotating freq range %.3f to %.3f GHz" % (fmin,fmax)
     if plotParams["linelistFile"] :
-      name,linefreq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
+      name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
       for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
           print "fmin = %.4f, fmax = %.4f, linefreq = %.4f" % (fmin,fmax,linefreq[n])
@@ -800,7 +801,8 @@ def calcIntensity( infile, T ) :
   T0 = 300.
   hPlanck = 6.62607e-27 
   kBoltzmann = 1.38065e-16
-  name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
+
+  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   Iba = numpy.zeros( len(name) )
   for n in range(0, len(name) ) :
     TU = TL[n] + (hPlanck * freq[n]*1.e9 / kBoltzmann)   # upper state energy in K
@@ -809,62 +811,87 @@ def calcIntensity( infile, T ) :
   return Iba
 
 def plotIntensity( infile ) :
-  name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
+  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   T = 100
   Iba = calcIntensity( infile, T) * 37424./pow(T,1.5)
   fig,ax = pyplot.subplots()
   pyplot.bar( freq, Iba, .01, color="red", edgecolor="red" )
   pyplot.show()
 
-# snippet extracts sections of spectra centered on lines in splatalogue list
+# snippet extracts sections of spectra centered on lines listed in "snip.csv" (splatalogue format)
 # create a 'Line' dictionary for each one
 # pickle the 'Line' dictionaries one by one, append to outfile
 
-def snippet( infile, outfile, region='relpix,box(-1,-1,1,1)', vsource=5.0, flagtable="flags_a0", \
-     linelistFile="/o/plambeck/OriALMA/Spectra/splatalogue.csv", vrange=80. ) :
+def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
+    specList=specList, outfile="snip",
+    vrange=150., vsource=5.0 ) :
 
-  # retrieve the spectrum
-    if infile.endswith( ".uv" ) :
-      [chan, freq, flux ] = getuvspec( infile, vsource=vsource )
-    else :
-      [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
+  # read the lineList file
+    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
 
-  # compute contLevel and rms from unflagged channels
-    if flagtable :
-      [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, flagtable )
-    else :
-      contLevel = 0.
-
-    name,freq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( linelistFile )
+  # extract snippet for each line in the file
     for n in range(0,len(name)) :
-      FillingIn = False
-      Line = {}
-      for i in range(0,len(freq)-1) :
-        dv = (freq[i]-linefreq[n])/linefreq[n] * ckms   # velocity relative to line center (if line is at nominal VLSR)
-        if abs(dv) < vrange/2. :
-          if not FillingIn :
-            FillingIn = True
-            Line["name"] = name[n]
-            Line["TL"] = TL[n]
-            Line["linefreq"] = linefreq[n]
-            Line["intensity"] = intensity[n]
-            Line["contLevel"] = contLevel
-            vlsr0 = vlsr[n]
-            Line["vel"] = []
-            Line["flux"] = []
-          Line["vel"].append( dv + vlsr0 )
-          Line["flux"].append( flux[i] )
-        else :     # past end of snippet
-          if FillingIn :
+ 
+    # find spectral window that contains the line
+      for spectrum in specList :
+
+      # retrieve the spectrum from txt file, from uv data, or from map (txt is preferred)
+        if spectrum["file"].endswith( ".txt" ) :
+          [chan, freq, flux ] = readspec( spectrum["file"], vsource=vsource )
+        elif spectrum["file"].endswith( ".uv") :
+          [chan, freq, flux ] = getuvspec( infile, vsource=vsource )
+        else :
+          [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
+
+      # extract the snippet if the line is in this spectral window
+        if (linefreq[n] > freq[0]) and (linefreq[n] < freq[-1]) :
+          print "found %.3f GHz in file %s" % (linefreq[n],spectrum["file"])
+          [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, spectrum["flag"] )
+          FillingIn = False
+          Line = {}
+          for i in range(0,len(freq)-1) :
+            dv = (1. - freq[i]/linefreq[n]) * ckms   # velocity relative to line center (if line is at nominal VLSR)
+            if abs(dv) < vrange/2. :
+              if not FillingIn :
+                FillingIn = True
+                Line["name"] = name[n]
+                Line["QN"] = QN[n]
+                Line["TL"] = TL[n]
+                Line["TU"] = TU[n]
+                Line["Smusq"] = Smusq[n]
+                Line["linefreq"] = linefreq[n]
+                Line["intensity"] = intensity[n]
+                Line["contLevel"] = contLevel
+                Line["shadeColor"] = shadeColor[n]
+                Line["shadeWidth"] = shadeWidth[n]
+                vlsr0 = vdop[n]
+                Line["vel"] = []
+                Line["flux"] = []
+                Line["freq"] = []
+                Line["intfluxRed"] = 0.
+                Line["intfluxBlue"] = 0.
+              vel = dv + vlsr0
+              Line["vel"].append( vel )
+              Line["flux"].append( flux[i] )
+              Line["freq"].append( freq[i] )
+              if (vel > 5.) and (vel <= 23.) :
+                Line["intfluxRed"] = Line["intfluxRed"] + (flux[i] - contLevel)
+                # print "red wing :  %.3f  %.3f" % (vel, flux[i]-Line["contLevel"] )
+              if (vel > -13.) and (vel <= 5.) :
+                Line["intfluxBlue"] = Line["intfluxBlue"] + (flux[i] - contLevel)
+                # print "blue wing:  %.3f  %.3f" % (vel, flux[i]-Line["contLevel"] )
+
+            else :     # past end of snippet
+              if FillingIn :
+                fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
+                pickle.dump( Line, fout )
+                fout.close() 
+                FillingIn = False
+          if FillingIn :     # past end of spectrum
             fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
             pickle.dump( Line, fout )
-            fout.close() 
             FillingIn = False
-      if FillingIn :     # past end of spectrum
-        fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
-        pickle.dump( Line, fout )
-        FillingIn = False
-        fout.close() 
+            fout.close() 
 
 # plot the snippets 
 
@@ -1116,57 +1143,8 @@ def makespec() :
   dumpspec( "spw2.100plus.cm", "spw2.100plus.c.txt", region=regionc, vsource=0., hann=3 )
   dumpspec( "spw3.100plus.cm", "spw3.100plus.c.txt", region=regionc, vsource=0., hann=3 )
 
-def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
-    specList=specList, outfile="snip",
-    vrange=150., vsource=5.0 ) :
-
-  # read the lineList file
-    name,linefreq,QN,TL,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
-
-  # extract snippet for each line in the file
-    for n in range(0,len(name)) :
- 
-    # find spectral window that contains the line
-      for spectrum in specList :
-        [chan, freq, flux ] = readspec( spectrum["file"], vsource=vsource )
-        if (linefreq[n] > freq[0]) and (linefreq[n] < freq[-1]) :
-          print "found %.3f GHz in file %s" % (linefreq[n],spectrum["file"])
-          [contLevel, rms, flaggedBad] = findRMS( chan, freq, flux, spectrum["flag"] )
-          FillingIn = False
-          Line = {}
-          for i in range(0,len(freq)-1) :
-            dv = (1. - freq[i]/linefreq[n]) * ckms   # velocity relative to line center (if line is at nominal VLSR)
-            if abs(dv) < vrange/2. :
-              if not FillingIn :
-                FillingIn = True
-                Line["name"] = name[n]
-                Line["QN"] = QN[n]
-                Line["TL"] = TL[n]
-                Line["linefreq"] = linefreq[n]
-                Line["intensity"] = intensity[n]
-                Line["contLevel"] = contLevel
-                Line["shadeColor"] = shadeColor[n]
-                Line["shadeWidth"] = shadeWidth[n]
-                vlsr0 = vdop[n]
-                Line["vel"] = []
-                Line["flux"] = []
-                Line["freq"] = []
-              Line["vel"].append( dv + vlsr0 )
-              Line["flux"].append( flux[i] )
-              Line["freq"].append( freq[i] )
-            else :     # past end of snippet
-              if FillingIn :
-                fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
-                pickle.dump( Line, fout )
-                fout.close() 
-                FillingIn = False
-          if FillingIn :     # past end of spectrum
-            fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
-            pickle.dump( Line, fout )
-            FillingIn = False
-            fout.close() 
-
 # compute integrated intensity and write all results to csv file
+# this computation is now included as part of snippet2
 def evalSnippets( infile="snip", outfile="snipEval" ) :
     Lines = []
     fin = open( infile, "rb" )
@@ -1179,21 +1157,16 @@ def evalSnippets( infile="snip", outfile="snipEval" ) :
     fin.close()
     print "read in %d Line objects" % ( len(Lines) )
    
-    fout = open( outfile, "w" ) 
+    #fout = open( outfile, "w" ) 
     for Line in Lines :
-      v = numpy.array( Line["vel"] )
-      flux = numpy.array( Line["flux"] )
-      intfluxRed = intfluxBlue = 0.
-      for n in range(0, len(v) ) :
-        if (v[n] > 5.) and (v[n] <= 23.) :
-           intfluxRed = intfluxRed + (flux[n] - Line["contLevel"])
-           print "red wing :  %.3f  %.3f" % (v[n], flux[n]-Line["contLevel"] )
-        if (v[n] > -13.) and (v[n] <= 5.) :
-           intfluxBlue = intfluxBlue + (flux[n] - Line["contLevel"])
-           print "blue wing:  %.3f  %.3f" % (v[n], flux[n]-Line["contLevel"] )
-      fout.write("%.4f : %10s : %30s : %.0f : %.3f : %7.3f : %7.3f : %7.3f :\n" % \
-        (Line["linefreq"],Line["name"], Line["QN"], Line["TL"], Line["intensity"], intfluxRed, intfluxBlue, intfluxRed+intfluxBlue) )  
-    fout.close()
+      Sdv = Line["intfluxRed"] + Line["intfluxBlue"]
+      Nu = Sdv/(Line["linefreq"]*Line["Smusq"]) 
+      logNu = 0.
+      if Nu > 0. : logNu = math.log(Nu)
+      print "%11.5f  %.4e  %.4e  %8.1f" % ( Line["linefreq"], Sdv, logNu, Line["TU"] )
+      #fout.write("%.4f : %10s : %30s : %.0f : %.3f : %7.3f : %7.3f : %7.3f :\n" % \
+      #  (Line["linefreq"],Line["name"], Line["QN"], Line["TU"], Sdv, math.) )  
+    #fout.close()
      
 # set up to plot 5 panels wide by 8 panels high on 8 x 11 sheet, but use only nrows x ncols in upper left corner of sheet;
 
