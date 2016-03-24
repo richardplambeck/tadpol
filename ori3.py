@@ -250,7 +250,6 @@ def processLineList( lineListFile, vsource=5. ) :
     vdop = []
     shadeColor = []     # color to shade line
     shadeWidth = []     # shade this width in km/sec
-    pvname = []         # stem name of pos-vel file (eg, "SO2v2eq1" )
     colorCol = widthCol = None
 
     vlsr = vsource   
@@ -265,7 +264,7 @@ def processLineList( lineListFile, vsource=5. ) :
 
       # process header line; figure out what data are in what column
         if "Species" in a[0] :
-          SmusqCol = TLcol =TUcol = intensityCol = pvnameCol = None
+          SmusqCol = TLcol = TUcol = intensityCol = None
           nameCol = 0
           for n in range(1,len(a)) :
             if (a[n] == "Freq-GHz") or ("Ordered" in a[n]) :
@@ -286,8 +285,6 @@ def processLineList( lineListFile, vsource=5. ) :
               widthCol = n
             if "Color" in a[n] :
               colorCol = n
-            if "pvname" in a[n] :
-              pvnameCol = n
           #print "nameCol = %d, freqCol = %d, TLcol = %d, QNcol = %d, intensityCol = %d, colorCol = %d, widthCol = %d" % \
           #   (nameCol,freqCol,QNcol,TLcol,intensityCol,colorCol,widthCol)
 
@@ -341,13 +338,9 @@ def processLineList( lineListFile, vsource=5. ) :
             shadeWidth.append( float(a[widthCol]) )
           else :
             shadeWidth.append( None )
-          if pvnameCol :
-            pvname.append( a[pvnameCol] )
-          else :
-            pvname.append( None )
 
     fin.close()
-    return name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth,pvname
+    return name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth
 
 # ----------------------------------------------------------------------------------------------
 # parse splatalogue output, remove unobserved frequencies, duplicates 
@@ -442,7 +435,7 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
     '''annotates plot with spectral line labels'''
     print "annotating freq range %.3f to %.3f GHz" % (fmin,fmax)
     if plotParams["linelistFile"] :
-      name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth,pvname = processLineList( plotParams["linelistFile"] )
+      name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
       for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
           print "fmin = %.4f, fmax = %.4f, linefreq = %.4f" % (fmin,fmax,linefreq[n])
@@ -810,7 +803,7 @@ def calcIntensity( infile, T ) :
   hPlanck = 6.62607e-27 
   kBoltzmann = 1.38065e-16
 
-  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth,pvname = processLineList( infile )
+  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   Iba = numpy.zeros( len(name) )
   for n in range(0, len(name) ) :
     TU = TL[n] + (hPlanck * freq[n]*1.e9 / kBoltzmann)   # upper state energy in K
@@ -819,7 +812,7 @@ def calcIntensity( infile, T ) :
   return Iba
 
 def plotIntensity( infile ) :
-  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth,pvname = processLineList( infile )
+  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
   T = 100
   Iba = calcIntensity( infile, T) * 37424./pow(T,1.5)
   fig,ax = pyplot.subplots()
@@ -840,10 +833,10 @@ def plotIntensity( infile ) :
 
 def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
     specList=specList, outfile="snip",
-    vrange=90., vsource=5.0 ) :
+    vrange=65., vsource=5.0 ) :
 
   # read the lineList file
-    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth,pvname = processLineList( lineListFile )
+    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
 
   # extract snippet for each line in the file
     for n in range(0,len(name)) :
@@ -880,7 +873,6 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
                 Line["contLevel"] = contLevel
                 Line["shadeColor"] = shadeColor[n]
                 Line["shadeWidth"] = shadeWidth[n]
-                Line["pvname"] = pvname[n]
                 vlsr0 = vdop[n]
                 Line["vel"] = []
                 Line["flux"] = []
@@ -1356,7 +1348,7 @@ def plotpv( imageFile ) :
 def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
 
     nrowpage = 6
-    ncolpage = 4
+    ncolpage = 3
 
     Lines = []   # list of Line dictionaries
     fin = open( infile, "rb" )
@@ -1368,7 +1360,7 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
         break 
     print "read in %d Line objects" % ( len(Lines) )
     for Line in Lines:
-      print Line["name"],Line["linefreq"],Line["pvname"]
+      print Line["name"],Line["linefreq"]
 
     pyplot.ioff()
     pp = PdfPages("snippets.pdf")
@@ -1381,6 +1373,7 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
     for np in range(1,nrowpage*ncolpage+1,1) :
       if (np%ncolpage > 0) and (np%ncolpage <= ncols) :
         npList.append( np )
+    print "npList = ",npList
     nn = 0  # nn is the index used for npList
 
   # process only snippets where pvfilename is given
@@ -1389,27 +1382,34 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
       flux = numpy.array( Line["flux"] )
 
     # if page fills up, save the pdf, display the figure, then reset index nn
-      if nn > len(npList) :
+      if nn >= len(npList) :
         pyplot.savefig( pp, format='pdf' )
+        #pp.close()
         pyplot.show()
+        #pp = PdfPages("snippets.pdf")
+        fig = pyplot.figure( figsize=(8,11) )
         nn = 0
 
+      #print "nn = %d, npList[nn] = %d" % (nn, npList[nn])
       p = pyplot.subplot(nrowpage,ncolpage,npList[nn])
       ymin,ymax = yminmax( numpy.array(Line["flux"]) )
+      #vmin,vmax = yminmax( numpy.array(Line["vel"]) )
+         # commented this out because one line is at edge of band, not fully mapped
+      vmin = -30.
+      vmax = 40.
+      ymax = ymax + 0.2*(ymax-ymin)
       plotParams["ymin"] = ymin
       plotParams["ymax"] = ymax
       plotParams["contLevel"] = Line["contLevel"]
-      vmin = -36.
-      vmax = 48.
       p.axis( [vmin, vmax, ymin, ymax], fontsize=6 )
       p.grid( True, linewidth=.01, color="0.8" )   # bigger color numbers give lighter grays!
       p.plot( vel, flux, color="r", linewidth=1. )
       p.axhline( y=Line["contLevel"], linestyle='--', color='blue')
       p.axhline( y=0, linestyle='-', lw=0.1, color='blue')
       p.tick_params( axis='both', which='major', labelsize=6, length=1 )
-      if npList[nn]%ncols == 1 : 
+      if npList[nn]%ncolpage == 1 : 
         p.set_ylabel("flux density (Jy)", fontsize=6)
-      if npList[nn]-(nrows-1)*ncols > 0  : 
+      if npList[nn]-(nrows-1)*ncolpage > 0  : 
         p.set_xlabel("V$_{LSR}$ (km/sec)", fontsize=6)
 
     # annotate plot, shade the line
@@ -1436,15 +1436,21 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
       print Line["linefreq"], pvFile 
       if pvFile :
         [vel, pos, flx] = readpv( pvFile )
+        nv = len( numpy.unique(vel))
+        np = len( numpy.unique(pos))
+        print "nv = %d, np = %d" % (nv,np)
         p = pyplot.subplot(nrowpage,ncolpage,npList[nn])
         p.tick_params( axis='both', which='major', labelsize=6, length=1 )
-        p.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
-        nv = 64
-        np = 25
-        print "nv = %d, np = %d" % (nv,np)
+        p.axis( [-26., 37., pos[0], pos[-1]] )
+
+      # Deal with situation where there is super-deep absorption next to line
+        minflx = numpy.amin( flx )
+        maxflx = numpy.amax( flx )
+        vminVal = None
+        if minflx < -1.*maxflx : vminVal = -1.*maxflx
         imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
-            extent=[vel[0],vel[-1],pos[0],pos[-1]] )
-        p.grid( True, linewidth=1, color="white")   # color=0.1 is a light gray
+            extent=[vel[0],vel[-1],pos[0],pos[-1]], vmin=vminVal )
+        p.grid( True, linewidth=0.1, color="white")   # color=0.1 is a light gray
         # pyplot.colorbar( imgplot, cax=ax2  )
       nn = nn + 1
     
@@ -1466,4 +1472,5 @@ def findpvFile( linefreq ) :
       for filename in os.listdir( directory ) :
         if searchstring in filename :
           return directory + "/" + filename
+    print "couldn't find filename with searchstring %s" % searchstring
     return None
