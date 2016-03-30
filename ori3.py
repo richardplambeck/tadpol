@@ -28,8 +28,8 @@ ckms = 2.99792e5    # speed of light in km/sec
 plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
-               "ymin" : -.1,
-               "ymax" : 1.8,
+               "ymin" : -.2,       # -.1 for band7, -.2 for band9
+               "ymax" : 5.5,      # 1.95 for band7, 5.5 for band9
                "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
@@ -295,6 +295,7 @@ def processLineList( lineListFile, vsource=5. ) :
 
       # process data lines; this can crash if one of the required columns is not present
         elif not line.startswith("#") :
+          print line
           name.append( a[nameCol] )
           vdop.append( vlsr )
           dopfac = 1. - (vlsr - vsource)/ckms
@@ -441,14 +442,14 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
           print "fmin = %.4f, fmax = %.4f, linefreq = %.4f" % (fmin,fmax,linefreq[n])
           yval = yvalue( freq, flux, linefreq[n] )
           if yval < plotParams["contLevel"] : yval = plotParams["contLevel"]
-          if yval > plotParams["ymax"] : yval = plotParams["contLevel"]
-          if TL[n] > 0. :
-            p.annotate( "%s  %.0fK" % (name[n],TL[n]), xy=(linefreq[n],yval), \
-             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=6, \
+          if yval > 0.8*plotParams["ymax"] : yval = plotParams["contLevel"]
+          if TU[n] > 0. :
+            p.annotate( "%s  %.0fK" % (name[n],TU[n]), xy=(linefreq[n],yval), \
+             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=7, \
              arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )    # use arrowstyle="->" to get arrow
           else :
             p.annotate( "%s" % (name[n]), xy=(linefreq[n],yval), \
-             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=6, \
+             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=7, \
              arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )
           if shadeColor[n] :
             deltaGHz = shadeWidth[n]/(2.*2.998e5) * linefreq[n]
@@ -744,8 +745,8 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 # designed to make figures for publication
 # each figure is a full page with 4 panels, each covering a single spectral window
 
-#def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams ) :
-def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
+def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams ) :
+#def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
 
     vsource=5.
     if plotParams["pdf"] :
@@ -781,8 +782,8 @@ def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
 
     # label the spw
       ii = string.find( spectrum["file"], "spw" )
-      p.text( .99, .91, "%s" % spectrum["file"][ii:ii+4], transform=p.transAxes, \
-        horizontalalignment='right', fontsize=7) # rotation='vertical' )
+      p.text( 1.03, .91, "%s" % spectrum["file"][ii:ii+4], transform=p.transAxes, \
+        horizontalalignment='right', fontsize=7, rotation='vertical' )
 
     # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
@@ -1168,9 +1169,8 @@ def evalLog( value ) :
   else :
     return -100.
 
-# compute integrated intensity and write all results to csv file
-# this computation is now included as part of snippet2
-def evalSnippets( infile="snip", outfile="snipEval" ) :
+# make table of integrated intensities for rotational diagram using data in 'snip' file
+def rotdiag( infile="snip", outfile="rotdiag" ) :
     Lines = []
     fin = open( infile, "rb" )
     while (True) :
@@ -1182,16 +1182,23 @@ def evalSnippets( infile="snip", outfile="snipEval" ) :
     fin.close()
     print "read in %d Line objects" % ( len(Lines) )
    
-    #fout = open( outfile, "w" ) 
+    fout = open( outfile, "w" ) 
+    fout.write("# ori3.rotdiag; using red+blue wings\n")
     for Line in Lines :
-      #Sdv = Line["intfluxRed"] + Line["intfluxBlue"]
-      #unc = 1.4*(Line["rmsBlue"])   # very approximate!
-      Sdv = Line["intfluxRed"]
-      unc = Line["rmsRed"]
+      Sdv = Line["intfluxRed"] + Line["intfluxBlue"]
+      unc = 1.4*(Line["rmsBlue"])   # very approximate!
+      #Sdv = Line["intfluxBlue"]
+      #unc = Line["rmsBlue"]
       c = 1./(Line["linefreq"]*Line["Smusq"])
-      print "%11.5f   %.4e %.4e   %.4e %.4e %.4e  %8.1f" % \
+      print " %11.5f   %.4e %.4e   %.4e %.4e %.4e  %8.1f" % \
        ( Line["linefreq"], Sdv, unc, evalLog(c*Sdv), evalLog(c*(Sdv-unc)), evalLog(c*(Sdv+unc)), Line["TU"] )
-    #fout.close()
+      fout.write("# %11.5f   %.4e %.4e   %.4e %.4e %.4e  %8.1f\n" % \
+       ( Line["linefreq"], Sdv, unc, evalLog(c*Sdv), evalLog(c*(Sdv-unc)), evalLog(c*(Sdv+unc)), Line["TU"] ) )
+      fout.write("move %.2f %.4e\n" % (Line["TU"], evalLog(c*Sdv) ) )
+      fout.write("dot\n")
+      fout.write("move %.2f %.4e\n" % (Line["TU"], evalLog(c*(Sdv-unc)) ) )
+      fout.write("draw %.2f %.4e\n" % (Line["TU"], evalLog(c*(Sdv+unc)) ) )
+    fout.close()
      
 # set up to plot 5 panels wide by 8 panels high on 8 x 11 sheet, but use only nrows x ncols in upper left corner of sheet;
 def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
