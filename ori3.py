@@ -29,7 +29,7 @@ plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
                "ymin" : -.2,       # -.1 for band7, -.2 for band9
-               "ymax" : 5.5,      # 1.95 for band7, 5.5 for band9
+               "ymax" : 5.8,      # 1.95 for band7, 5.5 for band9
                "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
@@ -1200,6 +1200,77 @@ def rotdiag( infile="snip", outfile="rotdiag" ) :
       fout.write("draw %.2f %.4e\n" % (Line["TU"], evalLog(c*(Sdv+unc)) ) )
     fout.close()
      
+# read rotdiag.csv file, open .mc maps to get mean brightness temp in 0.2" box, write wip commands
+def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rotdiagGuts.wip", vrange=[5.,20.] ) :
+
+    kB = 1.38e-16    # Boltzman's constant in cgs units
+
+  # read list of lines that must be processed
+    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( inlistFile )
+
+  # open wip file, write out header info
+    fout = open( outfile, "w" ) 
+    fout.write("# created using ori3.rotdiag2(); using velocity range %.1f to %.1f\n" % (vrange[0],vrange[1]))
+
+  # process lines one at a time; find "mc" map, compute integrated intensity
+    for n in range(0,len(linefreq)) :
+      mcFile = findpvFile( linefreq[n], searchType=".mc" ) 
+      if mcFile :
+        Sdv,nch = getW( mcFile, vrange )   # get integrated emission; units must be K-km/sec
+
+      # uncertainty estimates are based on BLANK_354.25.mc (~1 K rms) and BLANK_649.80.mc (~ 3K rms);
+      #   assume that uncertainty in integrated Tb is sqrt(nch) * unc/chan
+        rms = 1.
+        if linefreq[n] > 500. : rms = 3.
+        unc = math.sqrt(nch) * rms
+        print "W = %.2f unc = %.2f" % (Sdv,unc)
+        const = 3.* kB * 1.e5/(8. * pow(math.pi,3) * linefreq[n] * 1.e9 * Smusq[n] * pow(1.e-18, 2) )
+          # formula A4 in Cummins et al 1986; 1.e5 is to convert km/sec to cm/sec; 1.e-36 converts debye^2 to (esu-cm)^2
+        print " %11.5f   %.4e %.4e   %.4e %.4e %.4e  %8.1f" % \
+         ( linefreq[n], Sdv, unc, evalLog(const*Sdv), evalLog(const*(Sdv-unc)), evalLog(const*(Sdv+unc)), TU[n] )
+        fout.write("# %11.5f   %.4e %.4e   %.4e %.4e %.4e  %8.1f\n" % \
+         ( linefreq[n], Sdv, unc, evalLog(const*Sdv), evalLog(const*(Sdv-unc)), evalLog(const*(Sdv+unc)), TU[n]) )
+        fout.write("move %.2f %.4e\n" % (TU[n], evalLog(const*Sdv) ) )
+        fout.write("dot\n")
+        fout.write("move %.2f %.4e\n" % (TU[n], evalLog(const*(Sdv-unc)) ) )
+        fout.write("draw %.2f %.4e\n" % (TU[n], evalLog(const*(Sdv+unc)) ) )
+      else :
+        print "skipping line at freq %.3f - couldn't find file %s" % (linefreq[n],mcFile)
+    fout.close()
+
+# helper routine that opens "mc" map file (line minus continuum), uses imspec to compute mean Tb in region
+def getW( mcFile, vrange, region="arcsec,box(0.1)", tmpfile="junk" ) :
+
+    p= subprocess.Popen( ( shlex.split("imspec in=%s region=%s options=list,noheader,tb plot=mean log=%s" % \
+      (mcFile,region,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+    print result   # to spot errors
+
+  # read velocities and temperatures from tmpfile, compute integrted intensity
+    fin = open( tmpfile, "r" )
+    W = 0.
+    nch = 0
+    dv = 0.   # velocity width/chan will be computed from v1 and v2
+    v1 = -999999.
+    v2 = -999999.
+    for line in fin :
+      a = line.split()
+      if len(a) > 2 :
+        vlsr = float( a[1] )
+        if (vlsr >= vrange[0]) and (vlsr <= vrange[1]) :
+          if nch == 0 :
+            v1 = vlsr   # v1 is filled in once, is central velocity of first chan
+          v2 = vlsr      # v2 is updated each time, will be central velocity of last chan
+          nch = nch + 1
+          W = W + float( a[3] )
+    if (nch > 1) :
+      dv = abs(v2 - v1)/(nch - 1)
+      print "v1 = %.1f, v2 = %.2f, dv = %.2f km/sec, %d channels in range" % (v1, v2, dv, nch)
+    fin.close()
+    return [W * dv, nch]
+   
+     
 # set up to plot 5 panels wide by 8 panels high on 8 x 11 sheet, but use only nrows x ncols in upper left corner of sheet;
 def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
 
@@ -1470,10 +1541,10 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
 # the prefix to the file can contain any character string, but file must end in
 #   "xxx.xx.pv.mp", where xxx.xx is linefreq to 2 decimal places
 
-def findpvFile( linefreq ) :
+def findpvFile( linefreq, searchType=".pv.mp" ) :
     dirList = ["/big_scr6/plambeck/350GHz/miriad", "/big_scr6/plambeck/650GHz/miriad"]
       # list of directories that will be searched
-    searchstring = "%.2f.pv.mp" % linefreq     
+    searchstring = "%.2f" % linefreq + searchType
       # filename must include linefreq in GHz, rounded to 2 decimal accuracy
     for directory in dirList :
       for filename in os.listdir( directory ) :
