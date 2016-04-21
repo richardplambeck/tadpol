@@ -28,8 +28,8 @@ ckms = 2.99792e5    # speed of light in km/sec
 plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
-               "ymin" : -.2,       # -.1 for band7, -.2 for band9
-               "ymax" : 5.8,      # 1.95 for band7, 5.5 for band9
+               "ymin" : -.1,       # -.1 for band7, -.2 for band9
+               "ymax" : 1.5,      # 1.95 for band7, 4.8 for band9
                "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
@@ -443,12 +443,13 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
           yval = yvalue( freq, flux, linefreq[n] )
           if yval < plotParams["contLevel"] : yval = plotParams["contLevel"]
           if yval > 0.8*plotParams["ymax"] : yval = plotParams["contLevel"]
-          if TU[n] > 0. :
-            p.annotate( "%s  %.0fK" % (name[n],TU[n]), xy=(linefreq[n],yval), \
-             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=7, \
-             arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )    # use arrowstyle="->" to get arrow
-          else :
-            p.annotate( "%s" % (name[n]), xy=(linefreq[n],yval), \
+
+          #if TU[n] > 0. :
+          #  p.annotate( "%s  %.0fK" % (name[n],TU[n]), xy=(linefreq[n],yval), \
+          #   xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=7, \
+          #   arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )    # use arrowstyle="->" to get arrow
+          #else :
+          p.annotate( "%s" % (name[n]), xy=(linefreq[n],yval), \
              xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=7, \
              arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )
           if shadeColor[n] :
@@ -745,8 +746,8 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 # designed to make figures for publication
 # each figure is a full page with 4 panels, each covering a single spectral window
 
-def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams ) :
-#def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
+#def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams ) :
+def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
 
     vsource=5.
     if plotParams["pdf"] :
@@ -834,7 +835,7 @@ def plotIntensity( infile ) :
 
 def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
     specList=specList, outfile="snip",
-    vrange=65., vsource=5.0 ) :
+    vrange=75., vsource=5.0 ) :
 
   # read the lineList file
     name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
@@ -889,16 +890,17 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
               if (vel > 5.) and (vel <= 23.) :
                 Line["intfluxRed"] = Line["intfluxRed"] + (flux[i] - contLevel)
                 nred = nred + 1
-                # print "red wing :  %.3f  %.3f" % (vel, flux[i]-Line["contLevel"] )
+                print "red wing :  %.3f  %.3f" % (vel, flux[i]-Line["contLevel"] )
               if (vel > -13.) and (vel <= 5.) :
                 Line["intfluxBlue"] = Line["intfluxBlue"] + (flux[i] - contLevel)
                 nblue = nblue + 1
-                # print "blue wing:  %.3f  %.3f" % (vel, flux[i]-Line["contLevel"] )
+                print "blue wing:  %.3f  %.3f" % (vel, flux[i]-Line["contLevel"] )
 
             else :     # past end of snippet
               if FillingIn :
                 Line["rmsRed"] = rms * math.sqrt(nred/2.)     # assume that spectra were Hanning smoothed! 
                 Line["rmsBlue"] = rms * math.sqrt(nblue/2.)   # assume that spectra were Hanning smoothed! 
+                print "intRed,Blue = ",Line["intfluxRed"],Line["intfluxBlue"]
                 print "rmsRed,Blue = ",Line["rmsRed"],Line["rmsBlue"]
                 fout = open( outfile, "ab" )     # binary because I'll be pickling to it; append because I'll append
                 pickle.dump( Line, fout )
@@ -1201,7 +1203,7 @@ def rotdiag( infile="snip", outfile="rotdiag" ) :
     fout.close()
      
 # read rotdiag.csv file, open .mc maps to get mean brightness temp in 0.2" box, write wip commands
-def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rotdiagGuts.wip", vrange=[5.,20.] ) :
+def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rotdiagpiece.wip", vrange=[5.,20.], tablefile="rotdiagpiece.tab" ) :
 
     kB = 1.38e-16    # Boltzman's constant in cgs units
 
@@ -1210,26 +1212,31 @@ def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rot
 
   # open wip file, write out header info
     fout = open( outfile, "w" ) 
+    fout2 = open( tablefile, "w" )
     fout.write("# created using ori3.rotdiag2(); using velocity range %.1f to %.1f\n" % (vrange[0],vrange[1]))
 
   # process lines one at a time; find "mc" map, compute integrated intensity
     for n in range(0,len(linefreq)) :
       mcFile = findpvFile( linefreq[n], searchType=".mc" ) 
       if mcFile :
-        Sdv,nch = getW( mcFile, vrange )   # get integrated emission; units must be K-km/sec
+        Sdv,nch,vel,TB = getW( mcFile, vrange )   # get integrated emission; units must be K-km/sec
 
       # uncertainty estimates are based on BLANK_354.25.mc (~1 K rms) and BLANK_649.80.mc (~ 3K rms);
       #   assume that uncertainty in integrated Tb is sqrt(nch) * unc/chan
-        rms = 1.
-        if linefreq[n] > 500. : rms = 3.
+        rms = 1.5
+        if linefreq[n] > 500. : rms = 5.
         unc = math.sqrt(nch) * rms
         print "W = %.2f unc = %.2f" % (Sdv,unc)
         const = 3.* kB * 1.e5/(8. * pow(math.pi,3) * linefreq[n] * 1.e9 * Smusq[n] * pow(1.e-18, 2) )
           # formula A4 in Cummins et al 1986; 1.e5 is to convert km/sec to cm/sec; 1.e-36 converts debye^2 to (esu-cm)^2
-        print " %11.5f   %.4e %.4e   %.4e %.4e %.4e  %8.1f" % \
+        print " %11.5f  %10.2f %7.2f  %10.4f  %10.4f  %10.4f  %8.1f" % \
          ( linefreq[n], Sdv, unc, evalLog(const*Sdv), evalLog(const*(Sdv-unc)), evalLog(const*(Sdv+unc)), TU[n] )
-        fout.write("# %11.5f   %.4e %.4e   %.4e %.4e %.4e  %8.1f\n" % \
-         ( linefreq[n], Sdv, unc, evalLog(const*Sdv), evalLog(const*(Sdv-unc)), evalLog(const*(Sdv+unc)), TU[n]) )
+
+      # fout2 output is used for table in ms.tex
+        fout2.write("%4.0f &  %11.3f & %6.2f & %5.0f (%.0f) \\\\ \n" % \
+         ( TU[n], linefreq[n], Smusq[n], Sdv, unc) )
+        fout.write("# %11.5f  %10.2f %7.2f  %10.4f  %8.1f  %8.3f  %s  %s\n" % \
+         ( linefreq[n], Sdv, unc, evalLog(const*Sdv),TU[n],Smusq[n],name[n],QN[n]) )
         fout.write("move %.2f %.4e\n" % (TU[n], evalLog(const*Sdv) ) )
         fout.write("dot\n")
         fout.write("move %.2f %.4e\n" % (TU[n], evalLog(const*(Sdv-unc)) ) )
@@ -1237,10 +1244,14 @@ def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rot
       else :
         print "skipping line at freq %.3f - couldn't find file %s" % (linefreq[n],mcFile)
     fout.close()
+    fout2.close()
 
 # helper routine that opens "mc" map file (line minus continuum), uses imspec to compute mean Tb in region
+# revised 18 apr to return velocity, TB arrays as well
 def getW( mcFile, vrange, region="arcsec,box(0.1)", tmpfile="junk" ) :
 
+    vel = []
+    TB = []
     p= subprocess.Popen( ( shlex.split("imspec in=%s region=%s options=list,noheader,tb plot=mean log=%s" % \
       (mcFile,region,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
     time.sleep(1)
@@ -1258,6 +1269,8 @@ def getW( mcFile, vrange, region="arcsec,box(0.1)", tmpfile="junk" ) :
       a = line.split()
       if len(a) > 2 :
         vlsr = float( a[1] )
+        vel.append(vlsr)
+        TB.append( float(a[3] ))
         if (vlsr >= vrange[0]) and (vlsr <= vrange[1]) :
           if nch == 0 :
             v1 = vlsr   # v1 is filled in once, is central velocity of first chan
@@ -1268,11 +1281,12 @@ def getW( mcFile, vrange, region="arcsec,box(0.1)", tmpfile="junk" ) :
       dv = abs(v2 - v1)/(nch - 1)
       print "v1 = %.1f, v2 = %.2f, dv = %.2f km/sec, %d channels in range" % (v1, v2, dv, nch)
     fin.close()
-    return [W * dv, nch]
+    return [W * dv, nch, numpy.array(vel), numpy.array(TB) ]
    
      
-# set up to plot 5 panels wide by 8 panels high on 8 x 11 sheet, but use only nrows x ncols in upper left corner of sheet;
-def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
+# set up to plot ncolpage panels wide by nrowpage panels high on 8 x 11 sheet, 
+#   but use only nrows x ncols in upper left corner of sheet;
+def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-35., vmax=45. ) :
 
   nrowpage = 6
   ncolpage = 4
@@ -1316,8 +1330,6 @@ def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
     plotParams["ymin"] = ymin
     plotParams["ymax"] = ymax
     plotParams["contLevel"] = Line["contLevel"]
-    vmin = -60.
-    vmax = 70.
     p.axis( [vmin, vmax, ymin, ymax], fontsize=6 )
     p.grid( True, linewidth=.01, color="0.8" )   # bigger color numbers give lighter grays!
     p.plot( vel, flux, color="r", linewidth=1. )
@@ -1333,7 +1345,7 @@ def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
     p.text(.04, .9,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
     p.text(.97, .9,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6 )
   # comment out following line for recomb line plot
-    # p.text(.04, .8,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+    p.text(.04, .8,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
     #p.text(.97, .8,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
     yval = yvalue( vel, flux, 5. )
     if yval < Line["contLevel"] : yval = Line["contLevel"]
@@ -1343,10 +1355,11 @@ def plotSnippets2( infile='snip', nrows=3, ncols=2 ) :
              arrowprops=dict( arrowstyle="->", linewidth=0.3 ) )
     p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.5, linewidth=0, \
               where=numpy.abs(vel-5.) < Line["shadeWidth"]/2. )
-  # comment in following lines for recomb line plot
-    goodRect = Rectangle( (-13.,Line["contLevel"]), 36., 0.2*(ymax-ymin), \
-       fill=True, edgecolor='orange',linewidth=0.1, facecolor='yellow', alpha=.5)   # target range
-    p.add_patch( goodRect )
+
+  # comment in following lines for recomb line plot; plot shaded box over presumed location of line
+    # goodRect = Rectangle( (-13.,Line["contLevel"]), 36., 0.2*(ymax-ymin), \
+    #    fill=True, edgecolor='orange',linewidth=0.1, facecolor='yellow', alpha=.5)   # target range
+    # p.add_patch( goodRect )
 
   # advance panel number at the very end
     nn = nn + 1
@@ -1370,8 +1383,10 @@ def extractParameter( instring, param ) :
 # ----------------------------------------------------------------------------------------- #
 # process pv diagram written out by velplot as a miriad map
 # axis1 is VELO; axis2 is position; axis3 is intensity
+# 4/20/16 added vmin,vmax,pmin,pmax as a quick way of selecting piece of image that I want;
+#   hopefully defaults are so large that they won't trip me up in cases where I don't care
 
-def readpv( imageFile ) :
+def readpv( imageFile, vmin=-1.e8, vmax=1.e8, pmin=-1.e8, pmax=1.e8 ) :
     '''read pos-vel map in Miriad format created by velplot, convert to numpy array'''
 
   # begin by figuring out axes
@@ -1397,9 +1412,12 @@ def readpv( imageFile ) :
     fin = open("imtablog", "r")
     for line in fin :
       a = line.split()
-      vel.append( float(a[0]) + vstart)   # reverse RA to get arcsec on sky
-      pos.append( float(a[1]) + pstart)
-      flx.append( float(a[2]) )
+      v = float(a[0]) + vstart
+      p = float(a[1]) + pstart
+      if (v >= vmin) and (v <= vmax) and (p >= pmin) and (p <= pmax) :
+        vel.append( v )   
+        pos.append( p )
+        flx.append( float(a[2]) )
     fin.close()
     return [ numpy.array(vel), numpy.array(pos), numpy.array(flx) ]
 
@@ -1421,7 +1439,7 @@ def plotpv( imageFile ) :
     pyplot.colorbar( imgplot, cax=ax2  )
     pyplot.show()
 
-# side-by-side spectra and pv diagrams
+# side-by-side spectra and pv diagrams; used to make snip_pv.pdf
 # designed to put up to 6 rows x 4 columns on 1 page
 def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
 
@@ -1473,8 +1491,8 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
       ymin,ymax = yminmax( numpy.array(Line["flux"]) )
       #vmin,vmax = yminmax( numpy.array(Line["vel"]) )
          # commented this out because one line is at edge of band, not fully mapped
-      vmin = -30.
-      vmax = 40.
+      vmin = -29.
+      vmax = 39.
       ymax = ymax + 0.2*(ymax-ymin)
       plotParams["ymin"] = ymin
       plotParams["ymax"] = ymax
@@ -1495,7 +1513,8 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
       p.text(.97, .9,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6 )
       p.fill_between( vel, Line["contLevel"], flux, color=Line["shadeColor"], alpha=0.5, linewidth=0, \
                where=numpy.abs(vel-5.) < Line["shadeWidth"]/2. )
-      p.text(.04, .8,  "T$_U$ = %.0f K" % Line["TU"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+      if (Line["TU"] > 0.) :
+        p.text(.04, .8,  "E = %.0f K" % Line["TU"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
       # p.text(.97, .8,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
 
     # this block inserts arrow centered at 5 km/sec; leave it out
@@ -1513,25 +1532,35 @@ def plotSnippets3( infile='snip', nrows=6, ncols=2 ) :
       pvFile = findpvFile( Line["linefreq"] ) 
       print Line["linefreq"], pvFile 
       if pvFile :
-        [vel, pos, flx] = readpv( pvFile )
+        [vel, pos, flx] = readpv( pvFile, -19., 29., -.3, .3 )
+            # note: extra parameters limit velocity and position range that is read in
         nv = len( numpy.unique(vel))
         np = len( numpy.unique(pos))
         print "nv = %d, np = %d" % (nv,np)
         p = pyplot.subplot(nrowpage,ncolpage,npList[nn])
         p.tick_params( axis='both', which='major', labelsize=6, length=1 )
-        p.axis( [-26., 37., pos[0], pos[-1]] )
+
+      # for this figure, flip orientation of yaxis so SE is at bottom
+        #p.axis( [-26., 37., 0.3, -0.3] )
+        p.axis( [vel[0],vel[-1],pos[-1],pos[0]] )
+        p.set_ylabel("offset (arcsec)", fontsize=6)
+        if npList[nn]-(nrows-1)*ncolpage > 0  : 
+          p.set_xlabel("V$_{LSR}$ (km/sec)", fontsize=6)
 
       # Deal with situation where there is super-deep absorption next to line
-        minflx = numpy.amin( flx )
+      # I have now replaced that - just plot for 0 to max
+        # minflx = numpy.amin( flx )
         maxflx = numpy.amax( flx )
         vminVal = None
-        if minflx < -1.*maxflx : vminVal = -1.*maxflx
-        imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
+        # if minflx < -1.*maxflx : vminVal = -1.*maxflx
+        imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), clim=(0.,maxflx), origin='lower', aspect='auto', \
             extent=[vel[0],vel[-1],pos[0],pos[-1]], vmin=vminVal )
         p.grid( True, linewidth=0.1, color="white")   # color=0.1 is a light gray
         # pyplot.colorbar( imgplot, cax=ax2  )
       nn = nn + 1
-    
+   
+  # allow a little more space between columns for ylabel
+    pyplot.subplots_adjust(wspace=0.3) 
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
@@ -1552,3 +1581,74 @@ def findpvFile( linefreq, searchType=".pv.mp" ) :
           return directory + "/" + filename
     print "couldn't find filename with searchstring %s" % searchstring
     return None
+
+# read splat_ann; sort lines as desired; then write out in latex form
+def makeLineTable( linelistFile="splat_ann_table.csv", outfile="linetable.tex" ) :
+    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
+    index = numpy.argsort( linefreq )
+    fout = open( outfile, "w" )
+    for i in range(0, len(index) ) :
+      n = index[i]
+      print "%10.3f & %s %s & %5.0f \\" % (linefreq[n],name[n],QN[n],TU[n]) 
+      fout.write("%10.4f & %s & %5.0f \\\\\n" % (linefreq[n],name[n],TU[n]) )
+    fout.close()
+    
+# plot SO2 lines used in rotdiag
+# set up to plot ncolpage panels wide by nrowpage panels high on 8 x 11 sheet, 
+#   but use only nrows x ncols in upper left corner of sheet;
+def plotSnippets4( infile='/o/plambeck/OriALMA/Spectra/snip_SO2rotdiag.csv', nrows=8, ncols=2, vmin=-30., vmax=40. ) :
+
+    nrowpage = 8
+    ncolpage = 4
+    pyplot.ioff()
+    pp = PdfPages("snippets.pdf")
+    fig = pyplot.figure( figsize=(8,11) )
+
+  # figure out list of positions that will be used
+    npList = []
+    for np in range(1,nrowpage*ncolpage+1,1) :
+      if (np%ncolpage > 0) and (np%ncolpage <= ncols) :
+        npList.append( np )
+    nn = 0
+
+  # read list of lines that must be processed
+    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
+
+  # process lines one at a time; find "mc" map, compute integrated intensity
+    for n in range(0,len(linefreq)) :
+      mcFile = findpvFile( linefreq[n], searchType=".mc" ) 
+      if mcFile :
+        Sdv,nch,vel,TB = getW( mcFile, [-35.,45.] )   # get integrated emission; units must be K-km/sec
+      if nn > len(npList) :
+        pyplot.savefig( pp, format='pdf' )
+        pyplot.show()
+        nn = 0
+      p = pyplot.subplot(nrowpage,ncolpage,npList[nn])
+      ymin = -15.
+      ymax = 40.
+      plotParams["ymin"] = ymin
+      plotParams["ymax"] = ymax
+      p.axis( [vmin, vmax, ymin, ymax], fontsize=6 )
+      p.grid( True, linewidth=.01, color="0.8" )   # bigger color numbers give lighter grays!
+      p.plot( vel, TB, color="r", linewidth=1. )
+      p.axhline( y=0, linestyle='--', color='blue')
+      p.tick_params( axis='both', which='major', labelsize=6, length=1 )
+      if npList[nn]%ncols == 1 : 
+        p.set_ylabel("TB (K)", fontsize=6)
+      if npList[nn]-(nrows-1)*ncols > 0  : 
+        p.set_xlabel("V$_{LSR}$ (km/sec)", fontsize=6)
+  
+    # annotate plot, shade the line
+      p.text(.04, .9,  "%s" % name[n], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+      p.text(.97, .9,  "%.4f GHz" % linefreq[n], horizontalalignment='right', transform=p.transAxes, fontsize=6 )
+      p.text(.04, .8,  "T$_U$ = %.0f K" % TU[n], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+      p.fill_between( vel, 0., TB, color='orange', alpha=0.5, linewidth=0, \
+              where=numpy.abs(vel-12.5) < 7.5 )
+
+    # advance panel number at the very end
+      nn = nn + 1
+    
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+
