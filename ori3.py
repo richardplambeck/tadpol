@@ -1652,3 +1652,74 @@ def plotSnippets4( infile='/o/plambeck/OriALMA/Spectra/snip_SO2rotdiag.csv', nro
     pp.close()
     pyplot.show()
 
+# plot centroids for several lines on one plot
+# read in centroids from file Line.offsetTable
+# use different symbol for each line
+# color scale ranges from min to max velocity
+# size ranges from min to max for each line
+# when reading in files, drop scattered points immediately
+
+def centroidPlot( NameList ) :
+    cutoff = 0.04 
+    symbol = [ "o", "v", "^", "s", "D", "h" ]
+    nsym = -1
+    nplot = 0
+
+    pyplot.ioff()
+    pp = PdfPages("centroids.pdf")
+    fig = pyplot.figure( figsize=(8,11) )
+
+  # diskx = 0.12 * cos(50 deg); disky = .12 * sin(50 deg)
+    diskx = [ .077, -.077 ]
+    disky = [ -.092, .092 ]
+
+    for Name in NameList:
+      i = Name.find('_')
+      freq = float( Name[i+1:] )     
+      if freq < 500. :
+        fname = "/big_scr6/plambeck/350GHz/miriad/" + Name + ".offsetTable"
+      else :
+        fname = "/big_scr6/plambeck/650GHz/miriad/" + Name + ".offsetTable"
+      try :
+        fin = open( fname, "r" )
+      except :
+        print "couldn't open file ", fname
+      print "\n\n", fname
+      nsym = nsym + 1
+      nplot = nplot + 1
+      if nsym >= len(symbol) : nsym = 0
+      v = []
+      x = []
+      y = []
+      amp = []
+      xerr = []
+      yerr = []
+      for line in fin :
+        a = line.split()
+        xerror = float( a[4] )
+        yerror = float( a[6] )
+        if (xerror < cutoff) and (yerror < cutoff) :
+          print line
+          v.append( float(a[0]) )
+          amp.append( float(a[2]) )
+          x.append( float(a[3]) )
+          y.append( float(a[5]) ) 
+          xerr.append( xerror )
+          yerr.append( yerror )
+      fin.close()
+    # size array is normalized so largest point is always the same color for each symbol
+      s = numpy.array( amp )
+      s = s * 200./s.max()
+      p = pyplot.subplot(3,2,nplot, aspect=1)
+      p.plot( diskx, disky, linestyle="--", color='black', linewidth=6 ) 
+      p.axis( [.12, -.12, -.12, .12] )
+      p.errorbar( x, y, xerr=xerr, yerr=yerr, fmt='none', ecolor='black', elinewidth=.2, capsize=0.  )
+      p.scatter( x, y, cmap='rainbow', c=v, marker='o', s=s, vmin=-12., vmax=22. )
+          # use edgecolor='none' to get rid of black edges
+          # use s=s to make symbol areas proportional to flux
+          # use marker=symbol[nsym] for different symbols
+      p.text(.04, .92,  "%s" % Name, horizontalalignment='left', transform=p.transAxes, fontsize=10 )
+
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
