@@ -1430,11 +1430,11 @@ def plotpv( imageFile ) :
     ax1.tick_params( labelsize=10 )
     [vel, pos, flx] = readpv( imageFile )
     ax1.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
-    nv = 64
-    np = 25
+    nv = len( numpy.unique( vel ) )
+    np = len( numpy.unique( pos ) )
     print "nv = %d, np = %d" % (nv,np)
     imgplot = ax1.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
-        extent=[vel[0],vel[-1],pos[0],pos[-1]] )
+        extent=[vel[0],vel[-1],pos[-1],pos[0]] )
     ax1.grid( True, linewidth=1, color="white")   # color=0.1 is a light gray
     pyplot.colorbar( imgplot, cax=ax2  )
     pyplot.show()
@@ -1658,8 +1658,11 @@ def plotSnippets4( infile='/o/plambeck/OriALMA/Spectra/snip_SO2rotdiag.csv', nro
 # color scale ranges from min to max velocity
 # size ranges from min to max for each line
 # when reading in files, drop scattered points immediately
+# 25apr2016 - also save as RC ("Rotation Curve") object in pickle file "RCList" for
+#    future rotation curve plot
 
 def centroidPlot( NameList ) :
+    PA = math.pi * 140./180.  # PA of disk is 140 degrees
     cutoff = 0.04 
     symbol = [ "o", "v", "^", "s", "D", "h" ]
     nsym = -1
@@ -1707,6 +1710,18 @@ def centroidPlot( NameList ) :
           xerr.append( xerror )
           yerr.append( yerror )
       fin.close()
+
+    # rotate to new frame, save as RC ("Rotation Curve") object for future rotation curve plot 
+      RC = {}
+      RC["Name"] = Name
+      RC["v"] = v
+      RC["amp"] = amp
+      RC["p"] = math.cos(PA)*numpy.array(x) + math.sin(PA)*numpy.array(y)
+      RC["dp"] = math.cos(PA)*numpy.array(xerr) + math.sin(PA)*numpy.array(yerr)
+      fout = open( "RClist", "ab" )     # binary because I'll be pickling to it; append because I'll append
+      pickle.dump( RC, fout )
+      fout.close() 
+      
     # size array is normalized so largest point is always the same color for each symbol
       s = numpy.array( amp )
       s = s * 200./s.max()
@@ -1720,6 +1735,43 @@ def centroidPlot( NameList ) :
           # use marker=symbol[nsym] for different symbols
       p.text(.04, .92,  "%s" % Name, horizontalalignment='left', transform=p.transAxes, fontsize=10 )
 
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+
+# plot rotation curve from RClist data
+def RCplot() :
+    color = ["red","blue","green","orange","purple","cyan","yellow"]
+    RClist = []   # list of RC dictionaries
+    fin = open( "RClist", "rb" )
+    while (True) :
+      try :
+        RC = pickle.load( fin )
+        RClist.append( RC )
+        print RC["Name"]
+      except :
+        break 
+    print "read in %d RC objects" % ( len(RClist) )
+
+    pyplot.ioff()
+    pp = PdfPages("snippets.pdf")
+    fig = pyplot.figure( figsize=(8,11) )
+    p = pyplot.subplot(1,1,1)
+    p.axis( [-.12, .12, -30.,40.] )
+    ncol = -1
+    p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    for RC in RClist :
+      ncol = ncol + 1
+      First = True
+      if ncol > len(color) : ncol = 0
+      for v,x,dx in zip( RC["v"],RC["p"],RC["dp"] ) :
+        if First :
+          p.plot( [x-dx,x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol],  label=RC["Name"] )
+          First = False
+        else :
+          p.plot( [x-dx,x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol] )
+        #p.scatter(x,v ) 
+    p.legend( loc=0, prop={'size':10} )
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
