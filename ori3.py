@@ -1731,7 +1731,7 @@ def centroidPlot( NameList ) :
       p.errorbar( x, y, xerr=xerr, yerr=yerr, fmt='none', ecolor='black', elinewidth=.2, capsize=0.  )
       p.scatter( x, y, cmap='rainbow', c=v, marker='o', s=s, vmin=-12., vmax=22. )
           # use edgecolor='none' to get rid of black edges
-          # use s=s to make symbol areas proportional to flux
+          # use s=s to make symbol areas pmoportional to flux
           # use marker=symbol[nsym] for different symbols
       p.text(.04, .92,  "%s" % Name, horizontalalignment='left', transform=p.transAxes, fontsize=10 )
 
@@ -1752,6 +1752,7 @@ def RCplot() :
       except :
         break 
     print "read in %d RC objects" % ( len(RClist) )
+    fin.close()
 
     pyplot.ioff()
     pp = PdfPages("snippets.pdf")
@@ -1771,7 +1772,83 @@ def RCplot() :
         else :
           p.plot( [x-dx,x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol] )
         #p.scatter(x,v ) 
+
+  # add theoretical rotation curve, if "rotcurve" file exists
+    
+    fin2 = open("rotcurve","r")
+    vr = []
+    xr = []
+    for line in fin2 :
+      if not line.startswith("#") :
+        a = line.split()
+        vr.append( float(a[0]) )
+        xr.append( float(a[2]) )
+    fin2.close()
+    p.plot( xr, vr, linewidth=2, color="black",  label="model" )
+
     p.legend( loc=0, prop={'size':10} )
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
+
+# compute velocity vs offset using Hirota et al. 2014 model 1
+# resolve ring into 10 ringlets; compute max velocity of each ringlet;
+#   for any given velocity, compute contribution from each ring,
+#   then form weighted avg to get offset
+def vmodel( rin=45, rout=50, xoff=0., voff=8., vtherm=1.5, Mstar=7, Mdisk=1 ) :
+    G = 6.672e-8    # cm3 g-1 sec-1
+
+  # create velocity array spanning -30 to +30 km/sec, and matching amp and xmom arrays
+    dv = 0.2
+    vobs = numpy.arange( -30., 30.+dv, dv)
+    amp = numpy.zeros( len(vobs), dtype=float  )
+    xmom = numpy.zeros( len(vobs), dtype=float )
+
+  # thermal broadening coefficients cover velocity range 0 to 1.5*vtherm in steps of dv
+    deltav = numpy.arange( 0., 2.*vtherm, dv )
+    ath = numpy.exp( -2.773 * pow(deltav/vtherm, 2.))    # exp(-4 ln2 (deltaV/vtherm)^2)
+    print deltav
+    print ath
+
+  # create theta array that encompasses 2pi
+    dtheta = 0.005 * 2 * math.pi
+    theta = numpy.arange(0.00, 1.005, 0.005) * 2.*math.pi
+       # this is angle of central ray through each area element
+    sintheta = numpy.sin(theta)
+       # this is sin(theta) for each array element
+
+  # step through series of rings; compute amp and v for each azimuthal element
+    dr = (rout-rin)/20.
+    for r in numpy.arange( rin+dr/2., rout, dr ) :
+      M = 1.99e33 * (Mstar + Mdisk * (pow(r,2) - pow(rin,2))/(pow(rout,2) - pow(rin,2)))
+      vrot = 1.e-5 * numpy.sqrt( G * M / (r*1.5e13) )   # Keplerian velocity of each ring
+      xarr = r * sintheta        # array of x offsets
+      varr = vrot * sintheta     # array of velocities
+      area = r * dtheta * dr  # area per pixel for this radius
+
+    # add contribution from each elemental vector into amp and xmom arrays
+    # note: could crash if thermal broadening takes us out of vobs range
+      for x1,v1 in zip(xarr,varr) :
+        n = round( (v1 - vobs[0])/dv )   # find nearest vobs channel
+        amp[n] = amp[n] + ath[0] * area
+        xmom[n] = xmom[n] + ath[0] * area * x1
+        for i in range( 1, len(ath) ) :
+          amp[n+i] = amp[n+i] + ath[i] * area
+          amp[n-i] = amp[n-i] + ath[i] * area
+          xmom[n+i] = xmom[n+i] + ath[i] * area * x1
+          xmom[n-i] = xmom[n-i] + ath[i] * area * x1
+          
+  # renormalize offset array
+    fout = open("rotcurve","w")
+    fout.write("# output of ori3.vmodel\n")
+    fout.write("# rin = %.2f AU\n" % rin)
+    fout.write("# rout = %.2f AU\n" % rout)
+    fout.write("# Mstar = %.2f Mo\n" % Mstar)
+    fout.write("# Mdisk = %.2f Mo\n" % Mdisk)
+    fout.write("# voff = %.3f km/sec\n" % voff)
+    fout.write("# vtherm = %.2f km/sec\n" % vtherm)
+    for n in range(0, len(vobs)) :
+      if amp[n] > 0. :
+        xmom[n] = xmom[n]/amp[n]
+        fout.write( "%8.3f %8.4f %8.4f\n" % (voff+vobs[n], amp[n], xoff+(xmom[n]/415.)) )    # convert to arcsec
+    fout.close()
