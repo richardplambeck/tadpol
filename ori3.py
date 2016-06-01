@@ -23,6 +23,9 @@ from matplotlib import cm
 from scipy import signal
 
 ckms = 2.99792e5    # speed of light in km/sec
+hplanck = 6.626e-27  # planck's constant in erg-s
+kboltzmann = 1.38e-16  # boltzmann's constant in erg/K
+ccgs = 2.99792e10   # speed of light in cm/sec
 
 # plotParams dictionary controls plotting details
 plotParams = { "npanels" : 2,
@@ -835,7 +838,7 @@ def plotIntensity( infile ) :
 
 def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
     specList=specList, outfile="snip",
-    vrange=75., vsource=5.0 ) :
+    vrange=90., vsource=5.0 ) :
 
   # read the lineList file
     name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
@@ -1203,17 +1206,22 @@ def rotdiag( infile="snip", outfile="rotdiag" ) :
     fout.close()
      
 # read rotdiag.csv file, open .mc maps to get mean brightness temp in 0.2" box, write wip commands
-def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rotdiagpiece.wip", vrange=[5.,20.], tablefile="rotdiagpiece.tab" ) :
+def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/snip_rotdiag.csv", outfile="rotdiagpiece.wip", vrange=[5.,20.], tablefile="rotdiagpiece.tab", \
+       summaryfile="rotdiagsummary.txt" ) :
 
     kB = 1.38e-16    # Boltzman's constant in cgs units
 
   # read list of lines that must be processed
     name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( inlistFile )
 
-  # open wip file, write out header info
-    fout = open( outfile, "w" ) 
-    fout2 = open( tablefile, "w" )
+  # open output files file, write out header info
+    fout = open( outfile, "w" )        # wip commands
     fout.write("# created using ori3.rotdiag2(); using velocity range %.1f to %.1f\n" % (vrange[0],vrange[1]))
+    fout2 = open( tablefile, "w" )     # latex table
+    fout2.write("# created using ori3.rotdiag2(); using velocity range %.1f to %.1f\n" % (vrange[0],vrange[1]))
+    fout3 = open( summaryfile, "w")    # text file with results
+    fout3.write("# created using ori3.rotidag2(); using velocity range %.1f to %.1f\n" % (vrange[0],vrange[1]))
+    fout3.write("# freq  Sdv   unc   logS   loguncS   Tupper\n")
 
   # process lines one at a time; find "mc" map, compute integrated intensity
     for n in range(0,len(linefreq)) :
@@ -1229,6 +1237,8 @@ def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rot
         print "W = %.2f unc = %.2f" % (Sdv,unc)
         const = 3.* kB * 1.e5/(8. * pow(math.pi,3) * linefreq[n] * 1.e9 * Smusq[n] * pow(1.e-18, 2) )
           # formula A4 in Cummins et al 1986; 1.e5 is to convert km/sec to cm/sec; 1.e-36 converts debye^2 to (esu-cm)^2
+        fout3.write(" %11.5f  %10.2f %7.2f  %10.4f  %10.4f   %8.1f\n" % \
+         ( linefreq[n], Sdv, unc, evalLog(const*Sdv), evalLog(const*Sdv) - evalLog(const*(Sdv-unc)), TU[n] ))
         print " %11.5f  %10.2f %7.2f  %10.4f  %10.4f  %10.4f  %8.1f" % \
          ( linefreq[n], Sdv, unc, evalLog(const*Sdv), evalLog(const*(Sdv-unc)), evalLog(const*(Sdv+unc)), TU[n] )
 
@@ -1245,6 +1255,7 @@ def rotdiag2( inlistFile="/o/plambeck/OriALMA/Spectra/rotdiag.csv", outfile="rot
         print "skipping line at freq %.3f - couldn't find file %s" % (linefreq[n],mcFile)
     fout.close()
     fout2.close()
+    fout3.close()
 
 # helper routine that opens "mc" map file (line minus continuum), uses imspec to compute mean Tb in region
 # revised 18 apr to return velocity, TB arrays as well
@@ -1286,7 +1297,7 @@ def getW( mcFile, vrange, region="arcsec,box(0.1)", tmpfile="junk" ) :
      
 # set up to plot ncolpage panels wide by nrowpage panels high on 8 x 11 sheet, 
 #   but use only nrows x ncols in upper left corner of sheet;
-def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-35., vmax=45. ) :
+def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-40., vmax=50. ) :
 
   nrowpage = 6
   ncolpage = 4
@@ -1301,28 +1312,23 @@ def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-35., vmax=45. ) :
       break 
   print "read in %d Line objects" % ( len(Lines) )
 
-  if plotParams["pdf"] :
-    pyplot.ioff()
-    pp = PdfPages("snippets.pdf")
+  pyplot.ioff()
+  pp = PdfPages("snippets.pdf")
   ymin = plotParams["ymin"]
   ymax = plotParams["ymax"]
   fig = pyplot.figure( figsize=(8,11) )
 
 # figure out list of positions that will be used
   npList = []
-  for np in range(1,nrowpage*ncolpage+1,1) :
-    if (np%ncolpage > 0) and (np%ncolpage <= ncols) :
+  for np in range(1,nrows*ncolpage+1,1) :
+    if (np%ncolpage > 0) and (np%ncolpage <= ncols)  :
       npList.append( np )
+  print npList
   nn = 0
 
   for Line in Lines :
     vel = numpy.array( Line["vel"] )
     flux = numpy.array( Line["flux"] )
-    if nn > len(npList) :
-      if plotParams["pdf"] :
-        pyplot.savefig( pp, format='pdf' )
-      pyplot.show()
-      nn = 0
     p = pyplot.subplot(nrowpage,ncolpage,npList[nn])
     # ymin,ymax = yminmax( numpy.array(Line["flux"]) )
     ymin = -.1 * Line["contLevel"]
@@ -1345,7 +1351,7 @@ def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-35., vmax=45. ) :
     p.text(.04, .9,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
     p.text(.97, .9,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6 )
   # comment out following line for recomb line plot
-    p.text(.04, .8,  "T$_L$ = %.0f K" % Line["TL"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
+    p.text(.04, .8,  "E$_U$ = %.0f K" % Line["TU"], horizontalalignment='left', transform=p.transAxes, fontsize=6 )
     #p.text(.97, .8,  "I = %.3f" % Line["intensity"], horizontalalignment='right', transform=p.transAxes)
     yval = yvalue( vel, flux, 5. )
     if yval < Line["contLevel"] : yval = Line["contLevel"]
@@ -1363,10 +1369,15 @@ def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-35., vmax=45. ) :
 
   # advance panel number at the very end
     nn = nn + 1
+# temporary kludge to avoid printing empty page
+    #if nn >= len(npList) :
+    #  pyplot.savefig( pp, format='pdf' )
+    #  pyplot.show()
+    #  nn = 0
+    print "nn = %d" % nn
     
-  if plotParams["pdf"] :
-    pyplot.savefig( pp, format='pdf' )
-    pp.close()
+  pyplot.savefig( pp, format='pdf' )
+  pp.close()
   pyplot.show()
 
 # ========================== plot position velocity diagram ========================== #
@@ -1852,3 +1863,17 @@ def vmodel( rin=45, rout=50, xoff=0., voff=8., vtherm=1.5, Mstar=7, Mdisk=1 ) :
         xmom[n] = xmom[n]/amp[n]
         fout.write( "%8.3f %8.4f %8.4f\n" % (voff+vobs[n], amp[n], xoff+(xmom[n]/415.)) )    # convert to arcsec
     fout.close()
+
+# eqn 1,2,3 in hirota et al 2014
+def hirotafit() :
+  for logf in numpy.arange(1.,4.05,.05):
+    fHz = pow(10.,logf) * 1.e9
+    logS1 = -1.51 + 1.60*logf
+    S1 = pow(10.,logS1)
+    S2 = ((.082 * 2.e33)/pow( 415*3.086e18,2) * 0.1*pow(fHz/1.2e12,1.35) * \
+      2.*hplanck*pow(fHz,3.)/pow(ccgs,2.) * 1./(math.exp(hplanck*fHz/(kboltzmann*100.)) -1.))/1.e-26
+          # dividing by 1.e-26 to convert from cgs to milliJy
+    logS2 = math.log10(S2)
+    print logf, logS1, logS2, math.log10(S1+S2)
+
+
