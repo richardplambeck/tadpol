@@ -1380,6 +1380,98 @@ def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-40., vmax=50. ) :
   pp.close()
   pyplot.show()
 
+# copy of plotSnippets2 specially tailored for recomb lines and overlay of SO2
+def plotRecomb( infile='snip', nrows=2, ncols=1, vmin=-45., vmax=55. ) :
+
+  nrowpage = 5
+  ncolpage = 3
+
+  Lines = []   # list of Line dictionaries
+  fin = open( infile, "rb" )
+  while (True) :
+    try :
+      Line = pickle.load( fin )
+      Lines.append( Line )
+    except :
+      break 
+  print "read in %d Line objects" % ( len(Lines) )
+
+  pyplot.ioff()
+  pp = PdfPages("recomb3.pdf")
+  ymin = plotParams["ymin"]
+  ymax = plotParams["ymax"]
+  fig = pyplot.figure( figsize=(8,11) )
+
+# figure out list of positions that will be used
+  npList = [1,4,4,4]
+  print npList
+  nn = 0
+
+  for Line in Lines :
+    vel = numpy.array( Line["vel"] )
+    flux = numpy.array( Line["flux"] )
+    p = pyplot.subplot(nrowpage,ncolpage,npList[nn])
+    ymin = -.1 * Line["contLevel"]
+    ymax = 2.1*Line["contLevel"]
+    plotParams["ymin"] = ymin
+    plotParams["ymax"] = ymax
+    plotParams["contLevel"] = Line["contLevel"]
+    p.axis( [vmin, vmax, ymin, ymax], fontsize=6, lwidth=0.7 )
+    p.grid( True, linewidth=.01, color="0.8" )   # bigger color numbers give lighter grays!
+    if nn == 2 :
+      nstart = 0
+      nstop = 0
+      for v in vel :
+        if v > 30. : nstart = nstart + 1
+        if v > -20. : nstop = nstop + 1
+      print vel[nstart:nstop]
+      p.plot( vel[nstart:nstop], flux[nstart:nstop], color="g", linewidth=0.5 )
+      p.text(.04, .84,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6, color='g' )
+      p.text(.97, .84,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6, color='g' )
+    elif nn == 3 :
+      nstart = 0
+      nstop = 0
+      for v in vel :
+        if v > 30. : nstart = nstart + 1
+        if v > -20. : nstop = nstop + 1
+      print vel[nstart:nstop]
+      p.plot( vel[nstart:nstop], flux[nstart:nstop], color="b", linewidth=0.5  )
+      p.text(.04, .78,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6, color='b' )
+      p.text(.97, .78,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6, color='b' )
+    else :
+      p.plot( vel, flux, color="red", linewidth=1 )
+      p.plot( [7.,21.], [1.05*Line["contLevel"],1.06*Line["contLevel"]], color="black", linewidth=0.8 )
+      p.text(14., 1.07*Line["contLevel"], "limit", horizontalalignment='center', fontsize=6, color='black' )
+      p.axhline( y=Line["contLevel"], linestyle='--', color='blue')
+      p.axhline( y=0, linestyle='-', lw=0.1, color='blue')
+      p.tick_params( axis='both', which='major', labelsize=6, length=1 )
+      p.text(.04, .9,  "%s" % Line["name"], horizontalalignment='left', transform=p.transAxes, fontsize=6, color='red' )
+      p.text(.97, .9,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6, color='red' )
+      p.set_ylabel("flux density (Jy)", fontsize=6)
+      yval = Line["contLevel"]
+      print 'yval = %.3f' % yval
+      p.annotate( "", xy=(5.,yval), \
+         xytext=(5.,0.75*ymax), horizontalalignment="center", rotation="vertical", size=6, \
+         arrowprops=dict( arrowstyle="->", linewidth=0.3 ) )
+    if npList[nn]-(nrows-1)*ncols > 0  : 
+      p.set_xlabel("V$_{LSR}$ (km/sec)", fontsize=6)
+  
+  # comment in following lines for recomb line plot; plot shaded box over presumed location of line
+    goodRect1 = Rectangle( (-13.,Line["contLevel"]), 36., 0.2*(ymax-ymin), \
+       fill=False, edgecolor='black',linewidth=0.5, facecolor='yellow', alpha=.1)   # target range
+    goodRect2 = Rectangle( (5.,Line["contLevel"]), 18., 0.2*(ymax-ymin), \
+       fill=True, edgecolor='none', facecolor='yellow', alpha=.5)   # target range
+    p.add_patch( goodRect1 )
+    p.add_patch( goodRect2 )
+
+  # advance panel number at the very end
+    nn = nn + 1
+    print "nn = %d" % nn
+    
+  pyplot.savefig( pp, format='pdf' )
+  pp.close()
+  pyplot.show()
+
 # ========================== plot position velocity diagram ========================== #
 
 def extractParameter( instring, param ) :
