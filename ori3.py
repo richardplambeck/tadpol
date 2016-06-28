@@ -1381,7 +1381,10 @@ def plotSnippets2( infile='snip', nrows=4, ncols=2, vmin=-40., vmax=50. ) :
   pyplot.show()
 
 # copy of plotSnippets2 specially tailored for recomb lines and overlay of SO2
-def plotRecomb( infile='snip', nrows=2, ncols=1, vmin=-45., vmax=55. ) :
+def plotRecomb( infile='snip_recomb', nrows=2, ncols=1, vmin=-45., vmax=55. ) :
+
+  matplotlib.rcParams['axes.linewidth'] = 0.7
+    # GLOBALLY set width of plot borders - better exit and restart after using this routine!
 
   nrowpage = 5
   ncolpage = 3
@@ -1416,7 +1419,7 @@ def plotRecomb( infile='snip', nrows=2, ncols=1, vmin=-45., vmax=55. ) :
     plotParams["ymin"] = ymin
     plotParams["ymax"] = ymax
     plotParams["contLevel"] = Line["contLevel"]
-    p.axis( [vmin, vmax, ymin, ymax], fontsize=6, lwidth=0.7 )
+    p.axis( [vmin, vmax, ymin, ymax], fontsize=6, lwidth=0.5 )
     p.grid( True, linewidth=.01, color="0.8" )   # bigger color numbers give lighter grays!
     if nn == 2 :
       nstart = 0
@@ -1763,17 +1766,30 @@ def plotSnippets4( infile='/o/plambeck/OriALMA/Spectra/snip_SO2rotdiag.csv', nro
 # when reading in files, drop scattered points immediately
 # 25apr2016 - also save as RC ("Rotation Curve") object in pickle file "RCList" for
 #    future rotation curve plot
+# example:
+# ori3.centroidPlot(["SiO_342.50","SiO_340.61","U_650.16","CO_342.65","SO_343.83","SiS_667.25"])
 
-def centroidPlot( NameList ) :
+# I have hacked this to produce centroid figure for OriALMA;
+# it is now specialized to use exactly 4 panels
+# I explicitly give the positions of each subplot because I couldn't figure out
+#   how to add the colorbar otherwise
+# NOTE: this routine also creates pickled file RClist, which is used by ori3.figRotcurvefit()
+
+def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) :
+# def centroidPlot( NameList ) :
     PA = math.pi * 140./180.  # PA of disk is 140 degrees
     cutoff = 0.04 
     symbol = [ "o", "v", "^", "s", "D", "h" ]
+
+  # only way I could find to put colorbar on figure was to explicitly create axes
+  # note that add_axes uses [left,bottom,width,height]
+    figpos = [ [.1,.58,.32,.32],[.5,.58,.32,.32],[.1,.2,.32,.32],[.5,.2,.32,.32] ]
     nsym = -1
     nplot = 0
 
     pyplot.ioff()
     pp = PdfPages("centroids.pdf")
-    fig = pyplot.figure( figsize=(8,11) )
+    fig = pyplot.figure( figsize=(8,8) )
 
   # diskx = 0.12 * cos(50 deg); disky = .12 * sin(50 deg)
     diskx = [ .077, -.077 ]
@@ -1802,12 +1818,13 @@ def centroidPlot( NameList ) :
       yerr = []
       for line in fin :
         a = line.split()
+        ampl = float( a[2] )
         xerror = float( a[4] )
         yerror = float( a[6] )
-        if (xerror < cutoff) and (yerror < cutoff) :
+        if (ampl > 0.01) and (xerror < cutoff) and (yerror < cutoff) :
           print line
           v.append( float(a[0]) )
-          amp.append( float(a[2]) )
+          amp.append( ampl )
           x.append( float(a[3]) )
           y.append( float(a[5]) ) 
           xerr.append( xerror )
@@ -1828,22 +1845,36 @@ def centroidPlot( NameList ) :
     # size array is normalized so largest point is always the same color for each symbol
       s = numpy.array( amp )
       s = s * 200./s.max()
-      p = pyplot.subplot(3,2,nplot, aspect=1)
+      p = fig.add_axes( figpos[nplot-1] )      # main plot
+      #p = pyplot.subplot(3,2,nplot, aspect=1)
       p.plot( diskx, disky, linestyle="--", color='black', linewidth=6 ) 
-      p.axis( [.12, -.12, -.12, .12] )
+      p.axis( [.12, -.12, -.12, .12], fontsize=6 )
+      p.tick_params( axis='both', which='major', labelsize=10 )
       p.errorbar( x, y, xerr=xerr, yerr=yerr, fmt='none', ecolor='black', elinewidth=.2, capsize=0.  )
-      p.scatter( x, y, cmap='rainbow', c=v, marker='o', s=s, vmin=-12., vmax=22. )
+      p.scatter( x, y, cmap='rainbow', c=v, marker='o', s=s, vmin=-13., vmax=25. )
           # use edgecolor='none' to get rid of black edges
           # use s=s to make symbol areas pmoportional to flux
           # use marker=symbol[nsym] for different symbols
-      p.text(.04, .92,  "%s" % Name, horizontalalignment='left', transform=p.transAxes, fontsize=10 )
+      p.text(.05, .91,  "%s" % Name, horizontalalignment='left', transform=p.transAxes, fontsize=12 )
+      if nplot%2 == 1 :
+        p.set_ylabel("$\Delta$dec (arcsec)", fontsize=10 )
+      if nplot > 2 :
+        p.set_xlabel("$\Delta$RA (arcsec)", fontsize=10 )
 
-    pyplot.savefig( pp, format='pdf' )
+    ax2 = fig.add_axes([.3,.1,.32,.02])    # color wedge
+    norm = matplotlib.colors.Normalize(vmin=-13.,vmax=25.)
+    cb1 = matplotlib.colorbar.ColorbarBase(ax2, cmap='rainbow', norm=norm, orientation='horizontal' )
+    cb1.set_label("LSR velocity (km/sec)", fontsize=10)
+    cb1.ax.tick_params( labelsize=10 )
+    pyplot.savefig( pp, format='pdf',size=10 )
     pp.close()
     pyplot.show()
 
 # plot rotation curve from RClist data
-def RCplot() :
+# def RCplot( rotcurveList=["rotcurve_5Mo.dat","hirota_curve1.dat"] ) :
+# note: be careful! in my haste I am just putting the labels into the code!!
+
+def RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_7Mo.dat"], labelList = ["5 Mo model","10 Mo model"] ) :
     color = ["red","blue","green","orange","purple","cyan","yellow"]
     RClist = []   # list of RC dictionaries
     fin = open( "RClist", "rb" )
@@ -1861,35 +1892,40 @@ def RCplot() :
     pp = PdfPages("snippets.pdf")
     fig = pyplot.figure( figsize=(8,11) )
     p = pyplot.subplot(1,1,1)
-    p.axis( [-.12, .12, -30.,40.] )
+    p.axis( [.12, -.12, -28.,38.], fontsize=12 )
     ncol = -1
     p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
     for RC in RClist :
       ncol = ncol + 1
       First = True
       if ncol > len(color) : ncol = 0
+    # Note: I am reversing x axis to stay consistent with Hirota and other plots!
       for v,x,dx in zip( RC["v"],RC["p"],RC["dp"] ) :
         if First :
-          p.plot( [x-dx,x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol],  label=RC["Name"] )
+          p.plot( [-x-dx,-x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol],  label=RC["Name"] )
           First = False
         else :
-          p.plot( [x-dx,x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol] )
+          p.plot( [-x-dx,-x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol] )
         #p.scatter(x,v ) 
 
   # add theoretical rotation curve, if "rotcurve" file exists
-    
-    fin2 = open("rotcurve","r")
-    vr = []
-    xr = []
-    for line in fin2 :
-      if not line.startswith("#") :
-        a = line.split()
-        vr.append( float(a[0]) )
-        xr.append( float(a[2]) )
-    fin2.close()
-    p.plot( xr, vr, linewidth=2, color="black",  label="model" )
 
-    p.legend( loc=0, prop={'size':10} )
+    linestyleTable=["-","--"]
+    for rotcurveFile,linestyle,label in zip(rotcurveList,linestyleTable,labelList) :    
+      fin2 = open(rotcurveFile,"r")
+      vr = []
+      xr = []
+      for line in fin2 :
+        if not line.startswith("#") :
+          a = line.split()
+          vr.append( float(a[0]) )
+          xr.append( float(a[2]) )
+      fin2.close()
+      p.plot( xr, vr, linewidth=1.8, color="black", label=label, linestyle=linestyle )
+
+    p.set_xlabel("offset (arcsec)", fontsize=12)
+    p.set_ylabel("LSR velocity (km/sec)", fontsize=12 )
+    p.legend( loc=2, prop={'size':12}, fancybox=True, handlelength=3.2, borderaxespad=4 )
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
@@ -1898,7 +1934,9 @@ def RCplot() :
 # resolve ring into 10 ringlets; compute max velocity of each ringlet;
 #   for any given velocity, compute contribution from each ring,
 #   then form weighted avg to get offset
-def vmodel( rin=45, rout=50, xoff=0., voff=8., vtherm=1.5, Mstar=7, Mdisk=1 ) :
+
+# def vmodel( rin=20, rout=45, xoff=0., voff=8., vtherm=4, Mstar=5, Mdisk=0.01 ) :
+def vmodel( rin=20, rout=50, xoff=0., voff=8., vtherm=4, Mstar=7, Mdisk=0.0001, rotcurveFile="rotcurve_7Mo.dat" ) :
     G = 6.672e-8    # cm3 g-1 sec-1
 
   # create velocity array spanning -30 to +30 km/sec, and matching amp and xmom arrays
@@ -1907,13 +1945,13 @@ def vmodel( rin=45, rout=50, xoff=0., voff=8., vtherm=1.5, Mstar=7, Mdisk=1 ) :
     amp = numpy.zeros( len(vobs), dtype=float  )
     xmom = numpy.zeros( len(vobs), dtype=float )
 
-  # thermal broadening coefficients cover velocity range 0 to 1.5*vtherm in steps of dv
-    deltav = numpy.arange( 0., 2.*vtherm, dv )
+  # thermal broadening coefficients cover velocity range 0 to 2*vtherm in steps of dv
+    deltav = numpy.arange( 0., 2.*vtherm+dv, dv )
     ath = numpy.exp( -2.773 * pow(deltav/vtherm, 2.))    # exp(-4 ln2 (deltaV/vtherm)^2)
     print deltav
     print ath
 
-  # create theta array that encompasses 2pi
+  # create 200-element theta array that encompasses 2pi
     dtheta = 0.005 * 2 * math.pi
     theta = numpy.arange(0.00, 1.005, 0.005) * 2.*math.pi
        # this is angle of central ray through each area element
@@ -1924,7 +1962,9 @@ def vmodel( rin=45, rout=50, xoff=0., voff=8., vtherm=1.5, Mstar=7, Mdisk=1 ) :
     dr = (rout-rin)/20.
     for r in numpy.arange( rin+dr/2., rout, dr ) :
       M = 1.99e33 * (Mstar + Mdisk * (pow(r,2) - pow(rin,2))/(pow(rout,2) - pow(rin,2)))
-      vrot = 1.e-5 * numpy.sqrt( G * M / (r*1.5e13) )   # Keplerian velocity of each ring
+	     # enclosed mass = central star + fraction of disk mass enclosed
+      vrot = -1.e-5 * numpy.sqrt( G * M / (r*1.5e13) )   
+         # Keplerian velocity in km/sec of gas at radius r
       xarr = r * sintheta        # array of x offsets
       varr = vrot * sintheta     # array of velocities
       area = r * dtheta * dr  # area per pixel for this radius
@@ -1933,16 +1973,19 @@ def vmodel( rin=45, rout=50, xoff=0., voff=8., vtherm=1.5, Mstar=7, Mdisk=1 ) :
     # note: could crash if thermal broadening takes us out of vobs range
       for x1,v1 in zip(xarr,varr) :
         n = round( (v1 - vobs[0])/dv )   # find nearest vobs channel
-        amp[n] = amp[n] + ath[0] * area
-        xmom[n] = xmom[n] + ath[0] * area * x1
+        if n < len(vobs) :
+          amp[n] = amp[n] + ath[0] * area
+          xmom[n] = xmom[n] + ath[0] * area * x1
         for i in range( 1, len(ath) ) :
-          amp[n+i] = amp[n+i] + ath[i] * area
-          amp[n-i] = amp[n-i] + ath[i] * area
-          xmom[n+i] = xmom[n+i] + ath[i] * area * x1
-          xmom[n-i] = xmom[n-i] + ath[i] * area * x1
+          if n+i < len(vobs) :
+            amp[n+i] = amp[n+i] + ath[i] * area
+            xmom[n+i] = xmom[n+i] + ath[i] * area * x1
+          if n-i < len(vobs) :
+            amp[n-i] = amp[n-i] + ath[i] * area
+            xmom[n-i] = xmom[n-i] + ath[i] * area * x1
           
   # renormalize offset array
-    fout = open("rotcurve","w")
+    fout = open(rotcurveFile,"w")
     fout.write("# output of ori3.vmodel\n")
     fout.write("# rin = %.2f AU\n" % rin)
     fout.write("# rout = %.2f AU\n" % rout)
@@ -1968,4 +2011,10 @@ def hirotafit() :
     logS2 = math.log10(S2)
     print logf, logS1, logS2, math.log10(S1+S2)
 
-
+# this is what I used to make figure "rotcurvefit.pdf"
+def figRotcurvefit() :
+  vmodel( rin=20., rout=50, xoff=0, voff=8., vtherm=4, Mstar=5, Mdisk=0.0001, rotcurveFile="rotcurve_5Mo.dat" ) 
+  vmodel( rin=20., rout=50, xoff=0., voff=8., vtherm=4, Mstar=10, Mdisk=0.0001, rotcurveFile="rotcurve_10Mo.dat" ) 
+  #vmodel( rin=20., rout=50, xoff=0.01, voff=6.8, vtherm=4, Mstar=5, Mdisk=0.0001, rotcurveFile="rotcurve_5Mo.dat" ) 
+  #vmodel( rin=20., rout=50, xoff=0.01, voff=6.8, vtherm=4, Mstar=10, Mdisk=0.0001, rotcurveFile="rotcurve_10Mo.dat" ) 
+  RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_10Mo.dat"] )
