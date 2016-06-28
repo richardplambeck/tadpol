@@ -1094,7 +1094,7 @@ def RMcalc( dPA, f1GHz, f2GHz, unc=0. ) :
     RMplus = math.pi/180. * (dPA+unc) / (lambda1*lambda1 - lambda2*lambda2)
     RMminus = math.pi/180. * (dPA-unc) / (lambda1*lambda1 - lambda2*lambda2)
     RMunc = abs(RMplus-RMminus)/2.
-  #print "RM = %.2e (%.2e)" % (RM,RMunc)
+  print "RM = %.2e (%.2e)" % (RM,RMunc)
   return [RM,RMunc]
    
 def SgrSumm( date, outfile="SgrA_flux_pol.txt" ) :
