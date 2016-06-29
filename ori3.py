@@ -2018,3 +2018,71 @@ def figRotcurvefit() :
   #vmodel( rin=20., rout=50, xoff=0.01, voff=6.8, vtherm=4, Mstar=5, Mdisk=0.0001, rotcurveFile="rotcurve_5Mo.dat" ) 
   #vmodel( rin=20., rout=50, xoff=0.01, voff=6.8, vtherm=4, Mstar=10, Mdisk=0.0001, rotcurveFile="rotcurve_10Mo.dat" ) 
   RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_10Mo.dat"] )
+
+def plotFlux( FluxFile="SrcIFlux.dat") :
+    freq = []
+    flux = []
+    unc = []
+    size = []
+    color = []
+    mtype = []
+    fin = open( FluxFile, "r" )
+    for line in fin :
+      if not line.startswith("#") :
+        a = line.split(',')
+        if (len(a) > 2) :
+          print a
+          freq.append( float(a[0]) )
+          flux.append( float(a[1]) )
+          unc.append( float(a[2]) )
+          size.append( 10.*float(a[3]) )
+          color.append( a[4] )
+          if a[5] == 't' : a[5] = '^'
+          mtype.append( a[5] )
+    fin.close()
+    print color
+    print mtype
+    pyplot.ioff()
+    pp = PdfPages("Flx.pdf")
+    pyplot.figure( figsize=(8,8) )
+    ax = pyplot.subplot(1,1,1)
+    ax.axis( [4, 1000, .1, 20000.], fontsize=12 )
+    ax.set_xscale( "log" )
+    ax.set_yscale( "log" )
+    ax.set_xlabel("freq (GHz)", fontsize=12)
+    ax.set_ylabel("flux density (mJy)", fontsize=12)
+    pyplot.grid(True)
+
+  # plot curves first, so points will lie on top of them
+    ax.plot([1,1000.],[.006,6000.],linestyle='-',color='black')
+    hfreq = []
+    hflux = []
+    try :
+      fin = open("Hminus.dat")
+      for line in fin :
+        if not line.startswith('#') :
+          a = line.split()
+          hfreq.append( float(a[0]) )
+          hflux.append( float(a[3]) )
+      fin.close()
+      ax.plot( hfreq, hflux, linestyle='--', color='red')
+    except:
+      pass
+
+    for frq,flx,un,siz,col,mtyp in zip(freq,flux,unc,size,color,mtype) :
+      pyplot.errorbar( frq, flx, yerr=un, fmt=mtyp, capsize=0, markersize=0.8*siz, color=col, elinewidth=2, ecolor='black' )
+    # ax.plot([4.74,7.34],[.3904,.88],linestyle=':',color='green')
+    ax.text( 0.07, .9, "Orion SrcI", transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=18, rotation='horizontal' )
+    ax.text( 0.65, .335, "free-free", transform=ax.transAxes, \
+        horizontalalignment='center', fontsize=12, color="red", rotation='horizontal' )
+    ax.text( 0.65, .56, "dust", transform=ax.transAxes, \
+        horizontalalignment='center', fontsize=12, color="black", rotation=41 )
+
+  # add legends
+    #ax.plot( .01, .01, marker='x', color='red', label="Zapata 2004")
+    #ax.legend()
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+
