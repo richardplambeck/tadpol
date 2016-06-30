@@ -2019,7 +2019,15 @@ def figRotcurvefit() :
   #vmodel( rin=20., rout=50, xoff=0.01, voff=6.8, vtherm=4, Mstar=10, Mdisk=0.0001, rotcurveFile="rotcurve_10Mo.dat" ) 
   RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_10Mo.dat"] )
 
+# plotFlux is custom-designed to plot SrcI spectral energy distribution
+# SrcIFlux.dat is nominally a csv file downloaded from Google Drive; first few columns are
+#   freq,flux(mJy),fluxUncertainty,symbolsize,symbolcolor,symboltype,...
+# for some maddening reason, this program seems to skip over one of the columns unless I
+#   cut and paste this csv file to another file; that's what I have been doing
+# 
 def plotFlux( FluxFile="SrcIFlux.dat") :
+
+  # begin by reading measured fluxes from FluxFile; expect csv format
     freq = []
     flux = []
     unc = []
@@ -2041,20 +2049,28 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
           mtype.append( a[5] )
     fin.close()
     print color
+      # this is here because sometimes a column is skipped?!
     print mtype
+
+  # begin log-log plot
     pyplot.ioff()
     pp = PdfPages("Flx.pdf")
     pyplot.figure( figsize=(8,8) )
     ax = pyplot.subplot(1,1,1)
-    ax.axis( [4, 1000, .1, 20000.], fontsize=12 )
+    ax.axis( [4, 1000, .1, 20000.], fontsize=12, linewidth=1.1 )
     ax.set_xscale( "log" )
     ax.set_yscale( "log" )
     ax.set_xlabel("freq (GHz)", fontsize=12)
     ax.set_ylabel("flux density (mJy)", fontsize=12)
+    ax.tick_params(length=8, which='major')
+    ax.tick_params(length=6, which='minor')
     pyplot.grid(True)
 
-  # plot curves first, so points will lie on top of them
-    ax.plot([1,1000.],[.006,6000.],linestyle='-',color='black')
+  # plot nu^2 curve; show as dashed line below 20 GHz
+    ax.plot([1,30.],[.006,5.4],linestyle='--',color='black',linewidth=0.8)
+    ax.plot([30.,1000.],[5.4,6000.],linestyle='-',color='black',linewidth=1.2)
+
+  # plot Hminus curve from file Hminus.dat, if it can be found
     hfreq = []
     hflux = []
     try :
@@ -2065,23 +2081,34 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
           hfreq.append( float(a[0]) )
           hflux.append( float(a[3]) )
       fin.close()
-      ax.plot( hfreq, hflux, linestyle='--', color='red')
+      ax.plot( hfreq, hflux, linestyle='--', color='red', linewidth=1.2)
     except:
       pass
 
+  # now plot the data points one by one with errorbar, which does not seem to accept lists of styles, colors, sizes
     for frq,flx,un,siz,col,mtyp in zip(freq,flux,unc,size,color,mtype) :
       pyplot.errorbar( frq, flx, yerr=un, fmt=mtyp, capsize=0, markersize=0.8*siz, color=col, elinewidth=2, ecolor='black' )
     # ax.plot([4.74,7.34],[.3904,.88],linestyle=':',color='green')
-    ax.text( 0.07, .9, "Orion SrcI", transform=ax.transAxes, \
-        horizontalalignment='left', fontsize=18, rotation='horizontal' )
-    ax.text( 0.65, .335, "free-free", transform=ax.transAxes, \
-        horizontalalignment='center', fontsize=12, color="red", rotation='horizontal' )
-    ax.text( 0.65, .56, "dust", transform=ax.transAxes, \
-        horizontalalignment='center', fontsize=12, color="black", rotation=41 )
+      # this shows spectral index derived by Forbrich et al
 
-  # add legends
-    #ax.plot( .01, .01, marker='x', color='red', label="Zapata 2004")
-    #ax.legend()
+  # label the dust and free-free curves
+    #ax.text( 0.07, .9, "Orion SrcI", transform=ax.transAxes, \
+    #    horizontalalignment='left', fontsize=18, rotation='horizontal' )
+    ax.text( 0.66, .33, "free-free", transform=ax.transAxes, \
+        horizontalalignment='center', fontsize=14, color="red", rotation='horizontal' )
+    ax.text( 0.66, .56, "dust", transform=ax.transAxes, \
+        horizontalalignment='center', fontsize=14, color="black", rotation=41 )
+
+  # brute force way to add legends; symbol size scheme is different, but this looks OK
+  # another problem is that a line is drawn through symbols on the legend, but it is so short that it mostly doesn't show
+    ax.plot( .01, .01, 'bs', ms=8, label="Plambeck 2013")
+    ax.plot( .01, .01, marker='d', ms=8, color='cyan', label="Zapata 2004")
+    ax.plot( .01, .01, marker='o', color='yellow', ms=9, label="Beuther 2004,2006")
+    ax.plot( .01, .01, marker='d', color='orange', ms=10, label="Hirota 2014,2015")
+    ax.plot( .01, .01, 'm^', ms=8, label="Rivilla 2015")
+    ax.plot( .01, .01, 'gD', ms=8, label="Forbrich 2016")
+    ax.plot( .01, .01, 'rs', ms=10, label="this paper")
+    ax.legend( numpoints=1, loc=2, prop={'size':10}, markerscale=1, fancybox=True, handlelength=1, borderaxespad=3 )
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
