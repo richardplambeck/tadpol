@@ -9,6 +9,7 @@ import math
 Te = 8000            # electron temp in K
 kB = 1.3806e-16       # boltzmann's constant, erg K-1
 h = 6.626e-27        # plank's constant, erg s
+hplanck = 6.626e-27        # plank's constant, erg s
 c = 2.9979e10        # c in cm/sec
 clight = 2.9979e10   # c in cm/sec
 au = 1.496e13        # 1 AU in cm
@@ -58,9 +59,22 @@ def halpha() :
   boxcargauss( -1005,  40.4, 43, .175, .55, 23.8, 22.6,"h30mod40")
   boxcargauss( -1005., 40.4, 43, .250, .15,  5,   25,  "h30Imod40" ) 
   
+# compute flux density in milliJy for blackbody of temperature Tb
+def blackbody(fGHz, Tb, dmajArcsec, dminArcsec) :
+  dmaj = math.pi * dmajArcsec/(60.*60.*180.)    # convert to radians
+  dmin = math.pi * dminArcsec/(60.*60.*180.)    # convert to radians
+  dOmegaEllipse = math.pi * dmaj/2. * dmin/2.
+  dOmegaGaussian = 1.13 * dmaj * dmin	        # from notebook p. 98
+  B = 2. * hplanck * pow(fGHz*1.e9,3)/pow(clight,2) / (math.exp(hplanck*fGHz*1.e9/(kB*Tb)) - 1.) 
+  S0 = dOmegaEllipse * B/ 1.e-26
+  S0RJ = dOmegaEllipse * 2. * kB * Tb * pow(fGHz*1.e9/clight,2)/ 1.e-26
+  S1 = dOmegaGaussian * B/ 1.e-26
+  S1RJ = dOmegaGaussian * 2. * kB * Tb * pow(fGHz*1.e9/clight,2) /1.e-26
+  print "flux density of %.1f K blackbody uniform disk, %.3f x %.3f arcsec ellipse: %.4f mJy" % (Tb,dmajArcsec,dminArcsec,S0)
+  print "flux density of %.1f K blackbody gaussian, %.3f x %.3f FWHM: %.4f mJy" % (Tb,dmajArcsec,dminArcsec,S1)
   
-# --- compute flux density of optically thick region of brightness temp Tb, radius r AU, temp Tb
-def spectrum(fGHz, Tb, rAU=10 ) :
+# --- compute flux density of optically thick blackbody
+def blackbody2(fGHz, Tb, rAU=10 ) :
   # begin by computing the reference flux (optically thick, radius 10 AU, temp T)
   d = 415 * 3.0856e18  # 415 pc in cm
   r0 = rAU * 1.496e13      # 10 AU in cm
@@ -397,7 +411,7 @@ def minmass( tau, SJy, Te, fGHz ) :
   print "EM = %.2e pc cm-6" % EM
   Tb = (1. - math.exp(-tau)) * Te
   print "Tb = %.0f K" % Tb
-  S10AU = spectrum( fGHz, Tb )			# flux density in Jy for optically thick emission 10 AU radius 
+  S10AU = blackbody2( fGHz, Tb )			# flux density in Jy for optically thick emission 10 AU radius 
   print "S10AU = %.2e Jy" % S10AU
   rAU = 10. * math.sqrt(SJy/S10AU)
   print "r = %.3f AU" % rAU
