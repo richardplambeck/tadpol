@@ -2069,6 +2069,7 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
   # plot nu^2 curve; show as dashed line below 20 GHz
     ax.plot([1,30.],[.006,5.4],linestyle='--',color='black',linewidth=0.8)
     ax.plot([30.,1000.],[5.4,6000.],linestyle='-',color='black',linewidth=1.2)
+  print S0,S1,S0RJ,S1RJ
 
   # plot Hminus curve from file Hminus.dat, if it can be found
     hfreq = []
