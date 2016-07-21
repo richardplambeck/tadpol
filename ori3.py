@@ -1775,9 +1775,13 @@ def plotSnippets4( infile='/o/plambeck/OriALMA/Spectra/snip_SO2rotdiag.csv', nro
 #   how to add the colorbar otherwise
 # NOTE: this routine also creates pickled file RClist, which is used by ori3.figRotcurvefit()
 
-def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) :
+#def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) :
+#def centroidPlot( NameList=["SO_343.83"]) :
+#def centroidPlot( NameList=["U_650.16"]) :
 # def centroidPlot( NameList ) :
-    PA = math.pi * 140./180.  # PA of disk is 140 degrees
+
+def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) :
+    PA = math.pi * 142./180.  # PA of disk is 140 degrees
     cutoff = 0.04 
     symbol = [ "o", "v", "^", "s", "D", "h" ]
 
@@ -1791,9 +1795,9 @@ def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) 
     pp = PdfPages("centroids.pdf")
     fig = pyplot.figure( figsize=(8,8) )
 
-  # diskx = 0.12 * cos(50 deg); disky = .12 * sin(50 deg)
-    diskx = [ .077, -.077 ]
-    disky = [ -.092, .092 ]
+  # diskx = 0.115 * cos(52 deg); disky = .115 * sin(52 deg)
+    diskx = [ .0708, -.0708 ]
+    disky = [ -.0906, .0906 ]
 
     for Name in NameList:
       i = Name.find('_')
@@ -1822,7 +1826,7 @@ def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) 
         xerror = float( a[4] )
         yerror = float( a[6] )
         if (ampl > 0.01) and (xerror < cutoff) and (yerror < cutoff) :
-          print line
+          #print line
           v.append( float(a[0]) )
           amp.append( ampl )
           x.append( float(a[3]) )
@@ -1836,8 +1840,15 @@ def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) 
       RC["Name"] = Name
       RC["v"] = v
       RC["amp"] = amp
-      RC["p"] = math.cos(PA)*numpy.array(x) + math.sin(PA)*numpy.array(y)
-      RC["dp"] = math.cos(PA)*numpy.array(xerr) + math.sin(PA)*numpy.array(yerr)
+
+    # these are the lines I had originally; they are incorrect
+      #RC["p"] = math.cos(PA)*numpy.array(x) + math.sin(PA)*numpy.array(y)
+      #RC["dp"] = math.cos(PA)*numpy.array(xerr) + math.sin(PA)*numpy.array(yerr)
+
+      RC["p"] = math.sin(PA)*numpy.array(x) + math.cos(PA)*numpy.array(y)
+      RC["dp"] = math.sin(PA)*numpy.array(xerr) + math.cos(PA)*numpy.array(yerr)
+      for nn in range(0,len(x)) :
+        print "%8.2f  %6.3f  %6.3f  %6.3f"  % (v[nn],x[nn],y[nn],RC["p"][nn])
       fout = open( "RClist", "ab" )     # binary because I'll be pickling to it; append because I'll append
       pickle.dump( RC, fout )
       fout.close() 
@@ -1847,11 +1858,12 @@ def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) 
       s = s * 200./s.max()
       p = fig.add_axes( figpos[nplot-1] )      # main plot
       #p = pyplot.subplot(3,2,nplot, aspect=1)
-      p.plot( diskx, disky, linestyle="--", color='black', linewidth=6 ) 
+      p.plot( diskx, disky, linestyle="--", color='black', linewidth=4 ) 
+      p.scatter( [0.], [0.], marker='*', color='black', edgecolors='black',s=300, linewidths=0.3 )
       p.axis( [.12, -.12, -.12, .12], fontsize=6 )
       p.tick_params( axis='both', which='major', labelsize=10 )
       p.errorbar( x, y, xerr=xerr, yerr=yerr, fmt='none', ecolor='black', elinewidth=.2, capsize=0.  )
-      p.scatter( x, y, cmap='rainbow', c=v, marker='o', s=s, vmin=-13., vmax=25. )
+      p.scatter( x, y, cmap='rainbow', c=v, marker='o', s=s, vmin=-13., vmax=25., linewidths=0.1 )
           # use edgecolor='none' to get rid of black edges
           # use s=s to make symbol areas pmoportional to flux
           # use marker=symbol[nsym] for different symbols
@@ -1871,10 +1883,9 @@ def centroidPlot( NameList=["SiO_342.50","SiO_340.61","CO_342.65","SO_343.83"]) 
     pyplot.show()
 
 # plot rotation curve from RClist data
-# def RCplot( rotcurveList=["rotcurve_5Mo.dat","hirota_curve1.dat"] ) :
 # note: be careful! in my haste I am just putting the labels into the code!!
 
-def RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_7Mo.dat"], labelList = ["5 Mo model","10 Mo model"] ) :
+def RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_10Mo.dat"], labelList = ["5 Mo model","10 Mo model"] ) :
     color = ["red","blue","green","orange","purple","cyan","yellow"]
     RClist = []   # list of RC dictionaries
     fin = open( "RClist", "rb" )
@@ -1892,23 +1903,22 @@ def RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_7Mo.dat"], labelList = ["
     pp = PdfPages("snippets.pdf")
     fig = pyplot.figure( figsize=(8,11) )
     p = pyplot.subplot(1,1,1)
-    p.axis( [.12, -.12, -28.,38.], fontsize=12 )
+    p.axis( [.12, -.095, -22.,32.], fontsize=12 )
     ncol = -1
     p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
     for RC in RClist :
       ncol = ncol + 1
       First = True
       if ncol > len(color) : ncol = 0
-    # Note: I am reversing x axis to stay consistent with Hirota and other plots!
       for v,x,dx in zip( RC["v"],RC["p"],RC["dp"] ) :
         if First :
-          p.plot( [-x-dx,-x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol],  label=RC["Name"] )
+          p.plot( [x-dx,x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol],  label=RC["Name"] )
           First = False
         else :
-          p.plot( [-x-dx,-x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol] )
+          p.plot( [x-dx,x+dx], [v,v], linewidth=6, alpha=0.5, color=color[ncol] )
         #p.scatter(x,v ) 
 
-  # add theoretical rotation curve, if "rotcurve" file exists
+  # add theoretical rotation curves, if "rotcurve" file exists
 
     linestyleTable=["-","--"]
     for rotcurveFile,linestyle,label in zip(rotcurveList,linestyleTable,labelList) :    
@@ -1936,7 +1946,7 @@ def RCplot( rotcurveList=["rotcurve_5Mo.dat","rotcurve_7Mo.dat"], labelList = ["
 #   then form weighted avg to get offset
 
 # def vmodel( rin=20, rout=45, xoff=0., voff=8., vtherm=4, Mstar=5, Mdisk=0.01 ) :
-def vmodel( rin=20, rout=50, xoff=0., voff=8., vtherm=4, Mstar=7, Mdisk=0.0001, rotcurveFile="rotcurve_7Mo.dat" ) :
+def vmodel( rin=20, rout=50, xoff=0., voff=6., vtherm=4, Mstar=5, Mdisk=0.0001, rotcurveFile="rotcurve_5Mo.dat" ) :
     G = 6.672e-8    # cm3 g-1 sec-1
 
   # create velocity array spanning -30 to +30 km/sec, and matching amp and xmom arrays
@@ -2066,10 +2076,10 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
     ax.tick_params(length=6, which='minor')
     pyplot.grid(True)
 
-  # plot nu^2 curve; show as dashed line below 20 GHz
-    ax.plot([1,30.],[.006,5.4],linestyle='--',color='black',linewidth=0.8)
-    ax.plot([30.,1000.],[5.4,6000.],linestyle='-',color='black',linewidth=1.2)
-  print S0,S1,S0RJ,S1RJ
+  # plot nu^2 curve; show as dashed line below 30 GHz
+  # nu^2 curve passes through 340 mJy at 229 GHz
+    ax.plot([1,30.],[.00648,5.8351],linestyle='--',color='black',linewidth=0.8)
+    ax.plot([30.,1000.],[5.8351,6483.],linestyle='-',color='black',linewidth=1.2)
 
   # plot Hminus curve from file Hminus.dat, if it can be found
     hfreq = []
@@ -2106,7 +2116,7 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
     ax.plot( .01, .01, marker='d', ms=8, color='cyan', label="Zapata 2004")
     ax.plot( .01, .01, marker='o', color='yellow', ms=9, label="Beuther 2004,2006")
     ax.plot( .01, .01, marker='d', color='orange', ms=10, label="Hirota 2014,2015")
-    ax.plot( .01, .01, 'm^', ms=8, label="Rivilla 2015")
+    ax.plot( .01, .01, marker='^', color='magenta', ms=8, label="Rivilla 2015")
     ax.plot( .01, .01, 'gD', ms=8, label="Forbrich 2016")
     ax.plot( .01, .01, 'rs', ms=10, label="this paper")
     ax.legend( numpoints=1, loc=2, prop={'size':10}, markerscale=1, fancybox=True, handlelength=1, borderaxespad=3 )
@@ -2114,3 +2124,13 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
     pp.close()
     pyplot.show()
 
+# deconvolve source size from measured size and beamwidth
+#def decon( beamMaj, beamMin, beamAngle, srcMaj, srcMin, srcAngle, pa=140) :
+  # first find beam diameter at position angle pa
+#    thetaBm = o
+
+# find diameter of ellipse at angle pa; use eqn 10.23 in math handbook
+def dEllipse( major, minor, majDeg, paDeg ) : 
+    theta = math.radians( majDeg - paDeg )
+    rsq = pow(major*minor,2)/( pow(major*math.sin(theta), 2) + pow(minor*math.cos(theta), 2) )
+    print (majDeg - paDeg), math.sqrt(rsq)
