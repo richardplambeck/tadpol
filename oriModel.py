@@ -70,8 +70,8 @@ def blackbody(fGHz, Tb, dmajArcsec, dminArcsec) :
   S0RJ = dOmegaEllipse * 2. * kB * Tb * pow(fGHz*1.e9/clight,2)/ 1.e-26
   S1 = dOmegaGaussian * B/ 1.e-26
   S1RJ = dOmegaGaussian * 2. * kB * Tb * pow(fGHz*1.e9/clight,2) /1.e-26
-  print "flux density of %.1f K blackbody uniform disk, %.3f x %.3f arcsec ellipse: %.4f mJy" % (Tb,dmajArcsec,dminArcsec,S0)
-  print "flux density of %.1f K blackbody gaussian, %.3f x %.3f FWHM: %.4f mJy" % (Tb,dmajArcsec,dminArcsec,S1)
+  print "flux density of %.1f K blackbody uniform disk, %.3f x %.3f arcsec ellipse: %.4f mJy (RJ: %.4f mJy)" % (Tb,dmajArcsec,dminArcsec,S0,S0RJ)
+  print "flux density of %.1f K blackbody gaussian, %.3f x %.3f FWHM: %.4f mJy (RJ: %.4f mJy)" % (Tb,dmajArcsec,dminArcsec,S1,S1RJ)
   
 # --- compute flux density of optically thick blackbody
 def blackbody2(fGHz, Tb, rAU=10 ) :
