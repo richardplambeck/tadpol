@@ -1,5 +1,5 @@
 # ob.py
-# these are routines for dealing with the Optics Bench scans
+# these are routines for dealing with the Optics Bench scans of various kinds
 
 import numpy
 import math
@@ -9,6 +9,9 @@ import matplotlib
 matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
+import pol
+
+clight = 29.9792458 # speed of light, cm/nanosec
 
 
 def findminima( x, p, fGHz ):
@@ -185,3 +188,156 @@ def doit3() :
   processFile( "110_out" )
   processFile( "110_posA" )
   processFile( "110_posB" )
+
+# finds offset of phase center from scan chord
+def fitPhase( infile ) :
+  fin = open( infile, "r" )
+  xin = []
+  cin = []
+  sin = []
+  for line in fin :
+    if not line.startswith( "#" ) :
+      a = line.split()
+      x.append( float(a[0]) )
+      c.append( float(a[1]) )
+      s.append( float(a[2]) )
+  fin.close()
+  
+  x = numpy.array(xin)
+  c = numpy.array(cin)
+  s = numpy.array(sin)
+
+  coffset = c.max() + c.min()
+  crange = c.max() - c.min()
+  soffset = s.max() + s.min()
+  srange = s.max() - s.min()
+  print "cos max,min = %.6f,%.6f" % (c.max(),c.min())
+  print "sin max,min = %.6f,%.6f" % (s.max(),s.min())
+ 
+  phase = numpy.unwrap(numpy.atan2( c-coffset, crange/srange*(s-soffset)))
+  
+
+#  tpuckcm = .2525 * 2.54
+#  nrefrac = 3.105
+#      dphs_est = 360.*fGHz/29.98 * tpuckcm * (nrefrac - 1.)
+#      phs1_est = (phs0 + dphs_est) % 360.
+#      delta1 = phs1 - phs1_est
+#      delta = phs1 - phs0
+#      while delta1 < -180. : 
+#        delta1 = delta1 + 360.
+#      while delta1 > 180. :
+#        delta1 = delta1 - 360.
+#      while delta < -180. : 
+#        delta = delta + 360.
+#      while delta > 180. :
+#        delta = delta - 360.
+#      print fGHz, delta
+#  fout = open("/o/plambeck/PolarBear/OpticsBench/20oct2016/alumina.dat", "w")
+
+# reads summary file and returns arrays of freq, ampratio, deltaPhase
+def processSummary( infile="/o/plambeck/PolarBear/OpticsBench/20oct2016/summ" ) :
+  fin = open(infile, "r")
+  fGHz = []
+  trans = []
+  dphi = []
+  nseq = 0
+  for line in fin :
+    nseq = nseq + 1
+    a = line.split()
+    if nseq == 1 :
+      if not line.startswith("freq:") :
+        print "WARNING - file is out of sync"
+      fGHz.append( float(a[1])/1000. )
+    elif nseq == 2 : 
+      phs0 = float( a[5] )  
+      amp0 = float( a[4] )
+    elif nseq == 3 :
+      phs1 = float( a[5] )  
+      amp1 = float( a[4] )
+      nseq = 0
+      trans.append( amp1/amp0 )
+      delta = phs1 - phs0
+      while delta < -180. : 
+        delta = delta + 360.
+      while delta > 180. :
+        delta = delta - 360.
+      dphi.append( delta )
+  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi)
+  fin.close()
+    
+#numpy.var( numpy.unwrap( deltaPhase ) )
+
+# returns expected transmission, deltaPhase for 1pass through plate (no FP reflections)
+# fGHz = freq in GHz
+# nrefrac = estimated refractive index
+# tcm = puck thickness in cm
+# angIdeg = angle of incidence, degrees
+# tanDelta = estimated loss tangent
+# npar = True if incident radiation is polarized parallel to plane of incidence, False if perp
+
+def fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
+    thetaI = numpy.radians(angIdeg)
+    thetaT = math.asin((math.sin(numpy.radians(angIdeg)))/nrefrac)
+    tpar1, tperp1, rpar, rperp = pol.fresnel( 1., thetaI, nrefrac, thetaT )
+    tpar2, tperp2, rpar, rperp = pol.fresnel( nrefrac, thetaT, 1., thetaI )
+    dphs_est = 360.*fGHz/clight * tcm/math.cos(thetaT) * (nrefrac - 1.)
+    return dphs_est
+ 
+def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
+    phs = [] 
+    for freq in fGHz :
+      ampTpar,ampTperp,ampRpar,ampRperp = pol.plateTrans( freq, nrefrac, nrefrac, angIdeg=angIdeg, tcm=tcm, tanDelta=tanDelta)
+      #amp = abs( ampTpar )
+      phs.append( numpy.angle( ampTpar, deg=True ) - 360.*freq/clight*tcm )
+    return unwrap(numpy.array(phs)  )
+
+def unwrap( phi ) :
+    for n in range(0,len(phi)) :
+      while phi[n] < -180. : 
+        phi[n] = phi[n] + 360.
+      while phi[n] > 180. :
+        phi[n] = phi[n] - 360.
+    return phi
+     
+def nrefracFit( tcm=.6406, angIdeg=0., tanDelta=4.e-4, guess=3.118 ) :
+  fGHz,trans,dphs_meas = processSummary()
+  pyplot.ioff()
+  pp = PdfPages("puck.pdf")
+  for nrefrac in numpy.arange( guess-.01, guess+.02, .01) :
+     dphs_est = unwrap( fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta ) )
+     #dphs_est =  fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+     dphi = unwrap( dphs_est-dphs_meas )
+     avg = numpy.average(dphi)
+     print nrefrac, numpy.average(dphi), numpy.var(dphi)
+     pyplot.figure( figsize=(11,8) )
+     ax = pyplot.subplot(2,1,1)
+     ax.axis( [72.,114.,-195.,195.] )
+     ax.plot( fGHz, dphs_meas, "o" )
+     ax.plot( fGHz, dphs_est, "r-" )
+     ax.set_ylabel("phase (deg)", fontsize=12)
+     pyplot.title( "PB2bc alumina sample 0.2522 in thick", fontsize=12 ) 
+     pyplot.grid(True)
+     ax = pyplot.subplot(2,1,2)
+     ax.axis( [72.,114.,-185.,185.] )
+     ax.plot( fGHz, dphi, "o" )
+     ax.plot( [75.,112.],[avg,avg],"r-" )
+     ax.set_xlabel("freq (GHz)", fontsize=12)
+     ax.set_ylabel("residual (deg)", fontsize=12)
+     ax.text( 0.05, .82, "n = %.3f" % nrefrac, transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
+     pyplot.grid(True)
+     pyplot.savefig( pp, format="pdf" )
+     pyplot.show()
+  pp.close()
+
+    
+#  fout = open("puckmodel", "w")
+#  tanDelta = 4.e-4
+#  tcm = 0.641
+#  fout.write("# ob.puckModel( nrefrac=%.3f, angIdeg=%.0f, tcm=%.3f )\n" % (nrefrac,angIdeg,tcm) )
+#  for fGHz in numpy.arange( 70., 115., .1) :
+#    ampTpar,ampTperp,ampRpar,ampRperp = pol.plateTrans( fGHz, nrefrac, nrefrac, angIdeg=angIdeg, tcm=tcm, tanDelta=tanDelta)
+#    amp = abs( ampTpar )
+#    phs = numpy.angle( ampTpar, deg=True )
+#    fout.write("%8.2f %8.2f %8.3f\n" % (fGHz, amp, phs ) )
+#  fout.close()
