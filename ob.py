@@ -299,45 +299,108 @@ def unwrap( phi ) :
         phi[n] = phi[n] - 360.
     return phi
      
-def nrefracFit( tcm=.6406, angIdeg=0., tanDelta=4.e-4, guess=3.118 ) :
-  fGHz,trans,dphs_meas = processSummary()
+# fits refractive index of dielectric slab from phase differences (slab in - slab out)
+# retrieves measurements using processSummary() - edit that routine as necessary
+# models amp and phase of transmitted signal assuming 1 pass through the slab,
+#    OR multiple passes using Fabry Perot etalon formulae
+# resolves 2pi ambiguities by keeping data-model phase differences between -180 and 180
+# inputs: tcm = thickness of slab in cm; angIdeg = angle of incidence in degrees;
+#    tanDelta = estimate of loss tangent; guess = estimate of refractive index,
+#    plotType = 0 for none, 1 for phases and residuals vs freq; 2 for resids vs fit, 3 for raw data
+#
+def nrefracFit( tcm=.6406, angIdeg=0., nguess=3.12, tanDelta=4.e-4, plotType=0 ) :
   pyplot.ioff()
   pp = PdfPages("puck.pdf")
-  for nrefrac in numpy.arange( guess-.01, guess+.02, .01) :
-     dphs_est = unwrap( fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta ) )
-     #dphs_est =  fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-     dphi = unwrap( dphs_est-dphs_meas )
-     avg = numpy.average(dphi)
-     print nrefrac, numpy.average(dphi), numpy.var(dphi)
-     pyplot.figure( figsize=(11,8) )
-     ax = pyplot.subplot(2,1,1)
-     ax.axis( [72.,114.,-195.,195.] )
-     ax.plot( fGHz, dphs_meas, "o" )
-     ax.plot( fGHz, dphs_est, "r-" )
-     ax.set_ylabel("phase (deg)", fontsize=12)
-     pyplot.title( "PB2bc alumina sample 0.2522 in thick", fontsize=12 ) 
-     pyplot.grid(True)
-     ax = pyplot.subplot(2,1,2)
-     ax.axis( [72.,114.,-185.,185.] )
-     ax.plot( fGHz, dphi, "o" )
-     ax.plot( [75.,112.],[avg,avg],"r-" )
-     ax.set_xlabel("freq (GHz)", fontsize=12)
-     ax.set_ylabel("residual (deg)", fontsize=12)
-     ax.text( 0.05, .82, "n = %.3f" % nrefrac, transform=ax.transAxes, \
-        horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
-     pyplot.grid(True)
-     pyplot.savefig( pp, format="pdf" )
-     pyplot.show()
-  pp.close()
+  fGHz,trans,dphs_meas = processSummary()
+     # read in the data; edit as necessary as data format changes
+  if plotType == 3 :
+       pyplot.figure( figsize=(11,8) )
+       ax = pyplot.subplot(2,1,1)
+       ax.axis( [72.,114.,-195.,195.] )
+       ax.plot( fGHz, dphs_meas, "o" )
+       #ax.plot( fGHz, dphs_est, "r-" )
+       ax.set_ylabel("$\Delta\phi$ (deg)", fontsize=14)
+       pyplot.title( "PB2bc alumina sample, .2522 inch thick", fontsize=14 ) 
+       pyplot.grid(True)
+       ax = pyplot.subplot(2,1,2)
+       ax.axis( [72.,114.,0.,1.5] )
+       ax.plot( fGHz, trans, "o" )
+       ax.plot( [10.,1000.],[1.,1.], "--" )
+       ax.set_xlabel("freq (GHz)", fontsize=14)
+       ax.set_ylabel("transmission", fontsize=14)
+       pyplot.grid(True)
+       pyplot.savefig( pp, format="pdf" )
+       pyplot.show()
+  nr = []
+  avg = []
+  std = []
+  imin = 0
+  for nrefrac in numpy.arange( nguess-.1, nguess+.11, .01) :
+     nr.append( nrefrac )
+     # dphs_est = unwrap( fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta ) )
+     dphs_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+     dphi = unwrap( dphs_meas-dphs_est )
+       # unwrap keeps phase in range -180 to 180 in all cases
+     avg.append( numpy.average(dphi) )
+     if abs(avg[-1]) < abs(avg[imin]) :
+       imin = len(avg)-1
+     std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+     print nrefrac, avg[-1], std[-1]
+     if plotType == 1 :
+       pyplot.figure( figsize=(11,8) )
+       ax = pyplot.subplot(2,1,1)
+       ax.axis( [72.,114.,-195.,195.] )
+       ax.plot( fGHz, dphs_meas, "o" )
+       ax.plot( fGHz, dphs_est, "r-" )
+       ax.set_ylabel("phase (deg)", fontsize=14)
+       pyplot.title( "PB2bc alumina sample 0.2522 in thick", fontsize=14 ) 
+       pyplot.grid(True)
+       ax = pyplot.subplot(2,1,2)
+       ax.axis( [72.,114.,-185.,185.] )
+       ax.plot( fGHz, dphi, "o" )
+       ax.plot( [75.,112.],[avg[-1],avg[-1]],"r-" )
+       ax.set_xlabel("freq (GHz)", fontsize=14)
+       ax.set_ylabel("residual (deg)", fontsize=14)
+       ax.text( 0.05, .82, "n = %.3f" % nrefrac, transform=ax.transAxes, \
+          horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
+       pyplot.grid(True)
+       pyplot.savefig( pp, format="pdf" )
+       pyplot.show()
+  slope = (avg[imin+1] - avg[imin-1])/(nr[imin+1] - nr[imin-1])
+  nrfit = nr[imin] - avg[imin]/slope  
+  fitunc = abs(2.*std[imin]/slope)
+  print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+  
+  if plotType == 2 :
+    pyplot.figure( figsize=(11,8) )
+    ax = pyplot.subplot(1,1,1)
+    ax.axis( [3.0,3.24,-90.,90.], linewidth=2 )
+    ax.errorbar( nr, avg, yerr=std, linewidth=2 )
+    ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
+    #ax.set_xticklabels( fontsize=16 )
+    ax.set_xlabel("refractive index", fontsize=18)
+    ax.set_ylabel("mean phase residual (deg)", fontsize=18)
+    ax.text( 0.95, .92, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
+          horizontalalignment='right', fontsize=18, color="black", rotation='horizontal' )
+    pyplot.title( "PB2bc alumina sample 0.2522 in thick", fontsize=18 ) 
+    pyplot.grid(True)
+    pyplot.savefig( pp, format="pdf" )
+    pyplot.show()
+  if plotType > 0 :
+    pp.close()
 
-    
-#  fout = open("puckmodel", "w")
-#  tanDelta = 4.e-4
-#  tcm = 0.641
-#  fout.write("# ob.puckModel( nrefrac=%.3f, angIdeg=%.0f, tcm=%.3f )\n" % (nrefrac,angIdeg,tcm) )
-#  for fGHz in numpy.arange( 70., 115., .1) :
-#    ampTpar,ampTperp,ampRpar,ampRperp = pol.plateTrans( fGHz, nrefrac, nrefrac, angIdeg=angIdeg, tcm=tcm, tanDelta=tanDelta)
-#    amp = abs( ampTpar )
-#    phs = numpy.angle( ampTpar, deg=True )
-#    fout.write("%8.2f %8.2f %8.3f\n" % (fGHz, amp, phs ) )
-#  fout.close()
+
+# this is just used to make drawing
+def sineWaves() :
+  x = numpy.arange(0,50.,.01)
+  y = numpy.sin(x)
+  pyplot.ioff()
+  pp = PdfPages("sinewave.pdf")
+  pyplot.figure( figsize=(11,8) )
+  ax = pyplot.subplot(3,1,2)
+  ax.axis( [-5.,55.,-1.5,1.5] )
+  ax.plot( x, y, "-", linewidth=2 )
+  pyplot.savefig( pp, format="pdf" )
+  pyplot.show()
+  pp.close()
+  
