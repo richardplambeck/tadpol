@@ -265,16 +265,17 @@ def processSummary_20oct( infile="/o/plambeck/PolarBear/OpticsBench/20oct2016/su
   return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi)
   fin.close()
 
-def processSummary( infile="/o/plambeck/PolarBear/OpticsBench/09nov2016/transmission.dat" ) :
+def processSummary( infile ) :
   fin = open(infile, "r")
   fGHz = []
   trans = []
   dphi = []
   for line in fin :
-    a = line.split()
-    fGHz.append( float( a[0] ) )
-    trans.append( float( a[1] ) )
-    dphi.append( float( a[2] ) )
+    if not line.startswith( "#" ) :
+      a = line.split()
+      fGHz.append( float( a[0] ) )
+      trans.append( float( a[1] ) )
+      dphi.append( float( a[2] ) )
   return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi)
   fin.close()
     
@@ -296,13 +297,14 @@ def fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
     dphs_est = 360.*fGHz/clight * tcm/math.cos(thetaT) * (nrefrac - 1.)
     return dphs_est
  
-def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
+def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=False ) :
+    # print "tanDelta = %.2e" % tanDelta
     phs = [] 
     trans = []
     for freq in fGHz :
       ampTpar,ampTperp,ampRpar,ampRperp = pol.plateTrans( freq, nrefrac, nrefrac, angIdeg=angIdeg, tcm=tcm, tanDelta=tanDelta)
-      trans.append( abs( ampTpar ) )
-      phs.append( numpy.angle( ampTpar, deg=True ) - 360.*freq/clight*tcm )
+      trans.append( abs( ampTperp ) )
+      phs.append( numpy.angle( ampTperp, deg=True ) - 360.*freq/clight*tcm )
     return unwrap(numpy.array(phs) ), numpy.array(trans)
 
 def unwrap( phi ) :
@@ -322,98 +324,130 @@ def unwrap( phi ) :
 #    tanDelta = estimate of loss tangent; guess = estimate of refractive index,
 #    plotType = 0 for none, 1 for phases and residuals vs freq; 2 for resids vs fit, 3 for raw data
 #
-def nrefracFit( tcm=.6406, angIdeg=0., nguess=3.11, tanDelta=4.e-4, plotType=0 ) :
-  pyplot.ioff()
-  pp = PdfPages("puck.pdf")
-  fGHz,trans,dphs_meas = processSummary()
-     # read in the data; edit as necessary as data format changes
-  if plotType == 3 :
+def nrefracFit( infile, tcm=.007493, angIdeg=0., nguess=1.765, tanDelta=4.e-4, plotType=0, title="2.95 mil thick mylar" ) :
+    pyplot.ioff()
+    pp = PdfPages("refrac.pdf")
+    fGHz,trans,dphs_meas = processSummary( infile )
+       # read in the data; edit as necessary as data format changes
+
+  # raw data plot
+    if plotType == 3 :
        pyplot.figure( figsize=(11,8) )
        ax = pyplot.subplot(2,1,1)
-       ax.axis( [72.,114.,-195.,195.] )
+       #ax.axis( [72.,114.,-195.,195.] )
        ax.plot( fGHz, dphs_meas, "o" )
        #ax.plot( fGHz, dphs_est, "r-" )
        ax.set_ylabel("$\Delta\phi$ (deg)", fontsize=14)
-       pyplot.title( "PB2bc alumina sample, .2522 inch thick", fontsize=14 ) 
+       pyplot.title( title, fontsize=14 ) 
        pyplot.grid(True)
        ax = pyplot.subplot(2,1,2)
-       ax.axis( [72.,114.,0.,1.5] )
+       #ax.axis( [72.,114.,0.,1.1] )
        ax.plot( fGHz, trans, "o" )
-       ax.plot( [10.,1000.],[1.,1.], "--" )
+       #ax.plot( [10., 1000.],[1.,1.], "--" )
        ax.set_xlabel("freq (GHz)", fontsize=14)
        ax.set_ylabel("transmission", fontsize=14)
        pyplot.grid(True)
        pyplot.savefig( pp, format="pdf" )
        pyplot.show()
-  nr = []
-  avg = []
-  std = []
-  imin = 0
-  for nrefrac in numpy.arange( nguess-.05, nguess+.06, .05) :
-     nr.append( nrefrac )
-     # dphs_est = unwrap( fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta ) )
-     dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-     dphi = unwrap( dphs_meas-dphs_est )
-       # unwrap keeps phase in range -180 to 180 in all cases
-     avg.append( numpy.average(dphi) )
-     if abs(avg[-1]) < abs(avg[imin]) :
-       imin = len(avg)-1
-     std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
-     print nrefrac, avg[-1], std[-1]
-     if plotType == 1 or plotType == 4 :
-       pyplot.figure( figsize=(11,8) )
-       ax = pyplot.subplot(2,1,1)
-       ax.axis( [72.,114.,-195.,195.] )
-       ax.plot( fGHz, dphs_meas, "o" )
-       ax.plot( fGHz, dphs_est, "r-" )
-       ax.set_ylabel("phase (deg)", fontsize=14)
-       pyplot.title( "PB2bc alumina sample 0.2522 in thick", fontsize=14 ) 
-       pyplot.grid(True)
-       if plotType == 1 :
-         ax = pyplot.subplot(2,1,2)
-         ax.axis( [72.,114.,-50.,50.] )
-         ax.plot( fGHz, dphi, "o" )
-         ax.plot( [75.,112.],[avg[-1],avg[-1]],"r-" )
-         ax.set_xlabel("freq (GHz)", fontsize=14)
-         ax.set_ylabel("residual (deg)", fontsize=14)
-         ax.text( 0.05, .82, "n = %.3f" % nrefrac, transform=ax.transAxes, \
-           horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
-         pyplot.grid(True)
-       else :
-         ax = pyplot.subplot(2,1,2)
-         ax.axis( [72.,114.,0.,1.5] )
-         ax.plot( fGHz, trans, "o" )
-         ax.plot( fGHz, trans_est, "r-" )
-         ax.set_xlabel("freq (GHz)", fontsize=14)
-         ax.set_ylabel("transmission", fontsize=14)
-         ax.text( 0.05, .82, "n = %.3f" % nrefrac, transform=ax.transAxes, \
-           horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
-         pyplot.grid(True)
 
-       pyplot.savefig( pp, format="pdf" )
-       pyplot.show()
-  slope = (avg[imin+1] - avg[imin-1])/(nr[imin+1] - nr[imin-1])
-  nrfit = nr[imin] - avg[imin]/slope  
-  fitunc = abs(2.*std[imin]/slope)
-  print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
-  
-  if plotType == 2 :
+    nr = []
+    avg = []
+    std = []
+    imin = 0
+    if nguess < 1. :
+      for nrefrac in numpy.arange( 1., 3.55, .05) :
+        nr.append( nrefrac )
+        dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+        dphi = unwrap( dphs_meas-dphs_est )
+          # unwrap keeps phase in range -180 to 180 in all cases
+        avg.append( numpy.average(dphi) )
+        std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+        if abs(std[-1]) < abs(std[imin]) :
+          imin = len(avg)-1
+        print ".. n = %6.3f  avg = %7.3f  std = %7.3f" % (nrefrac, avg[-1], std[-1])
+      if imin == 0:
+        imin = 1
+      slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
+      nrfit = nr[imin] - avg[imin]/slope  
+      fitunc = abs(2.*std[imin]/slope)
+      print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+
+    # now zoom in on best region
+      nr = []
+      avg = []
+      std = []
+      imin = 0
+      for nrefrac in numpy.arange( nrfit-.2,nrfit+.21,.05 ) :
+        nr.append( nrefrac )
+        dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+        dphi = unwrap( dphs_meas-dphs_est )
+          # unwrap keeps phase in range -180 to 180 in all cases
+        avg.append( numpy.average(dphi) )
+        std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+        if abs(std[-1]) < abs(std[imin]) :
+          imin = len(avg)-1
+        print ".. n = %6.3f  avg = %7.3f  std = %7.3f" % (nrefrac, avg[-1], std[-1])
+      if imin == 0:
+        imin = 1
+      slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
+      nrfit = nr[imin] - avg[imin]/slope  
+      fitunc = abs(2.*std[imin]/slope)
+      print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+
+      pyplot.figure( figsize=(11,8) )
+      ax = pyplot.subplot(1,1,1)
+      ax.errorbar( nr, avg, yerr=std, linewidth=2 )
+      ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
+      #ax.set_xticklabels( fontsize=16 )
+      ax.set_xlabel("refractive index", fontsize=18)
+      ax.set_ylabel("mean phase residual (deg)", fontsize=18)
+      ax.text( 0.95, .92, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
+        horizontalalignment='right', fontsize=18, color="black", rotation='horizontal' )
+      pyplot.title( title, fontsize=18 ) 
+      pyplot.grid(True)
+      pyplot.savefig( pp, format="pdf" )
+      pyplot.show()
+    else : 
+      nrfit = nguess
+
+  # plot data with best fit, and phase residuals
+    dphs_est,trans_est = fitFP( fGHz, nrfit, tcm, angIdeg, tanDelta )
+    dphi = unwrap( dphs_meas-dphs_est )
     pyplot.figure( figsize=(11,8) )
-    ax = pyplot.subplot(1,1,1)
-    ax.axis( [3.05,3.17,-50.,50.], linewidth=2 )
-    ax.errorbar( nr, avg, yerr=std, linewidth=2 )
-    ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
-    #ax.set_xticklabels( fontsize=16 )
-    ax.set_xlabel("refractive index", fontsize=18)
-    ax.set_ylabel("mean phase residual (deg)", fontsize=18)
-    ax.text( 0.95, .92, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
-          horizontalalignment='right', fontsize=18, color="black", rotation='horizontal' )
-    pyplot.title( "PB2bc alumina sample 0.2522 in thick", fontsize=18 ) 
+    ax = pyplot.subplot(3,1,1)
+    #ax.axis( [72.,114.,-195.,195.] )
+    #ax.axis( [72.,114.,-15.,15.] )
+    ax.plot( fGHz, dphs_meas, "o" )
+    ax.plot( fGHz, dphs_est, "r-" )
+    ax.set_ylabel("phase (deg)", fontsize=14)
+    pyplot.title( title, fontsize=14 ) 
     pyplot.grid(True)
+    ax = pyplot.subplot(3,1,2)
+    #ax.axis( [72.,114.,-5.,5.] )
+    ax.plot( fGHz, dphi, "o" )
+    #dphiavg = numpy.average(dphi)
+    #ax.plot( [75.,112.],[dphiavg,dphiavg],"r-" )
+    #ax.set_xlabel("freq (GHz)", fontsize=14)
+    ax.set_ylabel("residual (deg)", fontsize=14)
+    ax.text( 0.05, .82, "n = %.3f" % nrfit, transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
+    pyplot.grid(True)
+    ax = pyplot.subplot(3,1,3)
+    #ax.axis( [72.,114.,0.,1.5] )
+    #ax.axis( [72.,114.,0.95,1.05] )
+    ax.plot( fGHz, trans, "o" )
+    ax.plot( fGHz, trans_est, "r-" )
+    ax.set_xlabel("freq (GHz)", fontsize=14)
+    ax.set_ylabel("transmission", fontsize=14)
+    ax.text( 0.05, .82, "n = %.3f" % nrfit, transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
+    pyplot.grid(True)
+
     pyplot.savefig( pp, format="pdf" )
     pyplot.show()
-  if plotType > 0 :
-    pp.close()
+
+    if plotType > 0 :
+      pp.close()
 
 
 # this is just used to make drawing
