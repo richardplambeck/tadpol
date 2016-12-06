@@ -10,6 +10,12 @@ matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 import pol
+#import hou
+
+# lambda is alternate way of defining simple function
+sq = lambda arg: pow(arg, 2)
+sin = lambda arg: numpy.sin(arg)
+cos = lambda arg: numpy.cos(arg)
 
 clight = 29.9792458 # speed of light, cm/nanosec
 
@@ -234,49 +240,32 @@ def fitPhase( infile ) :
 #      print fGHz, delta
 #  fout = open("/o/plambeck/PolarBear/OpticsBench/20oct2016/alumina.dat", "w")
 
-# reads summary file and returns arrays of freq, ampratio, deltaPhase
-def processSummary_20oct( infile="/o/plambeck/PolarBear/OpticsBench/20oct2016/summ" ) :
-  fin = open(infile, "r")
-  fGHz = []
-  trans = []
-  dphi = []
-  nseq = 0
-  for line in fin :
-    nseq = nseq + 1
-    a = line.split()
-    if nseq == 1 :
-      if not line.startswith("freq:") :
-        print "WARNING - file is out of sync"
-      fGHz.append( float(a[1])/1000. )
-    elif nseq == 2 : 
-      phs0 = float( a[5] )  
-      amp0 = float( a[4] )
-    elif nseq == 3 :
-      phs1 = float( a[5] )  
-      amp1 = float( a[4] )
-      nseq = 0
-      trans.append( amp1/amp0 )
-      delta = phs1 - phs0
-      while delta < -180. : 
-        delta = delta + 360.
-      while delta > 180. :
-        delta = delta - 360.
-      dphi.append( delta )
-  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi)
-  fin.close()
 
-def processSummary( infile ) :
+# reads *.trans file and returns arrays of freq, ampratio, deltaPhase, title, tcm, angIdeg
+def readTransFile( infile ) :
   fin = open(infile, "r")
   fGHz = []
   trans = []
   dphi = []
+  tcm = 0.
+  title = ""
+  angIdeg = 0.
   for line in fin :
     if not line.startswith( "#" ) :
       a = line.split()
       fGHz.append( float( a[0] ) )
       trans.append( float( a[1] ) )
       dphi.append( float( a[2] ) )
-  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi)
+    elif "tcm" in line :
+      tcm = float(line[line.find("=")+1:])
+    elif "angIdeg" in line :
+      angIdeg = float( line[line.find("=")+1:] )
+    elif "title" in line :
+      title = line[line.find("=")+1:]
+      print len(title)
+      title = title[2:-2]
+      print len(title)
+  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), title, tcm, angIdeg
   fin.close()
     
 #numpy.var( numpy.unwrap( deltaPhase ) )
@@ -299,13 +288,29 @@ def fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
  
 def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=False ) :
     # print "tanDelta = %.2e" % tanDelta
+    theta1 = numpy.radians(angIdeg)
+    theta2 = math.asin( theta1/nrefrac )
+    airEquivPath = tcm * math.cos(theta1-theta2)/math.cos(theta2)
+       # air equivalent path is LESS than thickness of dielectric if dielectric slab is tilted !
     phs = [] 
     trans = []
     for freq in fGHz :
       ampTpar,ampTperp,ampRpar,ampRperp = pol.plateTrans( freq, nrefrac, nrefrac, angIdeg=angIdeg, tcm=tcm, tanDelta=tanDelta)
       trans.append( abs( ampTperp ) )
-      phs.append( numpy.angle( ampTperp, deg=True ) - 360.*freq/clight*tcm )
+      phs.append( numpy.angle( ampTperp, deg=True ) - 360.*freq/clight*airEquivPath )
+        # ampTperp gives phase through plate; must subtract phase through airEquivPath 
     return unwrap(numpy.array(phs) ), numpy.array(trans)
+
+# === under construction === #
+# use Born and Wolf [13.4] eqn (7) and (4) to compute transmission into lossy dielectric
+# this computes complex Fresnel coefficients 
+#def complexFresnel( n1, kappa1, ):
+#    factor1 = sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1))
+#    factor2 = math.sqrt( sq(sq(n2)*(1-sq(kappa2) - sq(n1)*sq(sin(theta1)))) + 4.*pow(n2,4)*sq(kappa2) )
+#    u = 0.5 * math.sqrt( factor1 + factor2 )
+#    v = 0.5 * math.sqrt( -1.*factor1 + factor2 )
+#    tpar =  
+# === under construction === #
 
 def unwrap( phi ) :
     for n in range(0,len(phi)) :
@@ -316,7 +321,7 @@ def unwrap( phi ) :
     return phi
      
 # fits refractive index of dielectric slab from phase differences (slab in - slab out)
-# retrieves measurements using processSummary() - edit that routine as necessary
+# retrieves measurements using readTransFile() - edit that routine as necessary
 # models amp and phase of transmitted signal assuming 1 pass through the slab,
 #    OR multiple passes using Fabry Perot etalon formulae
 # resolves 2pi ambiguities by keeping data-model phase differences between -180 and 180
@@ -324,40 +329,25 @@ def unwrap( phi ) :
 #    tanDelta = estimate of loss tangent; guess = estimate of refractive index,
 #    plotType = 0 for none, 1 for phases and residuals vs freq; 2 for resids vs fit, 3 for raw data
 #
-def nrefracFit( infile, tcm=.007493, angIdeg=0., nguess=1.765, tanDelta=4.e-4, plotType=0, title="2.95 mil thick mylar" ) :
+def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
     pyplot.ioff()
     pp = PdfPages("refrac.pdf")
-    fGHz,trans,dphs_meas = processSummary( infile )
+    fGHz,trans,dphs_meas,title,tcm,angIdeg = readTransFile( infile )
        # read in the data; edit as necessary as data format changes
-
-  # raw data plot
-    if plotType == 3 :
-       pyplot.figure( figsize=(11,8) )
-       ax = pyplot.subplot(2,1,1)
-       #ax.axis( [72.,114.,-195.,195.] )
-       ax.plot( fGHz, dphs_meas, "o" )
-       #ax.plot( fGHz, dphs_est, "r-" )
-       ax.set_ylabel("$\Delta\phi$ (deg)", fontsize=14)
-       pyplot.title( title, fontsize=14 ) 
-       pyplot.grid(True)
-       ax = pyplot.subplot(2,1,2)
-       #ax.axis( [72.,114.,0.,1.1] )
-       ax.plot( fGHz, trans, "o" )
-       #ax.plot( [10., 1000.],[1.,1.], "--" )
-       ax.set_xlabel("freq (GHz)", fontsize=14)
-       ax.set_ylabel("transmission", fontsize=14)
-       pyplot.grid(True)
-       pyplot.savefig( pp, format="pdf" )
-       pyplot.show()
-
+    print "\n%s" % title
+    print "tcm = %.5f" % tcm
+    print "angIdeg = %.2f\n" % angIdeg
     nr = []
     avg = []
     std = []
     imin = 0
-    if nguess < 1. :
+
+  # if nguess=0, find best fit refractive index in range [1,3.5]
+    if abs(nguess) < 1. :
       for nrefrac in numpy.arange( 1., 3.55, .05) :
         nr.append( nrefrac )
-        dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+        dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+        #dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
         dphi = unwrap( dphs_meas-dphs_est )
           # unwrap keeps phase in range -180 to 180 in all cases
         avg.append( numpy.average(dphi) )
@@ -371,84 +361,121 @@ def nrefracFit( infile, tcm=.007493, angIdeg=0., nguess=1.765, tanDelta=4.e-4, p
       nrfit = nr[imin] - avg[imin]/slope  
       fitunc = abs(2.*std[imin]/slope)
       print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
-
-    # now zoom in on best region
-      nr = []
-      avg = []
-      std = []
-      imin = 0
-      for nrefrac in numpy.arange( nrfit-.2,nrfit+.21,.05 ) :
-        nr.append( nrefrac )
-        dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-        dphi = unwrap( dphs_meas-dphs_est )
-          # unwrap keeps phase in range -180 to 180 in all cases
-        avg.append( numpy.average(dphi) )
-        std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
-        if abs(std[-1]) < abs(std[imin]) :
-          imin = len(avg)-1
-        print ".. n = %6.3f  avg = %7.3f  std = %7.3f" % (nrefrac, avg[-1], std[-1])
-      if imin == 0:
-        imin = 1
-      slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
-      nrfit = nr[imin] - avg[imin]/slope  
-      fitunc = abs(2.*std[imin]/slope)
-      print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
-
-      pyplot.figure( figsize=(11,8) )
-      ax = pyplot.subplot(1,1,1)
-      ax.errorbar( nr, avg, yerr=std, linewidth=2 )
-      ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
-      #ax.set_xticklabels( fontsize=16 )
-      ax.set_xlabel("refractive index", fontsize=18)
-      ax.set_ylabel("mean phase residual (deg)", fontsize=18)
-      ax.text( 0.95, .92, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
-        horizontalalignment='right', fontsize=18, color="black", rotation='horizontal' )
-      pyplot.title( title, fontsize=18 ) 
-      pyplot.grid(True)
-      pyplot.savefig( pp, format="pdf" )
-      pyplot.show()
     else : 
       nrfit = nguess
 
-  # plot data with best fit, and phase residuals
-    dphs_est,trans_est = fitFP( fGHz, nrfit, tcm, angIdeg, tanDelta )
+  # plot mean phase residual over the range [nrfit-.1, nrfit+.1]
+    nr = []
+    avg = []
+    std = []
+    imin = 0
+    for nrefrac in numpy.arange( nrfit-.1,nrfit+.11,.02 ) :
+      nr.append( nrefrac )
+      dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+      dphi = unwrap( dphs_meas-dphs_est )
+        # unwrap keeps phase in range -180 to 180 in all cases
+      avg.append( numpy.average(dphi) )
+      std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+      if abs(std[-1]) < abs(std[imin]) :
+        imin = len(avg)-1
+      print ".. n = %6.3f  avg = %7.3f  std = %7.3f" % (nrefrac, avg[-1], std[-1])
+    if imin == 0:
+      imin = 1
+    slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
+    nrfit = nr[imin] - avg[imin]/slope  
+    fitunc = abs(2.*std[imin]/slope)
+    print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+
+  # begin the plot
+    fig =  pyplot.figure( figsize=(11,8) )
+    pyplot.suptitle( "%s (%s)" % (title,infile), fontsize=14 )
+
+  # lower left plot will show mean phase resid vs refractive index
+    ax = fig.add_axes( [.1,.1,.38,.2] )
+    xmin,xmax = minmax( numpy.array(nr) )
+    ymin,ymax = minmax( numpy.array(avg) )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.tick_params( labelsize=10 )
+    ax.errorbar( nr, avg, yerr=std, linewidth=2 )
+    ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
+    ax.set_xlabel("refractive index", fontsize=10)
+    ax.set_ylabel("mean phase residual (deg)", fontsize=10)
+    ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
+      horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
+    pyplot.grid(True)
+
+  # compute amp and phase residuals for best fit
+    dphs_est,trans_est = fitFP2( fGHz, nrfit, tcm, angIdeg, tanDelta )
     dphi = unwrap( dphs_meas-dphs_est )
-    pyplot.figure( figsize=(11,8) )
-    ax = pyplot.subplot(3,1,1)
-    #ax.axis( [72.,114.,-195.,195.] )
-    #ax.axis( [72.,114.,-15.,15.] )
+ 
+  # top left panel is phase vs freq, measured and fit
+    ax = fig.add_axes( [.1,.6,.38,.32] )
+    xmin,xmax = minmax( fGHz )
+    ymin,ymax = minmax( dphs_meas )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.tick_params( labelsize=10 )
     ax.plot( fGHz, dphs_meas, "o" )
     ax.plot( fGHz, dphs_est, "r-" )
-    ax.set_ylabel("phase (deg)", fontsize=14)
-    pyplot.title( title, fontsize=14 ) 
+    ax.set_ylabel("phase (deg)", fontsize=10)
     pyplot.grid(True)
-    ax = pyplot.subplot(3,1,2)
-    #ax.axis( [72.,114.,-5.,5.] )
-    ax.plot( fGHz, dphi, "o" )
-    #dphiavg = numpy.average(dphi)
-    #ax.plot( [75.,112.],[dphiavg,dphiavg],"r-" )
-    #ax.set_xlabel("freq (GHz)", fontsize=14)
-    ax.set_ylabel("residual (deg)", fontsize=14)
-    ax.text( 0.05, .82, "n = %.3f" % nrfit, transform=ax.transAxes, \
-      horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
+  
+  # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
+    ax = fig.add_axes( [.1,.37,.38,.2]) 
+    ymin,ymax = minmax( dphi, margin=.2 )
+    if abs(ymin) < abs(ymax) :
+      ymin = math.copysign(ymax,ymin)
+    if abs(ymax) < abs(ymin) :
+      ymax = math.copysign(ymin,ymax)
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHz, dphi, "o-" )
+    ax.tick_params( labelsize=10 )
+    dphiavg = numpy.average(dphi)
+    ax.plot( [fGHz[0],fGHz[-1]],[dphiavg,dphiavg],"r--" )
+    ax.set_ylabel("residual (deg)", fontsize=10)
+    ax.set_xlabel("freq (GHz)", fontsize=10)
     pyplot.grid(True)
-    ax = pyplot.subplot(3,1,3)
-    #ax.axis( [72.,114.,0.,1.5] )
-    #ax.axis( [72.,114.,0.95,1.05] )
+
+  # top right panel is transmission vs freq, measured and theoretical
+    ax = fig.add_axes( [.57,.6,.38,.32] )
+    ymin,ymax = minmax( trans )
+    ax.axis( [xmin, xmax, ymin, ymax] )
     ax.plot( fGHz, trans, "o" )
     ax.plot( fGHz, trans_est, "r-" )
-    ax.set_xlabel("freq (GHz)", fontsize=14)
-    ax.set_ylabel("transmission", fontsize=14)
-    ax.text( 0.05, .82, "n = %.3f" % nrfit, transform=ax.transAxes, \
-      horizontalalignment='left', fontsize=16, color="black", rotation='horizontal' )
+    ax.tick_params( labelsize=10 )
+    ax.set_ylabel("transmission", fontsize=10)
     pyplot.grid(True)
 
+  # middle right panel is measured-theoretical trans
+    ax = fig.add_axes( [.57,.37,.38,.2])
+    ax.tick_params( labelsize=10 )
+    ymin,ymax = minmax( trans-trans_est, margin=0.2 )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHz, trans-trans_est, "o-" )
+    ax.set_xlabel("freq (GHz)", fontsize=10)
+    ax.set_ylabel("residual", fontsize=10)
+    pyplot.grid(True)
+
+  # fictitious lower right panel gives room for text
+    ax = fig.add_axes( [.57,.1,.38,.2])
+    ax.text( 0.03, .84, "n = %.3f (+/- %.4f)" % (nrfit,fitunc), transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ax.text( 0.03, .7, "tcm = %.4f" % tcm, transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta, transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    pyplot.axis('off')
     pyplot.savefig( pp, format="pdf" )
     pyplot.show()
+    pp.close()
 
-    if plotType > 0 :
-      pp.close()
-
+def minmax( varray, margin=.05 ) :
+    '''find ymin and ymax for a plot'''
+    vmin = varray.min()
+    vmax = varray.max()
+    diff = vmax - vmin
+    return [ vmin - margin*diff, vmax + margin*diff ]
 
 # this is just used to make drawing
 def sineWaves() :
@@ -464,3 +491,43 @@ def sineWaves() :
   pyplot.show()
   pp.close()
   
+def compareMethods() :
+  nuArr = numpy.array(numpy.arange(76.e9,90.e9,1.e9))
+  print nuArr
+  noArr = numpy.array([1.585]) #Actually measured
+  neArr = numpy.array([1.585]) #Actually measured
+  oltArr = numpy.array([1.5e-3]) #Estimated from Dick's and my measurement
+  eltArr = numpy.array([1.5e-3]) #Estimated from Dick's and my measurement
+  dArr = numpy.array([6.3652e-3]) #[m], Actually measured
+  plateAngles = numpy.array([0.]) #[deg]
+  stackRotAngle = 0. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
+  polAngle = 90. # pol parallel to plane of incidence
+  stackTilt = 16.2 #[deg]
+
+  #P trans, S trans, P refl, S refl
+  pT, sT, pR, sR = hou.anisotropicTransmissionPol(nuArr, noArr, neArr, oltArr, eltArr, dArr, plateAngles, stackRotAngle, stackTilt, polAngle)
+  print "pT : ", pT
+  print " "
+  print "sT : ", sT 
+
+# transmission from characteristic matrix for 1 isotropic, lossless layer, E in plane of incidence
+# based on Hecht eq 9.91
+def fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta ) :
+    theta1 = numpy.radians(angIdeg)
+    theta2 = math.asin( theta1/nrefrac )
+    h = nrefrac * tcm * cos(theta2)
+    Y0 = 1./cos(theta1)
+    #Y0 = cos(theta1)
+    Y1 = nrefrac/cos(theta2)
+    phs = [] 
+    trans = []
+    for freq in fGHz :
+      k0 = -2.*math.pi*freq/clight
+      M = numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] )
+      ampTperp = 2.*Y0/(Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) \
+               / numpy.exp(-1j * k0 * tcm * cos(theta2) )
+      trans.append( abs( ampTperp ) )
+      phs.append( numpy.angle( ampTperp, deg=True )) # - 360.* freq * tcm * cos(theta2) / clight )
+    return unwrap(numpy.array(phs) ), numpy.array(trans)
+      
+
