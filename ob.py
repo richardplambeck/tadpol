@@ -286,17 +286,24 @@ def fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
     dphs_est = 360.*fGHz/clight * tcm/math.cos(thetaT) * (nrefrac - 1.)
     return dphs_est
  
+# in 09nov setup, E field is vertical, perpendicular to plane of incidence
 def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=False ) :
     # print "tanDelta = %.2e" % tanDelta
-    theta1 = numpy.radians(angIdeg)
-    theta2 = math.asin( theta1/nrefrac )
-    airEquivPath = tcm * math.cos(theta1-theta2)/math.cos(theta2)
+    theta1 = math.radians( angIdeg )
+    theta2 = math.asin( math.sin(theta1)/nrefrac )
+    # print "theta1,2 = ",theta1,theta2
+    airEquivPath = tcm / math.cos(theta2) * math.cos(theta1-theta2)
        # air equivalent path is LESS than thickness of dielectric if dielectric slab is tilted !
     phs = [] 
     trans = []
     for freq in fGHz :
       ampTpar,ampTperp,ampRpar,ampRperp = pol.plateTrans( freq, nrefrac, nrefrac, angIdeg=angIdeg, tcm=tcm, tanDelta=tanDelta)
+      # trans.append( abs( ampTpar ) )
+      # phs.append( numpy.angle( ampTpar, deg=True ) - 360.*freq/clight*airEquivPath )
       trans.append( abs( ampTperp ) )
+      #print "theta1,2 = ",theta1,theta2
+      #print "airEquivPath = ",airEquivPath," cm"
+      #print "air equiv phase = ", 360.*freq/clight * airEquivPath
       phs.append( numpy.angle( ampTperp, deg=True ) - 360.*freq/clight*airEquivPath )
         # ampTperp gives phase through plate; must subtract phase through airEquivPath 
     return unwrap(numpy.array(phs) ), numpy.array(trans)
@@ -346,8 +353,8 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
     if abs(nguess) < 1. :
       for nrefrac in numpy.arange( 1., 3.55, .05) :
         nr.append( nrefrac )
+        #dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
         dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-        #dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
         dphi = unwrap( dphs_meas-dphs_est )
           # unwrap keeps phase in range -180 to 180 in all cases
         avg.append( numpy.average(dphi) )
@@ -371,7 +378,7 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
     imin = 0
     for nrefrac in numpy.arange( nrfit-.1,nrfit+.11,.02 ) :
       nr.append( nrefrac )
-      dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+      dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
       dphi = unwrap( dphs_meas-dphs_est )
         # unwrap keeps phase in range -180 to 180 in all cases
       avg.append( numpy.average(dphi) )
@@ -510,24 +517,39 @@ def compareMethods() :
   print " "
   print "sT : ", sT 
 
-# transmission from characteristic matrix for 1 isotropic, lossless layer, E in plane of incidence
+# transmission from characteristic matrix for 1 isotropic, lossless layer, E perpendicular to plane of incidence
 # based on Hecht eq 9.91
 def fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta ) :
-    theta1 = numpy.radians(angIdeg)
-    theta2 = math.asin( theta1/nrefrac )
+    theta1 = math.radians(angIdeg)
+    theta2 = math.asin( math.sin(theta1)/nrefrac )
     h = nrefrac * tcm * cos(theta2)
-    Y0 = 1./cos(theta1)
-    #Y0 = cos(theta1)
-    Y1 = nrefrac/cos(theta2)
+    Y0 = cos(theta1)
+    Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
     phs = [] 
     trans = []
     for freq in fGHz :
       k0 = -2.*math.pi*freq/clight
       M = numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] )
-      ampTperp = 2.*Y0/(Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) \
-               / numpy.exp(-1j * k0 * tcm * cos(theta2) )
+      ampTperp = 2.*Y0/(Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) 
+              #  / numpy.exp(-1j * k0 * tcm * cos(theta1) )   alternate way of correcting for air path
       trans.append( abs( ampTperp ) )
-      phs.append( numpy.angle( ampTperp, deg=True )) # - 360.* freq * tcm * cos(theta2) / clight )
+      phs.append( numpy.angle( ampTperp, deg=True ) - 360.* freq * tcm * cos(theta1) / clight )
+          # 2nd term is the phase through air 
     return unwrap(numpy.array(phs) ), numpy.array(trans)
       
 
+def compFP( nrefrac=1.5, tcm=1., angIdeg=10., tanDelta=1.e-3 ) :
+    fGHz = numpy.arange(80.,115.01,.1)
+    dphs1,trans1 = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+    dphs2,trans2 = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+    #dphs3,trans3 = fitFP2( fGHz, 1., tcm, angIdeg, tanDelta )
+    fig =  pyplot.figure()
+    ax = pyplot.subplot(2,1,1)
+    ax.plot( fGHz, trans1, "b-" )
+    ax.plot( fGHz, trans2, "r-" )
+    ax = pyplot.subplot(2,1,2)
+    ax.plot( fGHz, dphs1, "b-" )
+    ax.plot( fGHz, dphs2, "r-" )
+    #ax.plot( fGHz, dphs2-dphs3, "r-" )
+    pyplot.show() 
+    
