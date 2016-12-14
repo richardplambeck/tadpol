@@ -308,16 +308,18 @@ def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=False ) :
         # ampTperp gives phase through plate; must subtract phase through airEquivPath 
     return unwrap(numpy.array(phs) ), numpy.array(trans)
 
-# === under construction === #
-# use Born and Wolf [13.4] eqn (7) and (4) to compute transmission into lossy dielectric
-# this computes complex Fresnel coefficients 
-#def complexFresnel( n1, kappa1, ):
-#    factor1 = sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1))
-#    factor2 = math.sqrt( sq(sq(n2)*(1-sq(kappa2) - sq(n1)*sq(sin(theta1)))) + 4.*pow(n2,4)*sq(kappa2) )
-#    u = 0.5 * math.sqrt( factor1 + factor2 )
-#    v = 0.5 * math.sqrt( -1.*factor1 + factor2 )
-#    tpar =  
-# === under construction === #
+# use Born and Wolf [13.4] eqn (7) and (4) to compute n2*cos(theta2) for lossy dielectic
+def complexNC( n1, theta1Radians, n2, tanDelta ):
+    kappa2 = 0.5*tanDelta
+    factor1 = sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1Radians))
+    #print "factor1 = ",factor1
+    factor2 = numpy.sqrt( sq(sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1Radians))) + 4.*pow(n2,4)*sq(kappa2) )
+    #print "factor2 = ",factor2
+    u2 = numpy.sqrt( 0.5 * (factor1 + factor2) )
+    #print "u2 = ", u2
+    v2 = numpy.sqrt( 0.5 * (-1.*factor1 + factor2) )
+    #print "v2 = ", v2
+    return u2 + 1j*v2
 
 def unwrap( phi ) :
     for n in range(0,len(phi)) :
@@ -334,13 +336,16 @@ def unwrap( phi ) :
 # resolves 2pi ambiguities by keeping data-model phase differences between -180 and 180
 # inputs: tcm = thickness of slab in cm; angIdeg = angle of incidence in degrees;
 #    tanDelta = estimate of loss tangent; guess = estimate of refractive index,
-#    plotType = 0 for none, 1 for phases and residuals vs freq; 2 for resids vs fit, 3 for raw data
 #
-def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
+def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
     pyplot.ioff()
     pp = PdfPages("refrac.pdf")
     fGHz,trans,dphs_meas,title,tcm,angIdeg = readTransFile( infile )
        # read in the data; edit as necessary as data format changes
+    if angIdegOver != 0. :
+      angIdeg = angIdegOver
+    if tcmOver != 0. :
+      tcm = tcmOver
     print "\n%s" % title
     print "tcm = %.5f" % tcm
     print "angIdeg = %.2f\n" % angIdeg
@@ -353,15 +358,17 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
     if abs(nguess) < 1. :
       for nrefrac in numpy.arange( 1., 3.55, .05) :
         nr.append( nrefrac )
-        #dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-        dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+        # dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+        dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrefrac], [tanDelta] ) 
         dphi = unwrap( dphs_meas-dphs_est )
           # unwrap keeps phase in range -180 to 180 in all cases
         avg.append( numpy.average(dphi) )
         std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+        avgT = numpy.average( trans - trans_est )
+        stdT = numpy.std( trans - trans_est )
         if abs(std[-1]) < abs(std[imin]) :
           imin = len(avg)-1
-        print ".. n = %6.3f  avg = %7.3f  std = %7.3f" % (nrefrac, avg[-1], std[-1])
+        print ".. n = %6.3f  avg = %7.3f  std = %7.3f  avgT = %7.3f  stdT = %7.3f" % (nrefrac, avg[-1], std[-1], avgT,stdT)
       if imin == 0:
         imin = 1
       slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
@@ -378,14 +385,17 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
     imin = 0
     for nrefrac in numpy.arange( nrfit-.1,nrfit+.11,.02 ) :
       nr.append( nrefrac )
-      dphs_est,trans_est = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+      #dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+      dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrefrac], [tanDelta] ) 
       dphi = unwrap( dphs_meas-dphs_est )
         # unwrap keeps phase in range -180 to 180 in all cases
       avg.append( numpy.average(dphi) )
       std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+      avgT = numpy.average( trans - trans_est )
+      stdT = numpy.std( trans - trans_est )
       if abs(std[-1]) < abs(std[imin]) :
         imin = len(avg)-1
-      print ".. n = %6.3f  avg = %7.3f  std = %7.3f" % (nrefrac, avg[-1], std[-1])
+      print ".. n = %6.3f  avg = %7.3f  std = %7.3f  avgT = %7.3f  stdT = %7.3f" % (nrefrac, avg[-1], std[-1], avgT,stdT)
     if imin == 0:
       imin = 1
     slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
@@ -412,13 +422,14 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
     pyplot.grid(True)
 
   # compute amp and phase residuals for best fit
-    dphs_est,trans_est = fitFP2( fGHz, nrfit, tcm, angIdeg, tanDelta )
+    # dphs_est,trans_est = fitFP2( fGHz, nrfit, tcm, angIdeg, tanDelta )
+    dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrfit], [tanDelta] ) 
     dphi = unwrap( dphs_meas-dphs_est )
  
   # top left panel is phase vs freq, measured and fit
     ax = fig.add_axes( [.1,.6,.38,.32] )
     xmin,xmax = minmax( fGHz )
-    ymin,ymax = minmax( dphs_meas )
+    ymin,ymax = minmax( numpy.concatenate((dphs_meas,dphs_est)))
     ax.axis( [xmin, xmax, ymin, ymax] )
     ax.tick_params( labelsize=10 )
     ax.plot( fGHz, dphs_meas, "o" )
@@ -444,7 +455,7 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., plotType=0 ) :
 
   # top right panel is transmission vs freq, measured and theoretical
     ax = fig.add_axes( [.57,.6,.38,.32] )
-    ymin,ymax = minmax( trans )
+    ymin,ymax = minmax( numpy.concatenate((trans,trans_est)) )
     ax.axis( [xmin, xmax, ymin, ymax] )
     ax.plot( fGHz, trans, "o" )
     ax.plot( fGHz, trans_est, "r-" )
@@ -521,10 +532,13 @@ def compareMethods() :
 # based on Hecht eq 9.91
 def fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta ) :
     theta1 = math.radians(angIdeg)
-    theta2 = math.asin( math.sin(theta1)/nrefrac )
-    h = nrefrac * tcm * cos(theta2)
+    nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+    #theta2 = math.asin( math.sin(theta1)/nrefrac )
+    #h = nrefrac * tcm * cos(theta2)
+    h = tcm * nCosTheta2
     Y0 = cos(theta1)
-    Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+    #Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+    Y1 = nCosTheta2
     phs = [] 
     trans = []
     for freq in fGHz :
@@ -537,11 +551,57 @@ def fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta ) :
           # 2nd term is the phase through air 
     return unwrap(numpy.array(phs) ), numpy.array(trans)
       
+# computes theoretical transmission for arbitrary stack of ISOTROPIC layers
+# assumes E is perpendicular to plane of incidence ("s wave")
+# fGHz is array of frequencies
+# angIdeg is angle of incidence to stack, in degrees
+# tcm is list of thicknesses
+# nrefrac is list of refractive indices
+# tanDelta is list of loss tangents
 
-def compFP( nrefrac=1.5, tcm=1., angIdeg=10., tanDelta=1.e-3 ) :
+def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
+    theta1 = math.radians(angIdeg)
+    Y0 = cos(theta1)
+    phs = [] 
+    trans = []
+    for freq in fGHzArr :
+      M = numpy.identity(2)
+      k0 = -2.*math.pi*freq/clight
+    # compute transfer matrix for the stack; keep track of total thickness
+      tcmtotal = 0.
+      for tcm,nrefrac,tanDelta in zip( tcmArr,nrArr,tanDeltaArr ) :
+        theta2 = math.asin( math.sin(theta1)/nrefrac )
+        h = nrefrac * tcm * cos(theta2)
+        Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+        M = numpy.dot( numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] ), M)
+        tcmtotal = tcmtotal + tcm
+    # solve for ampTperp (complex); then compute transmission and phase change relative to air 
+      ampTperp = 2.*Y0/(Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) 
+              #  / numpy.exp(-1j * k0 * tcm * cos(theta1) )   alternate way of correcting for air path
+      trans.append( abs( ampTperp ) )
+      phs.append( numpy.angle( ampTperp, deg=True ) - 360.* freq * tcmtotal * cos(theta1) / clight )
+    return unwrap(numpy.array(phs) ), numpy.array(trans)
+      
+#angIdegList = numpy.arange( 15.,17.,.2)
+#tcmList = [ [1.], 
+#def fitStack( fGHzArr, angIdegList, tcmList, nrList, tanDeltaMat ):
+#  nlayers = len(tcmList)
+  # check that all lists have same number of layers
+  # marginalized probability... 
+
+#def fit2Stack( fGHzArr, angIdeg, tcmList, nrList, tanDelta) :
+#  for tcm in tcmList :
+#    for nr in nrList :
+#      fitStack (blah)
+#      compute rms
+#      find best (if more than 1)
+#      produce plot
+
+def compFP( nrefrac=3.11, tcm=0.6, angIdeg=10., tanDelta=0. ) :
     fGHz = numpy.arange(80.,115.01,.1)
-    dphs1,trans1 = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-    dphs2,trans2 = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+    #dphs1,trans1 = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+    dphs1,trans1 = fitStack( fGHz, angIdeg, [.33,tcm],[1.8,nrefrac],[0.,0.] )
+    dphs2,trans2 = fitStack( fGHz, angIdeg, [.33,tcm],[1.85,nrefrac],[0.,0.] )
     #dphs3,trans3 = fitFP2( fGHz, 1., tcm, angIdeg, tanDelta )
     fig =  pyplot.figure()
     ax = pyplot.subplot(2,1,1)
