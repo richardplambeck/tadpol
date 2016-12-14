@@ -247,7 +247,9 @@ def readTransFile( infile ) :
   fGHz = []
   trans = []
   dphi = []
-  tcm = 0.
+  tcmList = []
+  tanDeltaList = []
+  nrList = []
   title = ""
   angIdeg = 0.
   for line in fin :
@@ -256,17 +258,22 @@ def readTransFile( infile ) :
       fGHz.append( float( a[0] ) )
       trans.append( float( a[1] ) )
       dphi.append( float( a[2] ) )
-    elif "tcm" in line :
-      tcm = float(line[line.find("=")+1:])
     elif "angIdeg" in line :
       angIdeg = float( line[line.find("=")+1:] )
+    elif "tcm" in line :
+      tcmList.append( float(line[line.find("=")+1:]) )
+    elif "tanDelta" in line :
+      tanDeltaList.append( float(line[line.find("=")+1:]) )
+    elif "nr" in line :
+      nrList.append( float(line[line.find("=")+1:]) )
     elif "title" in line :
       title = line[line.find("=")+1:]
-      print len(title)
       title = title[2:-2]
-      print len(title)
-  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), title, tcm, angIdeg
   fin.close()
+  print "%d layers found" % len(nrList)
+  for i in range(0,len(nrList)) :
+    print "  layer %d: tcm = %.5f, nr = %.3f, tanDelta = %.2e" % (i+1,tcmList[i],nrList[i],tanDeltaList[i])
+  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), title, angIdeg, tcmList, nrList, tanDeltaList
     
 #numpy.var( numpy.unwrap( deltaPhase ) )
 
@@ -329,37 +336,44 @@ def unwrap( phi ) :
         phi[n] = phi[n] - 360.
     return phi
      
-# fits refractive index of dielectric slab from phase differences (slab in - slab out)
-# retrieves measurements using readTransFile() - edit that routine as necessary
-# models amp and phase of transmitted signal assuming 1 pass through the slab,
-#    OR multiple passes using Fabry Perot etalon formulae
+# fits refractive index of 1 layer in stack of dielectric slabs from phase differences (slab in - slab out)
+# retrieves measurements and stack parameters using readTransFile() - edit that routine as necessary
+# models amp and phase of transmitted signal 
 # resolves 2pi ambiguities by keeping data-model phase differences between -180 and 180
 # inputs: tcm = thickness of slab in cm; angIdeg = angle of incidence in degrees;
 #    tanDelta = estimate of loss tangent; guess = estimate of refractive index,
 #
+# input lists: tcmList = thicknesses of layers in cm
+#              nrList = refractive indices of layers; 1st layer may have nr = 0, which triggers 
+#                         search for best fit
+#              tanDeltaList = tan deltas of layers (not used yet)
+#
+
 def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
     pyplot.ioff()
     pp = PdfPages("refrac.pdf")
-    fGHz,trans,dphs_meas,title,tcm,angIdeg = readTransFile( infile )
+    fGHz,trans,dphs_meas,title,angIdeg,tcmList,nrList,tanDeltaList = readTransFile( infile )
        # read in the data; edit as necessary as data format changes
-    if angIdegOver != 0. :
-      angIdeg = angIdegOver
-    if tcmOver != 0. :
-      tcm = tcmOver
+    # if angIdegOver != 0. :
+    #   angIdeg = angIdegOver
+    # if tcmOver != 0. :
+    #   tcm = tcmOver
     print "\n%s" % title
-    print "tcm = %.5f" % tcm
     print "angIdeg = %.2f\n" % angIdeg
+
     nr = []
     avg = []
     std = []
     imin = 0
+    nrsave = 0.
 
-  # if nguess=0, find best fit refractive index in range [1,3.5]
-    if abs(nguess) < 1. :
+  # if nr=0 for 1st layer, search for best fit refractive index in range [1,3.5]
+    if abs(nrList[0]) < 1. :
       for nrefrac in numpy.arange( 1., 3.55, .05) :
         nr.append( nrefrac )
+        nrList[0] = nrefrac
         # dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-        dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrefrac], [tanDelta] ) 
+        dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
         dphi = unwrap( dphs_meas-dphs_est )
           # unwrap keeps phase in range -180 to 180 in all cases
         avg.append( numpy.average(dphi) )
@@ -376,17 +390,20 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
       fitunc = abs(2.*std[imin]/slope)
       print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
     else : 
-      nrfit = nguess
+      nrfit = nrList[0]
+      nrsave = nrList[0]
 
-  # plot mean phase residual over the range [nrfit-.1, nrfit+.1]
+  # always plot mean phase residual over the range [nrfit-.1, nrfit+.1]
     nr = []
     avg = []
     std = []
     imin = 0
     for nrefrac in numpy.arange( nrfit-.1,nrfit+.11,.02 ) :
       nr.append( nrefrac )
+      nrList[0] = nrefrac
       #dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-      dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrefrac], [tanDelta] ) 
+      # dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrefrac], [tanDelta] ) 
+      dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
       dphi = unwrap( dphs_meas-dphs_est )
         # unwrap keeps phase in range -180 to 180 in all cases
       avg.append( numpy.average(dphi) )
@@ -402,6 +419,8 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
     nrfit = nr[imin] - avg[imin]/slope  
     fitunc = abs(2.*std[imin]/slope)
     print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+    nrList[0] = nrfit
+    if nrsave > 0. : nrList[0] = nrsave
 
   # begin the plot
     fig =  pyplot.figure( figsize=(11,8) )
@@ -423,7 +442,8 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
 
   # compute amp and phase residuals for best fit
     # dphs_est,trans_est = fitFP2( fGHz, nrfit, tcm, angIdeg, tanDelta )
-    dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrfit], [tanDelta] ) 
+    # dphs_est,trans_est = solveStack( fGHz, angIdeg, [tcm], [nrfit], [tanDelta] ) 
+    dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
     dphi = unwrap( dphs_meas-dphs_est )
  
   # top left panel is phase vs freq, measured and fit
@@ -440,10 +460,10 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
   # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
     ax = fig.add_axes( [.1,.37,.38,.2]) 
     ymin,ymax = minmax( dphi, margin=.2 )
-    if abs(ymin) < abs(ymax) :
-      ymin = math.copysign(ymax,ymin)
-    if abs(ymax) < abs(ymin) :
-      ymax = math.copysign(ymin,ymax)
+    #if abs(ymin) < abs(ymax) :
+    #  ymin = math.copysign(ymax,ymin)
+    #elif abs(ymax) < abs(ymin) :
+    #  ymax = math.copysign(ymin,ymax)
     ax.axis( [xmin, xmax, ymin, ymax] )
     ax.plot( fGHz, dphi, "o-" )
     ax.tick_params( labelsize=10 )
@@ -475,13 +495,17 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
 
   # fictitious lower right panel gives room for text
     ax = fig.add_axes( [.57,.1,.38,.2])
-    ax.text( 0.03, .84, "n = %.3f (+/- %.4f)" % (nrfit,fitunc), transform=ax.transAxes, \
-      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
-    ax.text( 0.03, .7, "tcm = %.4f" % tcm, transform=ax.transAxes, \
+    if nrsave != 0. :
+      ax.text( 0.03, .84, "n = %.3f" % nrsave, transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    else :
+      ax.text( 0.03, .84, "n = %.3f (+/- %.4f)" % (nrfit,fitunc), transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ax.text( 0.03, .7, "tcm = %.4f" % tcmList[0], transform=ax.transAxes, \
       horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
     ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
       horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
-    ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta, transform=ax.transAxes, \
+    ax.text( 0.03, .42, "tanDelta = %.1e" % tanDeltaList[0], transform=ax.transAxes, \
       horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
     pyplot.axis('off')
     pyplot.savefig( pp, format="pdf" )
@@ -570,9 +594,12 @@ def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
     # compute transfer matrix for the stack; keep track of total thickness
       tcmtotal = 0.
       for tcm,nrefrac,tanDelta in zip( tcmArr,nrArr,tanDeltaArr ) :
-        theta2 = math.asin( math.sin(theta1)/nrefrac )
-        h = nrefrac * tcm * cos(theta2)
-        Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+        # theta2 = math.asin( math.sin(theta1)/nrefrac )
+        # h = nrefrac * tcm * cos(theta2)
+        # Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+        nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+        h = tcm * nCosTheta2
+        Y1 = nCosTheta2
         M = numpy.dot( numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] ), M)
         tcmtotal = tcmtotal + tcm
     # solve for ampTperp (complex); then compute transmission and phase change relative to air 
