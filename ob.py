@@ -240,6 +240,26 @@ def fitPhase( infile ) :
 #      print fGHz, delta
 #  fout = open("/o/plambeck/PolarBear/OpticsBench/20oct2016/alumina.dat", "w")
 
+# readList is a helper routine for readTransFile
+# it interprets an input string (whatever is after the "=" sign on an input line),
+#    converting it to a list
+# if input string is a const, result is [ x ]
+# if input string is a triplet x,y,z, result is [ numpy.arange(x,y,z) ]
+def readList( inString ) :
+  try :
+    a = inString.split(",")
+    if len(a) == 1 :
+      return [ float(a[0]) ]
+    elif len(a) == 2 :
+      return numpy.arange( float(a[0]), float(a[1]) ) 
+    elif len(a) == 3 :
+      return numpy.arange( float(a[0]), float(a[1]), float(a[2]) )
+    else :
+      print "readList: error interpreting input string '%s'" % inString
+      return [0.]
+  except :
+      print "readList: error interpreting input string '%s'" % inString
+      return [0.]
 
 # reads *.trans file and returns arrays of freq, ampratio, deltaPhase, title, tcm, angIdeg
 def readTransFile( infile ) :
@@ -247,6 +267,7 @@ def readTransFile( infile ) :
   fGHz = []
   trans = []
   dphi = []
+  totcmRange = []
   tcmList = []
   tanDeltaList = []
   nrList = []
@@ -258,24 +279,32 @@ def readTransFile( infile ) :
       fGHz.append( float( a[0] ) )
       trans.append( float( a[1] ) )
       dphi.append( float( a[2] ) )
+    elif "totcm" in line :
+      totcmRange = readList( line[line.find("=")+1:] )
     elif "angIdeg" in line :
       angIdeg = float( line[line.find("=")+1:] )
     elif "tcm" in line :
-      tcmList.append( float(line[line.find("=")+1:]) )
+      tcmList.append( readList(line[line.find("=")+1:]) )
     elif "tanDelta" in line :
-      tanDeltaList.append( float(line[line.find("=")+1:]) )
+      tanDeltaList.append( readList(line[line.find("=")+1:]) )
     elif "nr" in line :
-      nrList.append( float(line[line.find("=")+1:]) )
+      nrList.append( readList(line[line.find("=")+1:]) )
     elif "title" in line :
       title = line[line.find("=")+1:]
       title = title[2:-2]
   fin.close()
   print "%d layers found" % len(nrList)
   for i in range(0,len(nrList)) :
-    print "  layer %d: tcm = %.5f, nr = %.3f, tanDelta = %.2e" % (i+1,tcmList[i],nrList[i],tanDeltaList[i])
-  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), title, angIdeg, tcmList, nrList, tanDeltaList
-    
-#numpy.var( numpy.unwrap( deltaPhase ) )
+    print "  layer %d: tcmList = " % i, tcmList[i]
+    print "            nrList =", nrList[i] 
+    print "      tanDeltaList = ", tanDeltaList[i]
+    print " "
+  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), title, angIdeg, totcmRange, tcmList, nrList, tanDeltaList
+
+# tcmList is a list of lists: tcmList[i] is a list of possible thicknesses for layer i
+# not all combinations of thicknesses are possible, however, since total thickness 
+#   of the sample is constrained to lie in the range totcm[0,1]
+# when computing transmission, skip all combinations which fail this test
 
 # returns expected transmission, deltaPhase for 1pass through plate (no FP reflections)
 # fGHz = freq in GHz
@@ -284,7 +313,6 @@ def readTransFile( infile ) :
 # angIdeg = angle of incidence, degrees
 # tanDelta = estimated loss tangent
 # npar = True if incident radiation is polarized parallel to plane of incidence, False if perp
-
 def fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
     thetaI = numpy.radians(angIdeg)
     thetaT = math.asin((math.sin(numpy.radians(angIdeg)))/nrefrac)
@@ -349,51 +377,77 @@ def unwrap( phi ) :
 #              tanDeltaList = tan deltas of layers (not used yet)
 #
 
-def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
+def nrefracFit( infile, nrSrchList=numpy.arange(1.3,2.5,.05), tcmSrchList=numpy.arange(0.03696,.06,1.), tanDelta=0., angIdegOver=0., tcmOver=0 ) :
     pyplot.ioff()
     pp = PdfPages("refrac.pdf")
-    fGHz,trans,dphs_meas,title,angIdeg,tcmList,nrList,tanDeltaList = readTransFile( infile )
-       # read in the data; edit as necessary as data format changes
+    print " "
+    fGHz,trans,dphs_meas,title,angIdeg,tcmTotal,tcmList,nrList,tanDeltaList = readTransFile( infile )
     # if angIdegOver != 0. :
     #   angIdeg = angIdegOver
     # if tcmOver != 0. :
     #   tcm = tcmOver
     print "\n%s" % title
-    print "angIdeg = %.2f\n" % angIdeg
+    print "angIdeg = %.2f" % angIdeg
+    print "total thickness = %.4f cm\n" % tcmTotal
 
     nr = []
+    tcm = []
     avg = []
     std = []
     imin = 0
     nrsave = 0.
+    fitunc = 0.
 
-  # if nr=0 for 1st layer, search for best fit refractive index in range [1,3.5]
+  # if nr=0 for 1st layer, search for best fit refractive index and layer thickness in ranges nrSrchList and tcmSrchList
     if abs(nrList[0]) < 1. :
-      for nrefrac in numpy.arange( 1., 3.55, .05) :
-        nr.append( nrefrac )
-        nrList[0] = nrefrac
-        # dphs_est,trans_est = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-        dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
-        dphi = unwrap( dphs_meas-dphs_est )
-          # unwrap keeps phase in range -180 to 180 in all cases
-        avg.append( numpy.average(dphi) )
-        std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
-        avgT = numpy.average( trans - trans_est )
-        stdT = numpy.std( trans - trans_est )
-        if abs(std[-1]) < abs(std[imin]) :
-          imin = len(avg)-1
-        print ".. n = %6.3f  avg = %7.3f  std = %7.3f  avgT = %7.3f  stdT = %7.3f" % (nrefrac, avg[-1], std[-1], avgT,stdT)
+      for nrefrac in nrSrchList :
+        for tcm0 in tcmSrchList :
+          nr.append( nrefrac )
+          tcm.append( tcm0 )
+
+        # enter these values into the parameters for layer 0
+          nrList[0] = nrefrac
+          tcmList[0] = tcm0
+
+        # adjust layer 1 thickness to keep total thickness constant
+          tcmList[1] = tcmTotal - tcmList[0]
+
+        # model this stack, compute phase and amp differences
+          dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
+          dphi = unwrap( dphs_meas-dphs_est )
+            # unwrap keeps phase in range -180 to 180 in all cases
+          avg.append( numpy.average(dphi) )
+          std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+          avgT = numpy.average( trans - trans_est )
+          stdT = numpy.std( trans - trans_est )
+        
+          if abs(avg[-1]) < abs(avg[imin]) :
+            imin = len(avg)-1
+          print ".. n = %6.3f  tcm0 = %.4f avg = %7.3f  std = %6.3f  avgT = %6.3f  stdT = %6.3f" % (nrefrac, tcm0, avg[-1], std[-1], avgT, stdT)
+
       if imin == 0:
         imin = 1
       slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
       nrfit = nr[imin] - avg[imin]/slope  
       fitunc = abs(2.*std[imin]/slope)
       print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+
+      #nrfit = nr[imin]
+      tcmfit = tcm[imin]
+      #print "best fit is nr0 = %.3f, tcm0 = %.4f" % (nrfit,tcmfit)
+    
+    # at this point, fix tcm values for both layers
+      tcmList[0] = tcm0
+      tcmList[1] = tcmTotal - tcmList[0]
+
+  # if nrList[0] was non-zero, set nrfit to this value; leave input thicknesses unchanged
     else : 
       nrfit = nrList[0]
       nrsave = nrList[0]
 
+  # now search narrower range for best nr, keeping thicknesses constant
   # always plot mean phase residual over the range [nrfit-.1, nrfit+.1]
+
     nr = []
     avg = []
     std = []
@@ -410,17 +464,20 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
       std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
       avgT = numpy.average( trans - trans_est )
       stdT = numpy.std( trans - trans_est )
-      if abs(std[-1]) < abs(std[imin]) :
+      if abs(avg[-1]) < abs(avg[imin]) :
         imin = len(avg)-1
       print ".. n = %6.3f  avg = %7.3f  std = %7.3f  avgT = %7.3f  stdT = %7.3f" % (nrefrac, avg[-1], std[-1], avgT,stdT)
     if imin == 0:
       imin = 1
     slope = (avg[imin] - avg[imin-1])/(nr[imin] - nr[imin-1])
-    nrfit = nr[imin] - avg[imin]/slope  
+    nrfit = nr[imin] - std[imin]/slope  
     fitunc = abs(2.*std[imin]/slope)
-    print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+    #nrfit = nr[imin]
+    #print "best fit is nrefrac = %.3f (+/- %.3f)" % (nrfit,fitunc)
+
+  # in case nrList[0] was given, restore it so that final plots show this value (even if it was not the best fit)
     nrList[0] = nrfit
-    if nrsave > 0. : nrList[0] = nrsave
+  #  if nrsave > 0. : nrList[0] = nrsave
 
   # begin the plot
     fig =  pyplot.figure( figsize=(11,8) )
@@ -495,12 +552,289 @@ def nrefracFit( infile, nguess=1.765, tanDelta=0., angIdegOver=0., tcmOver=0 ) :
 
   # fictitious lower right panel gives room for text
     ax = fig.add_axes( [.57,.1,.38,.2])
-    if nrsave != 0. :
+    if fitunc == 0. :
       ax.text( 0.03, .84, "n = %.3f" % nrsave, transform=ax.transAxes, \
         horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
     else :
       ax.text( 0.03, .84, "n = %.3f (+/- %.4f)" % (nrfit,fitunc), transform=ax.transAxes, \
         horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ax.text( 0.03, .7, "tcm = %.4f" % tcmList[0], transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ax.text( 0.03, .42, "tanDelta = %.1e" % tanDeltaList[0], transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    pyplot.axis('off')
+    pyplot.savefig( pp, format="pdf" )
+    pyplot.show()
+    pp.close()
+
+
+# pruneTree returns set of 1d arrays listing trial thicknesses
+def pruneTree( tcmRange, tcmListIn, nrListIn) :
+
+    a = tcmListIn     # copy thickness lists
+    nr = nrListIn
+    ilen = len(a)
+
+  # this is lame, but I can't figure out how to run meshgrid iteratively
+  # add extra lists (each of 1 element) so that there are 5 total
+    while len(a) < 5 :
+      a.append( [0.] )
+      nr.append( [1.] )
+
+  # meshgrid the 5 lists
+    if ilen == 0 :
+      b = numpy.meshgrid( a[0] )
+    elif ilen == 1 :
+      b = numpy.meshgrid( a[0],a[1] )
+    elif ilen == 2 :
+      b = numpy.meshgrid( a[0],a[1],a[2] )
+    elif ilen == 3 :
+      b = numpy.meshgrid( a[0],a[1],a[2],a[3] )
+    elif ilen == 4 :
+      b = numpy.meshgrid( a[0],a[1],a[2],a[3],a[4] )
+
+  # flatten the arrays, delete superfluous arrays at end
+    c = []
+    totcm = numpy.zeros( len(b[0].flatten() ) )
+    for i in range(0,ilen) :
+      c.append( b[i].flatten() )
+      totcm = totcm + c[i]
+      #print i, b[i].flatten() 
+    print "totcm = ",totcm
+  
+  # now form transpose, delete rows where thickness is outside allowed range
+    d = numpy.transpose(c[0:ilen])
+    e = []
+    #print d
+    for n in range(0,len(d)) :
+      if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
+        e.append( d[n] )
+    #print e    
+
+    f = numpy.transpose(e) 
+    #print f
+
+  # now form meshgrid of thicknesses AND refractive indices
+    if ilen == 1 :
+      g = numpy.meshgrid( f[0], nr[0] )
+    elif ilen == 2 :
+      g = numpy.meshgrid( f[0],f[1],nr[0],nr[1] )
+    elif ilen == 3 :
+      g = numpy.meshgrid( f[0],f[1],f[2],nr[0],nr[1],nr[2])
+    elif ilen == 4 :
+      g = numpy.meshgrid( f[0],f[1],f[2],f[3],nr[0],nr[1],nr[2],nr[3])
+    elif ilen == 5 :
+      g = numpy.meshgrid( f[0],f[1],f[2],f[3],f[4],nr[0],nr[1],nr[2],nr[3],nr[4])
+    else :
+      print "error in pruneTree"
+      return
+
+  # flatten the arrays, delete superfluous arrays at end
+    tcmListOut = []
+    nrListOut = []
+    for i in range(0,ilen) :
+      tcmListOut.append( g[i].flatten() )
+      print tcmListOut[-1]
+    for i in range(0,ilen) :
+      nrListOut.append( g[i+ilen].flatten() )
+      print nrListOut[-1]
+
+
+# pruneTree returns set of 1d arrays listing trial thicknesses
+def expandTree( tcmRange, tcmListIn, nrListIn) :
+
+    ilen = len(tcmListIn)
+
+  # meshgrid arrays of thicknesses AND refractive indices
+  # this is lame, but I can't figure out how to do this elegantly, without if structure
+    if ilen == 1 :
+      a = numpy.meshgrid( tcmListIn[0], nrListIn[0] )
+    elif ilen == 2 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],nrListIn[0],nrListIn[1] ) 
+    elif ilen == 3 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2], \
+                          nrListIn[0],nrListIn[1],nrListIn[2])
+    elif ilen == 4 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],\
+                          nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3])
+    elif ilen == 5 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],\
+                          nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4])
+    else :
+      print "error in pruneTree"
+      return
+
+  # flatten the arrays, delete superfluous arrays at end
+    b = []
+    totcm = numpy.zeros( len(a[0].flatten()) )
+    for i in range(0,len(a)) :
+      b.append( a[i].flatten() )
+      if i < ilen :
+        totcm = totcm + b[i]
+    print "totcm = ",totcm
+    print " ========== "
+  
+  # now form transpose, delete rows where thickness is outside allowed range
+    c = numpy.transpose(b)
+    d = []
+    for n in range(0,len(c)) :
+      if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
+        d.append( c[n] )
+        print d[-1]    
+    e = numpy.transpose(d) 
+    print " ========== "
+
+    tcmListOut = []
+    nrListOut = []
+    for i in range(0,ilen) :
+      tcmListOut.append( e[i])
+      print tcmListOut[-1]
+    for i in range(0,ilen) :
+      nrListOut.append( e[i+ilen] )
+      print nrListOut[-1]
+
+  # delete elements that do not lie in allowed length range   
+  #  for n in range(0, ilen) :
+  #    totcm = 0.
+  #    for i in range(0,len(d)) :
+  #      totcm = totcm + d[i][n]
+  #    print n, totcm
+  #  c = numpy.delete( b, range(ilen,5), 0 )
+   
+      
+
+def nrefracFit2( infile, nrSrchList=numpy.arange(1.3,1.6,.001), tcmSrchList=numpy.arange(0.03696,.05,1.), tanDelta=0., angIdegOver=0., tcmOver=0 ) :
+    pyplot.ioff()
+    pp = PdfPages("refrac.pdf")
+    print " "
+    fGHz,trans,dphs_meas,title,angIdeg,tcmtot,tcmList,nrList,tanDeltaList = readTransFile( infile )
+    tcmList,nrList = pruneTree( tcmtot, tcmListin, nrListin )
+    print "\n%s" % title
+    print "angIdeg = %.2f" % angIdeg
+    print "total thickness =", tcmtot
+
+    nr = []
+    tcm = []
+    avg = []
+    std = []
+    both = []
+    imin = 0
+    nrsave = 0.
+    fitunc = 0.
+
+  # if nr=0 for 1st layer, search for best fit refractive index and layer thickness in ranges nrSrchList and tcmSrchList
+    if abs(nrList[0]) < 1. :
+      for nrefrac in nrSrchList :
+        for tcm0 in tcmSrchList :
+          nr.append( nrefrac )
+          tcm.append( tcm0 )
+
+        # enter these values into the parameters for layer 0
+          nrList[0] = nrefrac
+          tcmList[0] = tcm0
+
+        # adjust layer 1 thickness to keep total thickness constant
+          tcmList[1] = tcmTotal - tcmList[0]
+
+        # model this stack, compute phase and amp differences
+          dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
+          dphi = unwrap( dphs_meas-dphs_est )
+            # unwrap keeps phase in range -180 to 180 in all cases
+          avg.append( numpy.average(dphi) )
+          std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
+          avgT = numpy.average( trans - trans_est )
+          stdT = numpy.std( trans - trans_est )
+          both.append( std[-1] + 2.*stdT ) 
+
+          if abs(both[-1]) < abs(both[imin]) :
+            imin = len(avg)-1
+          print ".. n = %6.3f  tcm0 = %.4f avg = %7.3f  std = %6.3f  avgT = %6.3f  stdT = %6.3f, stdBoth = %6.3f" \
+             % (nrefrac, tcm0, avg[-1], std[-1], avgT, stdT, both[-1])
+
+      nrfit = nr[imin]
+      tcmfit = tcm[imin]
+      print "best fit is nr0 = %.3f, tcm0 = %.4f" % (nrfit,tcmfit)
+    
+    # adjust layer thicknesses to match
+      tcmList[0] = tcmfit
+      tcmList[1] = tcmTotal - tcmList[0]
+      nrList[0] = nrfit
+      
+  # begin the plot
+    fig =  pyplot.figure( figsize=(11,8) )
+    pyplot.suptitle( "%s (%s)" % (title,infile), fontsize=14 )
+
+  # lower left plot will show mean phase resid vs refractive index
+  #  ax = fig.add_axes( [.1,.1,.38,.2] )
+  #  xmin,xmax = minmax( numpy.array(nr) )
+  #  ymin,ymax = minmax( numpy.array(avg) )
+  #  ax.axis( [xmin, xmax, ymin, ymax] )
+  #  ax.tick_params( labelsize=10 )
+  #  ax.errorbar( nr, avg, yerr=std, linewidth=2 )
+  #  ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
+  #  ax.set_xlabel("refractive index", fontsize=10)
+  #  ax.set_ylabel("mean phase residual (deg)", fontsize=10)
+  #  ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
+  #    horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
+  #  pyplot.grid(True)
+
+  # compute amp and phase residuals for best fit
+    dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
+    dphi = unwrap( dphs_meas-dphs_est )
+ 
+  # top left panel is phase vs freq, measured and fit
+    ax = fig.add_axes( [.1,.6,.38,.32] )
+    xmin,xmax = minmax( fGHz )
+    ymin,ymax = minmax( numpy.concatenate((dphs_meas,dphs_est)))
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.tick_params( labelsize=10 )
+    ax.plot( fGHz, dphs_meas, "o" )
+    ax.plot( fGHz, dphs_est, "r-" )
+    ax.set_ylabel("phase (deg)", fontsize=10)
+    pyplot.grid(True)
+  
+  # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
+    ax = fig.add_axes( [.1,.37,.38,.2]) 
+    ymin,ymax = minmax( dphi, margin=.2 )
+    #if abs(ymin) < abs(ymax) :
+    #  ymin = math.copysign(ymax,ymin)
+    #elif abs(ymax) < abs(ymin) :
+    #  ymax = math.copysign(ymin,ymax)
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHz, dphi, "o-" )
+    ax.tick_params( labelsize=10 )
+    dphiavg = numpy.average(dphi)
+    ax.plot( [fGHz[0],fGHz[-1]],[dphiavg,dphiavg],"r--" )
+    ax.set_ylabel("residual (deg)", fontsize=10)
+    ax.set_xlabel("freq (GHz)", fontsize=10)
+    pyplot.grid(True)
+
+  # top right panel is transmission vs freq, measured and theoretical
+    ax = fig.add_axes( [.57,.6,.38,.32] )
+    ymin,ymax = minmax( numpy.concatenate((trans,trans_est)) )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHz, trans, "o" )
+    ax.plot( fGHz, trans_est, "r-" )
+    ax.tick_params( labelsize=10 )
+    ax.set_ylabel("transmission", fontsize=10)
+    pyplot.grid(True)
+
+  # middle right panel is measured-theoretical trans
+    ax = fig.add_axes( [.57,.37,.38,.2])
+    ax.tick_params( labelsize=10 )
+    ymin,ymax = minmax( trans-trans_est, margin=0.2 )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHz, trans-trans_est, "o-" )
+    ax.set_xlabel("freq (GHz)", fontsize=10)
+    ax.set_ylabel("residual", fontsize=10)
+    pyplot.grid(True)
+
+  # fictitious lower right panel gives room for text
+    ax = fig.add_axes( [.57,.1,.38,.2])
+    ax.text( 0.03, .84, "n = %.3f" % nrList[0], transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
     ax.text( 0.03, .7, "tcm = %.4f" % tcmList[0], transform=ax.transAxes, \
       horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
     ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
