@@ -288,7 +288,9 @@ def readTransFile( infile ) :
     elif "tcm" in line :
       tcmList.append( readList(line[line.find("=")+1:]) )
     elif "tin" in line :
-      tcmList.append( 2.54*readList(line[line.find("=")+1:]) )
+      tcmList.append( readList(line[line.find("=")+1:]) )
+      if tcmList[-1][-1] > 0. :
+        tcmList[-1] = 2.54*tcmList[-1]			# to avoid screwing up mirroring
     elif "tanDelta" in line :
       tanDeltaList.append( readList(line[line.find("=")+1:]) )
     elif "nr" in line :
@@ -349,16 +351,15 @@ def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=False ) :
 
 # use Born and Wolf [13.4] eqn (7) and (4) to compute n2*cos(theta2) for lossy dielectic
 def complexNC( n1, theta1Radians, n2, tanDelta ):
-    kappa2 = 0.5*tanDelta
-    factor1 = sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1Radians))
-    #print "factor1 = ",factor1
-    factor2 = numpy.sqrt( sq(sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1Radians))) + 4.*pow(n2,4)*sq(kappa2) )
-    #print "factor2 = ",factor2
-    u2 = numpy.sqrt( 0.5 * (factor1 + factor2) )
-    #print "u2 = ", u2
-    v2 = numpy.sqrt( 0.5 * (-1.*factor1 + factor2) )
-    #print "v2 = ", v2
-    return u2 + 1j*v2
+    if tanDelta == 0. :
+      return n2 * math.cos( math.asin(n1*math.sin(theta1Radians)/n2) )
+    else :
+      kappa2 = 0.5*tanDelta
+      factor1 = sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1Radians))
+      factor2 = numpy.sqrt( sq(sq(n2)*(1-sq(kappa2)) - sq(n1)*sq(sin(theta1Radians))) + 4.*pow(n2,4)*sq(kappa2) )
+      u2 = numpy.sqrt( 0.5 * (factor1 + factor2) )
+      v2 = numpy.sqrt( 0.5 * (-1.*factor1 + factor2) )
+      return u2 + 1j*v2
 
 def unwrap( phi ) :
     for n in range(0,len(phi)) :
@@ -610,20 +611,41 @@ def expandTree( tcmRange, tcmListIn, nrListIn) :
             nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3])
     elif nlayers == 5 :
       a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4], \
-            nrListIn[0],nrListIn[1],nrListIn[2m],nrListIn[3],nrListIn[4] )
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4] )
     else :
       print "nlayers = %d not allowed by expandTree" % nlayers
       return
 
-  # flatten each array contained in a, compute total thickness for each
+  # flatten each array contained in a 
     b = []
-    totcm = numpy.zeros( len(a[0].flatten()) )
     for i in range(0,len(a)) :
       b.append( a[i].flatten() )
-      if i < nlayers :
-        totcm = totcm + b[i]
-    print "totcm = ",totcm
-    print " ========== "
+
+  # constrained layers are indicated by -L, where L is the corresponding layer
+    for n in range(0,nlayers) :
+      if b[n][0] < 0. :
+        m = int( abs(b[n][0]) + 0.5 )
+        try :
+          b[n] = b[m-1]
+          print "mirrored row %d into row %d" % (m-1,n)
+        except :
+          print "mirroring failed; tried to copy row %d into row %d" % (m-1,n)
+          return
+      if b[n+nlayers][0] < 0. :
+        m = int( abs(b[n+nlayers][0]) + 0.5 ) + nlayers
+        try :
+          b[n+nlayers] = b[m-1]
+          print "mirrored row %d into row %d" % (m-1,n+nlayers)
+        except :
+          print "mirroring failed; tried to copy row %d into row %d" % (m-1,n+nlayers)
+          return
+
+  # compute total thickness for each possible stack
+    totcm = numpy.zeros( len(b[0]) )
+    for i in range(0,nlayers) :
+      totcm = totcm + b[i]
+    #print "totcm = ",totcm
+    #print " ========== "
   
   # now form transpose, retain only rows where thickness is within allowed range
     c = numpy.transpose(b)
@@ -631,7 +653,7 @@ def expandTree( tcmRange, tcmListIn, nrListIn) :
     for n in range(0,len(c)) :
       if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
         d.append( c[n] )
-        print d[-1]    
+        #print d[-1]    
 
   # return separate tcm and nr arrays
     return numpy.hsplit( numpy.array(d),2)
@@ -659,6 +681,8 @@ def nrefracFit2( infile ) :
     avgAmpResid = 1.e6*numpy.ones( ilen )
     stdAmpResid = 1.e6*numpy.ones( ilen )
     for i in range(0,ilen) :
+      if i%10 == 0 :
+        print ".. finished %d/%d stacks" % (i,ilen)
       #print "i, tcmList, nrList: %d" % i, tcmList[i], nrList[i]
       dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[i], nrList[i], tanDelta ) 
       dphi = unwrap( dphs_meas-dphs_est )
