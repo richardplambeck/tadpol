@@ -6,6 +6,7 @@ import math
 import sys
 import string
 import matplotlib
+import pickle
 matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
@@ -627,17 +628,17 @@ def expandTree( tcmRange, tcmListIn, nrListIn) :
         m = int( abs(b[n][0]) + 0.5 )
         try :
           b[n] = b[m-1]
-          print "mirrored row %d into row %d" % (m-1,n)
+          print "mirrored thicknesses for layer %d into layer row %d" % (m,n+1)
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m-1,n)
           return
       if b[n+nlayers][0] < 0. :
-        m = int( abs(b[n+nlayers][0]) + 0.5 ) + nlayers
+        m = int( abs(b[n+nlayers][0]) + 0.5 )    # e.g., -1 -> 1
         try :
-          b[n+nlayers] = b[m-1]
-          print "mirrored row %d into row %d" % (m-1,n+nlayers)
+          b[n+nlayers] = b[m+nlayers-1]
+          print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
         except :
-          print "mirroring failed; tried to copy row %d into row %d" % (m-1,n+nlayers)
+          print "mirroring failed; tried to copy row %d into row %d" % (m+nlayers-1,n+nlayers)
           return
 
   # compute total thickness for each possible stack
@@ -658,10 +659,20 @@ def expandTree( tcmRange, tcmListIn, nrListIn) :
   # return separate tcm and nr arrays
     return numpy.hsplit( numpy.array(d),2)
 
+# prints parameters for ndump stacks with smallest absolute deviations
+def printBest( merit, tcmList, nrList, ndump=10 ) :
+    ntrials = len( tcmList )
+    nlayers = len( tcmList[0] )
+    if ndump > ntrials :
+      ndump = ntrials
+    merit2 = numpy.abs(merit)
+    nbest = merit2.argsort()[:ndump]    # finds indexes of ndump smallest values
+    print nbest
+    for nb in nbest:
+      print tcmList[nb]/2.54, nrList[nb], merit[nb]
+    return nbest[0]
 
 def nrefracFit2( infile ) :
-    pyplot.ioff()
-    pp = PdfPages("refrac.pdf")
     print " "
     fGHz,trans,dphs_meas,title,angIdeg,tcmRange,tcmListIn,nrListIn,tanDeltaList = readTransFile( infile )
     tcmList,nrList = expandTree( tcmRange, tcmListIn, nrListIn )
@@ -675,14 +686,14 @@ def nrefracFit2( infile ) :
     for n in range(0,nlayers) :
       tanDelta.append( 0. )
     ilen = len( tcmList )
-    print "modeling %d layers, %d possible stacks" % (nlayers, ilen)
+    print "modeling %d layers, %d trials" % (nlayers, ilen)
     avgPhResid = 1.e6*numpy.ones( ilen )
     stdPhResid = 1.e6*numpy.ones( ilen )
     avgAmpResid = 1.e6*numpy.ones( ilen )
     stdAmpResid = 1.e6*numpy.ones( ilen )
     for i in range(0,ilen) :
-      if i%10 == 0 :
-        print ".. finished %d/%d stacks" % (i,ilen)
+      if i%100 == 0 :
+        print ".. finished %d/%d trials" % (i,ilen)
       #print "i, tcmList, nrList: %d" % i, tcmList[i], nrList[i]
       dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[i], nrList[i], tanDelta ) 
       dphi = unwrap( dphs_meas-dphs_est )
@@ -691,17 +702,28 @@ def nrefracFit2( infile ) :
       stdPhResid[i] = numpy.std(dphi) / math.sqrt(len(fGHz)) 
       avgAmpResid[i] = numpy.average( trans - trans_est )
       stdAmpResid[i] = numpy.std( trans - trans_est )
-      print tcmList[i], nrList[i], ".. %7.3f, %7.3f" \
-             % (avgPhResid[i], stdPhResid[i])
+      #print tcmList[i], nrList[i], ".. %7.3f, %7.3f" \
+      #       % (avgPhResid[i], stdPhResid[i])
 
     #merit = stdPhResid + stdAmpResid
-    merit = avgPhResid
-    nbest = numpy.argmin(merit)
-    print "\nbest fit:"
-    for nl in range(0,nlayers) :
-      print " layer %d  tin = %.5f, nr = %.3f" % (nl, tcmList[nbest][nl]/2.54, nrList[nbest][nl] ) 
-      
+   
+  # save the results for further analysis
+    fout = open( infile+"Fits.pickle", "ab" )
+    pickle.dump( [tcmList,nrList,avgPhResid,stdPhResid,avgAmpResid,stdAmpResid], fout ) 
+    fout.close 
+
+    print "\n10 best fits minimizing std residual amps:"
+    printBest( stdAmpResid, tcmList, nrList ) 
+
+    print "\n10 best fits minimizing avg residual phases:"
+    printBest( avgPhResid, tcmList, nrList ) 
+
+    print "\n10 best fits minimizing std residual phases:"
+    nbest = printBest( stdPhResid, tcmList, nrList ) 
+
   # begin the plot
+    pyplot.ioff()
+    pp = PdfPages("refrac.pdf")
     fig =  pyplot.figure( figsize=(11,8) )
     pyplot.suptitle( "%s (%s)" % (title,infile), fontsize=14 )
 
