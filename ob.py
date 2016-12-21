@@ -249,11 +249,11 @@ def readList( inString ) :
   try :
     a = inString.split(",")
     if len(a) == 1 :
-      return [ float(a[0]) ]
+      return numpy.array( [ float(a[0]) ] )
     elif len(a) == 2 :
-      return numpy.arange( float(a[0]), float(a[1]) ) 
+      return numpy.array( [float(a[0]), float(a[1]) ] )
     elif len(a) == 3 :
-      return numpy.arange( float(a[0]), float(a[1]), float(a[2]) )
+      return numpy.array(numpy.arange( float(a[0]), float(a[1]), float(a[2]) ))
     else :
       print "readList: error interpreting input string '%s'" % inString
       return [0.]
@@ -267,7 +267,7 @@ def readTransFile( infile ) :
   fGHz = []
   trans = []
   dphi = []
-  totcmRange = []
+  totcmRange = [0.,1000.]
   tcmList = []
   tanDeltaList = []
   nrList = []
@@ -281,10 +281,14 @@ def readTransFile( infile ) :
       dphi.append( float( a[2] ) )
     elif "totcm" in line :
       totcmRange = readList( line[line.find("=")+1:] )
+    elif "totin" in line :
+      totcmRange = 2.54*readList( line[line.find("=")+1:] )
     elif "angIdeg" in line :
       angIdeg = float( line[line.find("=")+1:] )
     elif "tcm" in line :
       tcmList.append( readList(line[line.find("=")+1:]) )
+    elif "tin" in line :
+      tcmList.append( 2.54*readList(line[line.find("=")+1:]) )
     elif "tanDelta" in line :
       tanDeltaList.append( readList(line[line.find("=")+1:]) )
     elif "nr" in line :
@@ -388,7 +392,7 @@ def nrefracFit( infile, nrSrchList=numpy.arange(1.3,2.5,.05), tcmSrchList=numpy.
     #   tcm = tcmOver
     print "\n%s" % title
     print "angIdeg = %.2f" % angIdeg
-    print "total thickness = %.4f cm\n" % tcmTotal
+    print "total thickness cm\n" % tcmTotal
 
     nr = []
     tcm = []
@@ -570,197 +574,108 @@ def nrefracFit( infile, nrSrchList=numpy.arange(1.3,2.5,.05), tcmSrchList=numpy.
     pp.close()
 
 
-# pruneTree returns set of 1d arrays listing trial thicknesses
-def pruneTree( tcmRange, tcmListIn, nrListIn) :
-
-    a = tcmListIn     # copy thickness lists
-    nr = nrListIn
-    ilen = len(a)
-
-  # this is lame, but I can't figure out how to run meshgrid iteratively
-  # add extra lists (each of 1 element) so that there are 5 total
-    while len(a) < 5 :
-      a.append( [0.] )
-      nr.append( [1.] )
-
-  # meshgrid the 5 lists
-    if ilen == 0 :
-      b = numpy.meshgrid( a[0] )
-    elif ilen == 1 :
-      b = numpy.meshgrid( a[0],a[1] )
-    elif ilen == 2 :
-      b = numpy.meshgrid( a[0],a[1],a[2] )
-    elif ilen == 3 :
-      b = numpy.meshgrid( a[0],a[1],a[2],a[3] )
-    elif ilen == 4 :
-      b = numpy.meshgrid( a[0],a[1],a[2],a[3],a[4] )
-
-  # flatten the arrays, delete superfluous arrays at end
-    c = []
-    totcm = numpy.zeros( len(b[0].flatten() ) )
-    for i in range(0,ilen) :
-      c.append( b[i].flatten() )
-      totcm = totcm + c[i]
-      #print i, b[i].flatten() 
-    print "totcm = ",totcm
-  
-  # now form transpose, delete rows where thickness is outside allowed range
-    d = numpy.transpose(c[0:ilen])
-    e = []
-    #print d
-    for n in range(0,len(d)) :
-      if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
-        e.append( d[n] )
-    #print e    
-
-    f = numpy.transpose(e) 
-    #print f
-
-  # now form meshgrid of thicknesses AND refractive indices
-    if ilen == 1 :
-      g = numpy.meshgrid( f[0], nr[0] )
-    elif ilen == 2 :
-      g = numpy.meshgrid( f[0],f[1],nr[0],nr[1] )
-    elif ilen == 3 :
-      g = numpy.meshgrid( f[0],f[1],f[2],nr[0],nr[1],nr[2])
-    elif ilen == 4 :
-      g = numpy.meshgrid( f[0],f[1],f[2],f[3],nr[0],nr[1],nr[2],nr[3])
-    elif ilen == 5 :
-      g = numpy.meshgrid( f[0],f[1],f[2],f[3],f[4],nr[0],nr[1],nr[2],nr[3],nr[4])
-    else :
-      print "error in pruneTree"
-      return
-
-  # flatten the arrays, delete superfluous arrays at end
-    tcmListOut = []
-    nrListOut = []
-    for i in range(0,ilen) :
-      tcmListOut.append( g[i].flatten() )
-      print tcmListOut[-1]
-    for i in range(0,ilen) :
-      nrListOut.append( g[i+ilen].flatten() )
-      print nrListOut[-1]
-
-
-# pruneTree returns set of 1d arrays listing trial thicknesses
+# expandTree uses meshgrid to expand the thickness and refractive index arrays
+#
+# input: 
+#   tcmRange = [tcmMin,tcmMax]  - specifies allowed range of total thicknesses
+#   tcmListIn = [ [tcm1list], [tcm2list], ...] - lists of thicknesses to model for each layer
+#   nrListIn = [ [nr1list], [nr2list], ... ] - lists of refractive indices to model for each layer
+# output :
+#   tcmListOut = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
+#   nrListOut = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
+#
+# thus: tcmlistOut[i] and nrListOut[i] specify one set of thicknesses and refractive indices
+#   that should be modeled; note that same list of thicknesses may appear many times, one
+#   for each possible set of refractive indices; same for refractive indices
+# total thickness of tcmListOut is guaranteed to be in the range [tcmMin,tcmMax]
+ 
 def expandTree( tcmRange, tcmListIn, nrListIn) :
 
-    ilen = len(tcmListIn)
+    nlayers = len(tcmListIn)
+    #print "tcmListIn = ",tcmListIn
+    #print "nlayers = ", nlayers
+    #print "tcmRange = ", tcmRange
 
   # meshgrid arrays of thicknesses AND refractive indices
   # this is lame, but I can't figure out how to do this elegantly, without if structure
-    if ilen == 1 :
+    if nlayers == 1 :
       a = numpy.meshgrid( tcmListIn[0], nrListIn[0] )
-    elif ilen == 2 :
+    elif nlayers == 2 :
       a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],nrListIn[0],nrListIn[1] ) 
-    elif ilen == 3 :
+    elif nlayers == 3 :
       a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2], \
-                          nrListIn[0],nrListIn[1],nrListIn[2])
-    elif ilen == 4 :
+            nrListIn[0],nrListIn[1],nrListIn[2])
+    elif nlayers == 4 :
       a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],\
-                          nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3])
-    elif ilen == 5 :
-      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],\
-                          nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4])
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3])
+    elif nlayers == 5 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4], \
+            nrListIn[0],nrListIn[1],nrListIn[2m],nrListIn[3],nrListIn[4] )
     else :
-      print "error in pruneTree"
+      print "nlayers = %d not allowed by expandTree" % nlayers
       return
 
-  # flatten the arrays, delete superfluous arrays at end
+  # flatten each array contained in a, compute total thickness for each
     b = []
     totcm = numpy.zeros( len(a[0].flatten()) )
     for i in range(0,len(a)) :
       b.append( a[i].flatten() )
-      if i < ilen :
+      if i < nlayers :
         totcm = totcm + b[i]
     print "totcm = ",totcm
     print " ========== "
   
-  # now form transpose, delete rows where thickness is outside allowed range
+  # now form transpose, retain only rows where thickness is within allowed range
     c = numpy.transpose(b)
     d = []
     for n in range(0,len(c)) :
       if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
         d.append( c[n] )
         print d[-1]    
-    e = numpy.transpose(d) 
-    print " ========== "
 
-    tcmListOut = []
-    nrListOut = []
-    for i in range(0,ilen) :
-      tcmListOut.append( e[i])
-      print tcmListOut[-1]
-    for i in range(0,ilen) :
-      nrListOut.append( e[i+ilen] )
-      print nrListOut[-1]
+  # return separate tcm and nr arrays
+    return numpy.hsplit( numpy.array(d),2)
 
-  # delete elements that do not lie in allowed length range   
-  #  for n in range(0, ilen) :
-  #    totcm = 0.
-  #    for i in range(0,len(d)) :
-  #      totcm = totcm + d[i][n]
-  #    print n, totcm
-  #  c = numpy.delete( b, range(ilen,5), 0 )
-   
-      
 
-def nrefracFit2( infile, nrSrchList=numpy.arange(1.3,1.6,.001), tcmSrchList=numpy.arange(0.03696,.05,1.), tanDelta=0., angIdegOver=0., tcmOver=0 ) :
+def nrefracFit2( infile ) :
     pyplot.ioff()
     pp = PdfPages("refrac.pdf")
     print " "
-    fGHz,trans,dphs_meas,title,angIdeg,tcmtot,tcmList,nrList,tanDeltaList = readTransFile( infile )
-    tcmList,nrList = pruneTree( tcmtot, tcmListin, nrListin )
+    fGHz,trans,dphs_meas,title,angIdeg,tcmRange,tcmListIn,nrListIn,tanDeltaList = readTransFile( infile )
+    tcmList,nrList = expandTree( tcmRange, tcmListIn, nrListIn )
     print "\n%s" % title
     print "angIdeg = %.2f" % angIdeg
-    print "total thickness =", tcmtot
+    print "total thickness in range ", tcmRange
 
-    nr = []
-    tcm = []
-    avg = []
-    std = []
-    both = []
-    imin = 0
-    nrsave = 0.
-    fitunc = 0.
+  # model all stacks in list, save avg and std phase and amp residuals
+    nlayers = len( tcmList[0] )
+    tanDelta = []
+    for n in range(0,nlayers) :
+      tanDelta.append( 0. )
+    ilen = len( tcmList )
+    print "modeling %d layers, %d possible stacks" % (nlayers, ilen)
+    avgPhResid = 1.e6*numpy.ones( ilen )
+    stdPhResid = 1.e6*numpy.ones( ilen )
+    avgAmpResid = 1.e6*numpy.ones( ilen )
+    stdAmpResid = 1.e6*numpy.ones( ilen )
+    for i in range(0,ilen) :
+      #print "i, tcmList, nrList: %d" % i, tcmList[i], nrList[i]
+      dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[i], nrList[i], tanDelta ) 
+      dphi = unwrap( dphs_meas-dphs_est )
+        # unwrap keeps phase in range -180 to 180 in all cases
+      avgPhResid[i] = numpy.average(dphi) 
+      stdPhResid[i] = numpy.std(dphi) / math.sqrt(len(fGHz)) 
+      avgAmpResid[i] = numpy.average( trans - trans_est )
+      stdAmpResid[i] = numpy.std( trans - trans_est )
+      print tcmList[i], nrList[i], ".. %7.3f, %7.3f" \
+             % (avgPhResid[i], stdPhResid[i])
 
-  # if nr=0 for 1st layer, search for best fit refractive index and layer thickness in ranges nrSrchList and tcmSrchList
-    if abs(nrList[0]) < 1. :
-      for nrefrac in nrSrchList :
-        for tcm0 in tcmSrchList :
-          nr.append( nrefrac )
-          tcm.append( tcm0 )
-
-        # enter these values into the parameters for layer 0
-          nrList[0] = nrefrac
-          tcmList[0] = tcm0
-
-        # adjust layer 1 thickness to keep total thickness constant
-          tcmList[1] = tcmTotal - tcmList[0]
-
-        # model this stack, compute phase and amp differences
-          dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
-          dphi = unwrap( dphs_meas-dphs_est )
-            # unwrap keeps phase in range -180 to 180 in all cases
-          avg.append( numpy.average(dphi) )
-          std.append( numpy.std(dphi) / math.sqrt(len(fGHz)) )
-          avgT = numpy.average( trans - trans_est )
-          stdT = numpy.std( trans - trans_est )
-          both.append( std[-1] + 2.*stdT ) 
-
-          if abs(both[-1]) < abs(both[imin]) :
-            imin = len(avg)-1
-          print ".. n = %6.3f  tcm0 = %.4f avg = %7.3f  std = %6.3f  avgT = %6.3f  stdT = %6.3f, stdBoth = %6.3f" \
-             % (nrefrac, tcm0, avg[-1], std[-1], avgT, stdT, both[-1])
-
-      nrfit = nr[imin]
-      tcmfit = tcm[imin]
-      print "best fit is nr0 = %.3f, tcm0 = %.4f" % (nrfit,tcmfit)
-    
-    # adjust layer thicknesses to match
-      tcmList[0] = tcmfit
-      tcmList[1] = tcmTotal - tcmList[0]
-      nrList[0] = nrfit
+    #merit = stdPhResid + stdAmpResid
+    merit = avgPhResid
+    nbest = numpy.argmin(merit)
+    print "\nbest fit:"
+    for nl in range(0,nlayers) :
+      print " layer %d  tin = %.5f, nr = %.3f" % (nl, tcmList[nbest][nl]/2.54, nrList[nbest][nl] ) 
       
   # begin the plot
     fig =  pyplot.figure( figsize=(11,8) )
@@ -781,7 +696,7 @@ def nrefracFit2( infile, nrSrchList=numpy.arange(1.3,1.6,.001), tcmSrchList=nump
   #  pyplot.grid(True)
 
   # compute amp and phase residuals for best fit
-    dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList, nrList, tanDeltaList ) 
+    dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDelta ) 
     dphi = unwrap( dphs_meas-dphs_est )
  
   # top left panel is phase vs freq, measured and fit
@@ -833,14 +748,17 @@ def nrefracFit2( infile, nrSrchList=numpy.arange(1.3,1.6,.001), tcmSrchList=nump
 
   # fictitious lower right panel gives room for text
     ax = fig.add_axes( [.57,.1,.38,.2])
-    ax.text( 0.03, .84, "n = %.3f" % nrList[0], transform=ax.transAxes, \
-      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
-    ax.text( 0.03, .7, "tcm = %.4f" % tcmList[0], transform=ax.transAxes, \
-      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
-    ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
-      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
-    ax.text( 0.03, .42, "tanDelta = %.1e" % tanDeltaList[0], transform=ax.transAxes, \
-      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    ylab = 0.84
+    for nl in range(0,nlayers) :
+      ax.text( 0.03, ylab, "layer %d:  t = %.5f in  nr = %.3f" % \
+        ( nl+1, tcmList[nbest][nl]/2.54, nrList[nbest][nl]), \
+        transform=ax.transAxes, horizontalalignment='left', fontsize=14, \
+        color="black", rotation='horizontal' )
+      ylab = ylab - 0.14
+    #ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
+    #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
+    #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
     pyplot.axis('off')
     pyplot.savefig( pp, format="pdf" )
     pyplot.show()
