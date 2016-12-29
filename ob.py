@@ -14,12 +14,15 @@ import pol
 #import hou
 
 # lambda is alternate way of defining simple function
-sq = lambda arg: pow(arg, 2)
 sin = lambda arg: numpy.sin(arg)
 cos = lambda arg: numpy.cos(arg)
+inv = lambda Mat: numpy.linalg.inv(Mat)
+dr = lambda theta: math.pi*theta/180.
+pow = lambda arg, index: numpy.power(arg, index)
+sq = lambda arg: pow(arg, 2)
+
 
 clight = 29.9792458 # speed of light, cm/nanosec
-
 
 def findminima( x, p, fGHz ):
     delta = 0.45*300./fGHz
@@ -223,24 +226,6 @@ def fitPhase( infile ) :
  
   phase = numpy.unwrap(numpy.atan2( c-coffset, crange/srange*(s-soffset)))
   
-
-#  tpuckcm = .2525 * 2.54
-#  nrefrac = 3.105
-#      dphs_est = 360.*fGHz/29.98 * tpuckcm * (nrefrac - 1.)
-#      phs1_est = (phs0 + dphs_est) % 360.
-#      delta1 = phs1 - phs1_est
-#      delta = phs1 - phs0
-#      while delta1 < -180. : 
-#        delta1 = delta1 + 360.
-#      while delta1 > 180. :
-#        delta1 = delta1 - 360.
-#      while delta < -180. : 
-#        delta = delta + 360.
-#      while delta > 180. :
-#        delta = delta - 360.
-#      print fGHz, delta
-#  fout = open("/o/plambeck/PolarBear/OpticsBench/20oct2016/alumina.dat", "w")
-
 # readList is a helper routine for readTransFile
 # it interprets an input string (whatever is after the "=" sign on an input line),
 #    converting it to a list
@@ -262,7 +247,19 @@ def readList( inString ) :
       print "readList: error interpreting input string '%s'" % inString
       return [0.]
 
-# reads *.trans file and returns arrays of freq, ampratio, deltaPhase, title, tcm, angIdeg
+# readTransFile inputs data from transmission file created by OpticsBench/09nov2016/unpack.py
+# lines not beginning with "#" should contain fGHz, transmission, and phase change when
+#    dielectric is inserted into beam
+# lines beginning with "#" may contain information related to fitting, such as the angle
+#    of incidence, the total thickness limits of the dielectric stack, title for a plot,
+#    and range of thickness, refractive index, and tanDelta to search for each layer;
+#    all these variables are indicated by keywords followed by "=" 
+# lines beginning with "##" are ignored
+# tcmList is a list of lists: tcmList[i] is a list of possible thicknesses for layer i
+# not all combinations of thicknesses are possible, however, since total thickness 
+#   of the sample is constrained to lie in the range totcm[0]-totcm[1]
+# when computing transmission, skip all combinations which fail this test
+#
 def readTransFile( infile ) :
   fin = open(infile, "r")
   fGHz = []
@@ -311,10 +308,6 @@ def readTransFile( infile ) :
     print " "
   return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), title, angIdeg, totcmRange, tcmList, nrList, tanDeltaList
 
-# tcmList is a list of lists: tcmList[i] is a list of possible thicknesses for layer i
-# not all combinations of thicknesses are possible, however, since total thickness 
-#   of the sample is constrained to lie in the range totcm[0,1]
-# when computing transmission, skip all combinations which fail this test
 
 # returns expected transmission, deltaPhase for 1pass through plate (no FP reflections)
 # fGHz = freq in GHz
@@ -323,6 +316,7 @@ def readTransFile( infile ) :
 # angIdeg = angle of incidence, degrees
 # tanDelta = estimated loss tangent
 # npar = True if incident radiation is polarized parallel to plane of incidence, False if perp
+#
 def fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
     thetaI = numpy.radians(angIdeg)
     thetaT = math.asin((math.sin(numpy.radians(angIdeg)))/nrefrac)
@@ -331,24 +325,20 @@ def fit1pass( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=True ) :
     dphs_est = 360.*fGHz/clight * tcm/math.cos(thetaT) * (nrefrac - 1.)
     return dphs_est
  
+# fitFP uses pol.plateTrans to compute transmission through a dielectric slab; this is the method
+#   where I follow the wave rattling back and forth through the slab; it is useful only for
+#   a single layer
 # in 09nov setup, E field is vertical, perpendicular to plane of incidence
-def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta, npar=False ) :
-    # print "tanDelta = %.2e" % tanDelta
+def fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta ) :
     theta1 = math.radians( angIdeg )
     theta2 = math.asin( math.sin(theta1)/nrefrac )
-    # print "theta1,2 = ",theta1,theta2
     airEquivPath = tcm / math.cos(theta2) * math.cos(theta1-theta2)
        # air equivalent path is LESS than thickness of dielectric if dielectric slab is tilted !
     phs = [] 
     trans = []
     for freq in fGHz :
       ampTpar,ampTperp,ampRpar,ampRperp = pol.plateTrans( freq, nrefrac, nrefrac, angIdeg=angIdeg, tcm=tcm, tanDelta=tanDelta)
-      # trans.append( abs( ampTpar ) )
-      # phs.append( numpy.angle( ampTpar, deg=True ) - 360.*freq/clight*airEquivPath )
       trans.append( abs( ampTperp ) )
-      #print "theta1,2 = ",theta1,theta2
-      #print "airEquivPath = ",airEquivPath," cm"
-      #print "air equiv phase = ", 360.*freq/clight * airEquivPath
       phs.append( numpy.angle( ampTperp, deg=True ) - 360.*freq/clight*airEquivPath )
         # ampTperp gives phase through plate; must subtract phase through airEquivPath 
     return unwrap(numpy.array(phs) ), numpy.array(trans)
@@ -388,9 +378,8 @@ def unwrap( phi ) :
 #   that should be modeled; note that same list of thicknesses may appear many times, one
 #   for each possible set of refractive indices; same for refractive indices
 # total thickness of tcmListOut is guaranteed to be in the range [tcmMin,tcmMax]
- 
+# 
 def expandTree( tcmRange, tcmListIn, nrListIn) :
-
     nlayers = len(tcmListIn)
     #print "tcmListIn = ",tcmListIn
     #print "nlayers = ", nlayers
@@ -656,14 +645,15 @@ def compareMethods() :
 
 # transmission from characteristic matrix for 1 isotropic, lossless layer, E perpendicular to plane of incidence
 # based on Hecht eq 9.91
+# note: all data in OpticsBench/09nov2016 were taken with E field perpendicular to plane of incidence (s-polarized)
 def fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta ) :
     theta1 = math.radians(angIdeg)
-    nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+    Y0 = cos(theta1)
     #theta2 = math.asin( math.sin(theta1)/nrefrac )
     #h = nrefrac * tcm * cos(theta2)
-    h = tcm * nCosTheta2
-    Y0 = cos(theta1)
     #Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+    nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+    h = tcm * nCosTheta2
     Y1 = nCosTheta2
     phs = [] 
     trans = []
@@ -711,19 +701,208 @@ def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
     return unwrap(numpy.array(phs) ), numpy.array(trans)
       
 # compare transmission and phase predicted by different subroutines
-def compFP( nrefrac=3.11, tcm=0.6, angIdeg=10., tanDelta=0. ) :
-    fGHz = numpy.arange(80.,115.01,.1)
-    #dphs1,trans1 = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
-    dphs1,trans1 = fitStack( fGHz, angIdeg, [.33,tcm],[1.8,nrefrac],[0.,0.] )
-    dphs2,trans2 = fitStack( fGHz, angIdeg, [.33,tcm],[1.85,nrefrac],[0.,0.] )
-    #dphs3,trans3 = fitFP2( fGHz, 1., tcm, angIdeg, tanDelta )
+# note that all cases are for S-polarized radiation (E field perpendicular to plane of incidence)
+def compFP( nrefrac=3.11, tcm=0.6, angIdeg=10., tanDelta=1.e-3 ) :
+    theta1 = numpy.radians(angIdeg) 
+    fGHz = numpy.arange(80.,115.01,0.5)
+    dphs1,trans1 = fitFP( fGHz, nrefrac, tcm, angIdeg, tanDelta )
+    dphs2,trans2 = fitFP2( fGHz, nrefrac, tcm, angIdeg, tanDelta ) 
+    dphs3,trans3 = solveStack( fGHz, angIdeg, [tcm], [nrefrac], [tanDelta] )
+    # pT,sT,pR,sR = anisotropicTransmissionPol(fGHz, [nrefrac], [nrefrac], [tanDelta], [tanDelta], \
+    sT = anisotropicTransmissionPol(fGHz, [nrefrac], [nrefrac], [tanDelta], [tanDelta], \
+       [tcm], [0.], rho=0., incAngle=angIdeg, polAngle=90.)
+    dphs4 = unwrap(-numpy.angle( sT, deg=True ) - 360.* fGHz * tcm * cos(theta1) / clight )
+    trans4 = numpy.abs(sT)
     fig =  pyplot.figure()
     ax = pyplot.subplot(2,1,1)
     ax.plot( fGHz, trans1, "b-" )
-    ax.plot( fGHz, trans2, "r-" )
+    ax.plot( fGHz, trans2, "ro" )
+    ax.plot( fGHz, trans4, "c-" )
     ax = pyplot.subplot(2,1,2)
     ax.plot( fGHz, dphs1, "b-" )
-    ax.plot( fGHz, dphs2, "r-" )
+    ax.plot( fGHz, dphs2, "ro" )
+    ax.plot( fGHz, dphs4, "c-" )
     #ax.plot( fGHz, dphs2-dphs3, "r-" )
     pyplot.show() 
     
+
+# ********** Transmission through a stack of birefringent slabs (Tom's Code) **********
+
+#Transfer function for stratified medium
+#This function should only be run within the context of the function "anisotropicTransmissionPol"
+# changes to Tom's code:
+#   - input angles are degrees, but internally everything is radians; lambda functions cos,sin
+#        were defined accordingly at the top
+#   - nu is now in GHz, not Hz
+#
+def TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, incN):
+    #First medium is air
+    theta1 = numpy.radians(incAngle)    # internal to this routine, all angles are radians
+    n1 = incN
+    
+    #Create transfer matrix
+    Tr = numpy.identity(4)
+    #Loop over the layers
+    for i in range(len(chiArr)):
+        #Physical values for this layer
+        no = noArr[i]
+        ne = neArr[i]
+        oLT = oLTArr[i]
+        eLT = eLTArr[i]
+        t = tArr[i]
+        chi = numpy.radians( chiArr[i]+rho )   #Plate orientation w.r.t x-axis
+
+        #Vacuum wavevector
+        k0 = (2*math.pi)/(clight/nu)
+        
+        nP = no
+        nPP = ne*numpy.sqrt(1+(pow(ne,-2)-pow(no,-2))*sq(n1)*sq(sin(theta1))*sq(cos(chi)))
+        
+        R = lambda chi: numpy.matrix([[cos(chi),-sin(chi),0],[sin(chi),cos(chi),0],[0,0,1]])
+        epsilonP = R(chi)*numpy.matrix([[sq(ne),0,0],[0,sq(no),0],[0,0,sq(no)]])*R(-chi)
+        
+        LTp = oLT
+        nPT = nP*numpy.sqrt(1-1j*LTp)
+     
+      # I added this to handle isotropic dielectrics
+        if ne != no :
+          LTpp = oLT + ((eLT - oLT)/(ne - no))*(nPP - no)
+        else :
+          LTpp = oLT
+
+        nPPT = nPP*numpy.sqrt(1-1j*LTpp)
+        
+        thetaP = numpy.arcsin(n1*sin(theta1)/nP)
+        thetaPP = numpy.arcsin(n1*sin(theta1)/nPP)
+        
+        deltaP = nPT*t*cos(thetaP)
+        deltaPP = nPPT*t*cos(thetaPP)
+        
+        DPt1 = pow(sq(cos(thetaP))+sq(sin(thetaP))*sq(sin(chi)),-0.5) * \
+           numpy.array([-sin(chi)*cos(thetaP),cos(chi)*cos(thetaP),sin(chi)*sin(thetaP)])
+        DPPt1 = pow(sq(cos(chi))*sq(cos(thetaP))+sq(sin(chi))*sq(cos(thetaP-thetaPP)),-0.5) * \
+           numpy.array([cos(chi)*cos(thetaP)*cos(thetaPP),sin(chi)*(sin(thetaP)*sin(thetaPP)+cos(thetaP)*cos(thetaPP)), \
+                  -cos(chi)*cos(thetaP)*sin(thetaPP)])
+        HPt1 = pow(sq(cos(thetaP))*sq(cos(chi))+sq(sin(chi)),-0.5) * \
+           numpy.array([-sq(cos(thetaP))*cos(chi),-sin(chi),cos(thetaP)*sin(thetaP)*cos(chi)])
+        HPPt1 = pow(sq(cos(thetaP-thetaPP))*sq(sin(chi))+sq(cos(thetaP))*sq(cos(chi)),-0.5) * \
+           numpy.array([-cos(thetaP-thetaPP)*cos(thetaPP)*sin(chi),cos(thetaP)*cos(chi),cos(thetaP-thetaPP)*sin(thetaPP)*sin(chi)])
+        Phi1 = numpy.matrix([[DPt1.item(0),DPPt1.item(0),DPt1.item(0),DPPt1.item(0)], \
+          [(1./nP)*HPt1.item(1),(1./nPP)*HPPt1.item(1),(-1./nP)*HPt1.item(1),(-1./nPP)*HPPt1.item(1)], \
+          [DPt1.item(1),DPPt1.item(1),DPt1.item(1),DPPt1.item(1)], \
+          [(-1./nP)*HPt1.item(0),(-1./nPP)*HPPt1.item(0),(1./nP)*HPt1.item(0),(1./nPP)*HPPt1.item(0)]])
+        Psi1 = numpy.matrix([[inv(epsilonP).item(0,0),0,inv(epsilonP).item(0,1),0],[0,1.,0,0], \
+          [inv(epsilonP).item(1,0),0,inv(epsilonP).item(1,1),0],[0,0,0,1.]])
+        DeltaP = 1j*k0*deltaP
+        DeltaPP = 1j*k0*deltaPP
+        P = numpy.matrix([[numpy.exp(-DeltaP),0,0,0],[0,numpy.exp(-DeltaPP),0,0], \
+          [0,0,numpy.exp(DeltaP),0],[0,0,0,numpy.exp(DeltaPP)]])
+        
+        #Store the transfer matrix fragment into an array
+        Tr = Psi1*Phi1*inv(P)*inv(Phi1)*inv(Psi1)*Tr
+        
+    #Return the transfer matrix
+    return Tr
+
+
+#Arguments (all dielectric arrays should NOT include the air layers)
+#  - nuArr: array of frequencies to be analyzed [Hz]
+#  - noArr: array of ordinary dielectric constants
+#  - neArr: array of extraordinary dielectric constants
+#  - oLTArr: array of ordinary loss tangents
+#  - eLTArr: array of extraordinary loss tangents
+#  - tArr: array of the thicknesses of the dielectric layers [m]
+#  - chiArr: array of the angles of the extraordinary axes w.r.t. the stack angle (see "rho" below) [degrees]
+#  - rho: angle of the stack (i.e. the "stack angle") w.r.t. the plane of incidence, as measured in the plane of rotation of the stack [degrees]
+#  - incAngle: angle of incidence [degrees]
+#  - polAngle: polarization angle as measured from the plane of incidence, as measured in the plane of the propogating wave [degrees]
+#Returns
+#  - p-polarized transmission
+#  - s-polarized transmission
+#  - p-polarized reflection
+#  - s-polarized reflection
+#
+def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho=0., incAngle=0., polAngle=0.):
+
+    #Check array integrity
+    if not (len(chiArr) == len(noArr) == len(neArr) == len(tArr) == len(oLTArr) == len(eLTArr)):
+        raise NameError("Length of 'anisotropicTransmission' arrays need to be the same")
+    if not len(nuArr):
+        raise NameError("Length 'nuArr' needs to be non-zero")
+
+    #First barrier is an air barrier
+    n1 = 1.
+    theta1 = numpy.radians(incAngle)
+
+    #Create transfer matrix for this stack
+    T = lambda nu: TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, n1)
+        
+    #Calculate interface to the final air barrier
+    n3 = 1.
+    theta3 = numpy.arcsin((n1/n3)*sin(theta1))
+
+    #Transmission coefficients
+    alphaT = lambda nu: (T(nu).item(0,0)*cos(theta3)+T(nu).item(0,1)*n3)/cos(theta1)
+    betaT = lambda nu: (T(nu).item(0,2)+T(nu).item(0,3)*n3*cos(theta3))/cos(theta1)
+    gammaT = lambda nu: (T(nu).item(1,0)*cos(theta3)+T(nu).item(1,1)*n3)/n1
+    deltaT = lambda nu: (T(nu).item(1,2)+T(nu).item(1,3)*n3*cos(theta3))/n1
+    etaT = lambda nu: (T(nu).item(2,0)*cos(theta3)+T(nu).item(2,1)*n3)
+    kappaT = lambda nu: (T(nu).item(2,2)+T(nu).item(2,3)*n3*cos(theta3))
+    rhoT = lambda nu: (T(nu).item(3,0)*cos(theta3)+T(nu).item(3,1)*n3)/(n1*cos(theta1))
+    sigmaT = lambda nu: (T(nu).item(3,2)+T(nu).item(3,3)*n3*cos(theta3))/(n1*cos(theta1))
+    GammaT = lambda nu: pow((alphaT(nu)+gammaT(nu))*(kappaT(nu)+sigmaT(nu))-(betaT(nu)+deltaT(nu))*(etaT(nu)+rhoT(nu)),-1.)
+    
+    #Jones Transmission and Reflection Matrices
+    JT = lambda nu: 2.*GammaT(nu)*numpy.matrix(
+        [[(kappaT(nu)+sigmaT(nu)),
+          (-betaT(nu)-deltaT(nu))],
+         [(-etaT(nu)-rhoT(nu)),
+          (alphaT(nu)+gammaT(nu))]]
+        )
+    JR = lambda nu: GammaT(nu)*numpy.matrix(
+        [[(gammaT(nu)-alphaT(nu))*(kappaT(nu)+sigmaT(nu))-(deltaT(nu)-betaT(nu))*(etaT(nu)+rhoT(nu)),
+          2.*(alphaT(nu)*deltaT(nu)-gammaT(nu)*betaT(nu))],
+         [2.*(etaT(nu)*sigmaT(nu)-rhoT(nu)*kappaT(nu)),
+          (alphaT(nu)+gammaT(nu))*(kappaT(nu)-sigmaT(nu))-(betaT(nu)+deltaT(nu))*(etaT(nu)-rhoT(nu))]]
+        )
+
+    #Incident Electric Field Amplitude
+    Ei = numpy.array([abs(cos(numpy.radians(polAngle))), abs(sin(numpy.radians(polAngle)))])
+    #Incident Power
+    Pi = numpy.array([sq(Ei[0]), sq(Ei[1])])
+    
+    #Transmitted Electric Field Amplitude
+    EPT = lambda nu: JT(nu).item(0,0)*Ei[0] + JT(nu).item(0,1)*Ei[1]
+    EST = lambda nu: JT(nu).item(1,0)*Ei[0] + JT(nu).item(1,1)*Ei[1]
+
+    #Transmitted Power
+    # PPT = lambda nu: EPT(nu)*numpy.conj(EPT(nu))
+    # PST = lambda nu: EST(nu)*numpy.conj(EST(nu))
+
+    #Reflected Electric Field Amplitude
+    #EPR = lambda nu: JR(nu).item(0,0)*Ei[0] + JR(nu).item(0,1)*Ei[1]
+    #ESR = lambda nu: JR(nu).item(1,0)*Ei[0] + JR(nu).item(1,1)*Ei[1]
+
+    #Reflected Power
+    # PPR = lambda nu: EPR(nu)*numpy.conj(EPR(nu))
+    # PSR = lambda nu: ESR(nu)*numpy.conj(ESR(nu))
+    
+    #Loop over the frequencies and calculate transmission for each
+    pT = []
+    sT = []
+    pR = []
+    sR = []
+    for nu in nuArr:
+        print "Analyzing %.1f GHz" % (nu)
+        # pT.append(PPT(nu))
+        # sT.append(PST(nu))
+        # pR.append(PPR(nu))
+        # sR.append(PSR(nu))
+        pT.append(EPT(nu))
+        sT.append(EST(nu))
+        # pR.append(EPR(nu))
+        # sR.append(ESR(nu))
+        
+    #Return the transmission arrays
+    # return numpy.array(pT), numpy.array(sT), numpy.array(pR), numpy.array(sR)
+    return numpy.array(sT)
