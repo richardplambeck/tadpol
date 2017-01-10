@@ -1167,16 +1167,49 @@ def doit6() :
 # propagate polarization state v1 through waveplate 'plate'
 # v1 is a complex matrix in the X and Y basis
 # plate is a list of angles (relative to the X axis) and thicknesses
-def propagate( fGHz, vin, stack ) :
+def propagate( fGHz, vin, stack, phiDeg ) :
   v1 = vin
+  [no,ne] = nsapphire( fGHz )
   for plate in stack :
-    print "propagate through plate with angle %.2f degrees, thickness %.3f cm" % (plate[0],plate[1])
-    v2 = Jrot( v1, plate[0] )
-    v3 = Jdelay( v2, dphi( plate[1], fGHz ) )
-    v1 = Jrot( v3, -plate[0])
+    #print "propagate through plate with angle %.2f degrees, thickness %.3f cm" % (plate[0]+phiDeg,plate[1])
+    v2 = Jrot( v1, plate[0]+phiDeg)
+    dphiPlateDeg = 360. * plate[1] * (ne-no) * fGHz / clight
+	  # dphiPlate = thickness * deltaIndex/ freeSpaceWavelength
+    v3 = Jdelay( v2, dphiPlateDeg ) 
+    v1 = Jrot( v3, -plate[0]-phiDeg)
+    #print v1
   return v1
-  
 
+def modulate( stack, fGHz ) :
+  fout = open("modulate_%d" % fGHz, "w")
+  powermax = 0.
+  powermin = 1.
+  anglemax = -10.
+  anglemin = -10.
+  for phiDeg in numpy.arange(0,90.,0.1) :
+    v2 = propagate( fGHz, X, stack, phiDeg )
+    cleak = numpy.dot(v2, Y)                  # single complex number
+    power = pow(abs(cleak), 2)	            # magnitude of the leakage 
+    #print v2
+    #print cleak
+    #print power
+    if power > powermax :
+      powermax = power
+      anglemax = phiDeg
+    if power < powermin :
+      powermin = power
+      anglemin = phiDeg
+    fout.write("%6.2f  %.4f\n" % (phiDeg, power))
+  fout.close()
+  return [powermax,anglemax,powermin,anglemin]
+    
+def minmaxangles( stack=[ [0.,.375],[54.,.375],[0.,.375] ] ) :
+  fout = open( "minmaxangles.dat", "w")
+  for fGHz in numpy.arange(30.,200.) :
+    [powermax,anglemax,powermin,anglemin] = modulate( stack, fGHz )
+    print "%8.2f %8.4f %8.3f  %8.4f %8.3f" % (fGHz,powermax,anglemax,powermin,anglemin)
+    fout.write("%8.2f %8.4f %8.3f  %8.4f %8.3f\n" % (fGHz,powermax,anglemax,powermin,anglemin))
+  fout.close() 
 # Stokes Q,U,V are x,y,z of the poincare sphere!
 def stokes( vin ) :
   Ex = vin[0]
@@ -1411,7 +1444,7 @@ def doit9( viewEl=8, viewAz=200 ) :
 # ... tanDelta = loss tangent; if non-zero it is used in place of alpha
 
 def plateTrans( fGHz, npar, nperp, angIdeg=45, tcm=1., alpha=0., tanDelta=0. ) :
-  print "... npar, nperp = ", npar, nperp
+  #print "... npar, nperp = ", npar, nperp
   if tanDelta != 0. :
     alpha = 2. * math.pi * (npar+nperp)/2. * tanDelta * fGHz/clight	  # POWER loss per cm; use avg index for simplicity
   # print "... alpha = %.3f cm^-1" % alpha
@@ -1444,16 +1477,19 @@ def plateTrans( fGHz, npar, nperp, angIdeg=45, tcm=1., alpha=0., tanDelta=0. ) :
   # print "... tperp, rperp            ", tperp, rperp
   # print "... tprimeperp, rprimeperp  ", tprimeperp, rprimeperp
   delta0 = 2. * math.pi * nperp * fGHz/clight * tcm / math.cos(thetaT)            # phase shift for 1 pass through plate
+  # print "fGHz = ", fGHz
+  # print "plateTrans delta0 = ", delta0, numpy.degrees(delta0)
   ampTperp = tperp * tprimeperp * numpy.exp( -attn + 1.j * delta0 )               # 1st transmitted pass
   ampRperp = rperp                                                                # 1st reflected pass
   delta2 = 4 * math.pi * nperp * fGHz/clight * tcm * math.cos(thetaT)       
       # extra phase shift from double pass through plate minus phase saved in free space
-  print "... delta2 =", 180./math.pi * delta2
-  print "... perp phase shift per pass: ", numpy.angle( tprimeperp*rprimeperp * numpy.exp(1.j*delta2), deg=True)
-  for m in range(1,11) :
+  #print "... delta2 =", 180./math.pi * delta2
+  #print "... perp phase shift per pass: ", numpy.angle( tprimeperp*rprimeperp * numpy.exp(1.j*delta2), deg=True)
+  for m in range(1,10) :
     #print ".. perp T,R:  %d  %.4f  %.4f" % (m, ampTperp*ampTperp.conjugate(), ampRperp*ampRperp.conjugate() )
     ampTperp = ampTperp + tperp * tprimeperp * pow(rprimeperp*rprimeperp,m) * numpy.exp(-2.*m*attn + 1.j*(delta0 + m*delta2))
     ampRperp = ampRperp + tperp * tprimeperp * rprimeperp * pow(rprimeperp*rprimeperp,m-1) * numpy.exp(-2.*m*attn + 1.j*m*delta2 )
+  # print "ampTperp = ",ampTperp
   return [ ampTpar, ampTperp, ampRpar, ampRperp ]
 
 def doit2( angIdeg=45., npar=0., nperp=0., fGHz0=220., tcm=0.3755 ) :
@@ -2213,6 +2249,74 @@ def processTsysFile( file ) :
     print " %13s  %2d  %8.5f  %8.5f  %6.2f  %6.2f" % ( label[1:], nval[n], hot[n], cold[n], textra1, textra2 )
     fout.write(" %13s  %2d  %8.5f  %8.5f  %6.2f  %6.2f\n" % ( label[1:], nval[n], hot[n], cold[n], textra1, textra2 ) )
   
+# average together appropriate data, compute temperature increase
+# note: this file may need to be hacked depending on how we processed the data
+def processTsysFile2( infile="tsys.dat", fGHz=100 ) :
+  thot = 292.
+  tcold = 77.
+  keyword1List = [ "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9" ]
+  keyword2List = [ "xxdeg", "yydeg", "zzdeg", "good", "bad", "better", "worse" ]
+  labelList = []
+  nval = [ ]
+  hot = [ ]
+  cold = [ ]
+
+  fin = open( infile, "r" )
+  nkey = -1
+  for line in fin :
+    a = line.split()
+    if a[1].startswith("sp_%d" % fGHz) :
+      key = ""
+      for kw in keyword1List :
+        if kw in a[1] : label = kw
+      for kw in keyword2List :
+        if kw in a[1] : label = label + "_" + kw 
+      print "label = ",label
+      for n,lab in enumerate(labelList) :
+        if label == lab :
+          nkey = n 
+          print "found key"
+      if nkey == -1 :
+        print "new key"
+        labelList.append(label)
+        nkey = len(labelList) - 1
+        nval.append( 0 )
+        hot.append( 0. )
+        cold.append( 0. )
+
+    else :
+      if len(a) > 12 and nkey > -1 :
+        print "nkey = ",nkey
+        nval[nkey] = nval[nkey] + 1
+        hot[nkey] = hot[nkey] + float(a[10])
+        cold[nkey] = cold[nkey] + float(a[11])
+        nkey = -1
+  fin.close()
+  
+  fout = open( infile+".summary", "w" )
+  fout.write( "# output of pol.processTsysFile2( infile=%s, fGHz=%d )\n" % (infile,fGHz) )
+  fout.write( "# using thot = %.1f, tcold = %.1f\n" % (thot,tcold))
+
+  for n in range(0,len(hot)) :
+    hot[n] = hot[n]/nval[n]
+    cold[n] = cold[n]/nval[n]
+
+  for n,label in enumerate(labelList) :
+    if label == "P6" :
+      trcvr = cold[n] * (thot-tcold)/(hot[n]-cold[n]) - tcold 
+      hotref = hot[n]
+      gain = (thot-tcold)/(hot[n]-cold[n])
+      print " trcvr = %.2f" % trcvr
+      fout.write("# trcvr = %.2f K from p6\n#\n" % trcvr )
+
+  fout.write( "#   label     n   Phot(uW)  Pcold(uW)  delT  del_T_scaled\n") 
+  for n,label in enumerate(labelList) :
+    textra1 = cold[n] * gain - tcold - trcvr
+    textra2 = cold[n] * gain * hot[n]/hotref - tcold - trcvr
+    print " %13s  %2d  %8.5f  %8.5f  %6.2f  %6.2f" % ( label, nval[n], hot[n], cold[n], textra1, textra2 )
+    fout.write(" %10s  %2d  %8.5f  %8.5f  %6.2f  %6.2f\n" % ( label, nval[n], hot[n], cold[n], textra1, textra2 ) )
+  fout.close()
+  
 def T_vs_Az() :
   fout = open("T_vs_az", "w")
   for npos in range(1,13) :
@@ -2227,3 +2331,15 @@ def T_vs_Az() :
       fin.close()
     fout.write("\n")
   fout.close()
+
+# compute reflectivity from metal surface for polarizations perp and parallel to plane of incidence
+#   using eqns 1a and 1b in Renbarger et al. 1998
+# they say that sigma for Al is 2.31e17 Hz
+
+def Rmetal( thetaDeg=30., fGHz=150., sigma=2.3e17, mu=1. ) :
+  thetaRad = math.radians( thetaDeg )
+  Rpar = 1. - 2.* mu * math.cos(thetaRad) * math.sqrt( fGHz*1.e9/(mu*sigma) )
+  Rperp = 1. - 2.* mu / math.cos(thetaRad) * math.sqrt( fGHz*1.e9/(mu*sigma) )
+  print "theta = %.2f deg, freq = %.0f GHz" % (thetaDeg, fGHz)
+  print "Rpar  = %.4f, Ppar  = %.4f" % (Rpar, Rpar*Rpar)
+  print "Rperp = %.4f, Pperp = %.4f" % (Rperp, Rperp*Rperp)
