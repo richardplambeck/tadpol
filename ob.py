@@ -11,6 +11,8 @@ matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 import pol
+#import scipy
+from scipy.interpolate import splrep, splev
 #import hou
 
 # lambda is alternate way of defining simple function
@@ -734,17 +736,18 @@ def compFP( nrefrac=3.11, tcm=0.6, angIdeg=10., tanDelta=1.e-3 ) :
 #   - input angles are degrees, but internally everything is radians; lambda functions cos,sin
 #        were defined accordingly at the top
 #   - nu is now in GHz, not Hz
+#   - t is now in cm, not meters
 #
 def TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, incN):
-    #First medium is air
+  # First medium is air
     theta1 = numpy.radians(incAngle)    # internal to this routine, all angles are radians
     n1 = incN
     
-    #Create transfer matrix
+  # Create transfer matrix
     Tr = numpy.identity(4)
-    #Loop over the layers
+
+  # Loop over the layers
     for i in range(len(chiArr)):
-        #Physical values for this layer
         no = noArr[i]
         ne = neArr[i]
         oLT = oLTArr[i]
@@ -752,7 +755,7 @@ def TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, incN
         t = tArr[i]
         chi = numpy.radians( chiArr[i]+rho )   #Plate orientation w.r.t x-axis
 
-        #Vacuum wavevector
+      # Vacuum wavevector
         k0 = (2*math.pi)/(clight/nu)
         
         nP = no
@@ -798,15 +801,15 @@ def TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, incN
         P = numpy.matrix([[numpy.exp(-DeltaP),0,0,0],[0,numpy.exp(-DeltaPP),0,0], \
           [0,0,numpy.exp(DeltaP),0],[0,0,0,numpy.exp(DeltaPP)]])
         
-        #Store the transfer matrix fragment into an array
+      # Store the transfer matrix fragment into an array
         Tr = Psi1*Phi1*inv(P)*inv(Phi1)*inv(Psi1)*Tr
         
-    #Return the transfer matrix
+  # Return the transfer matrix
     return Tr
 
 
 #Arguments (all dielectric arrays should NOT include the air layers)
-#  - nuArr: array of frequencies to be analyzed [Hz]
+#  - nuArr: array of frequencies to be analyzed [GHz *changed from Tom's code]
 #  - noArr: array of ordinary dielectric constants
 #  - neArr: array of extraordinary dielectric constants
 #  - oLTArr: array of ordinary loss tangents
@@ -824,24 +827,24 @@ def TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, incN
 #
 def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho=0., incAngle=0., polAngle=0.):
 
-    #Check array integrity
+  # Check array integrity
     if not (len(chiArr) == len(noArr) == len(neArr) == len(tArr) == len(oLTArr) == len(eLTArr)):
         raise NameError("Length of 'anisotropicTransmission' arrays need to be the same")
     if not len(nuArr):
         raise NameError("Length 'nuArr' needs to be non-zero")
 
-    #First barrier is an air barrier
+  # First barrier is an air barrier
     n1 = 1.
     theta1 = numpy.radians(incAngle)
 
-    #Create transfer matrix for this stack
+  # Create transfer matrix for this stack
     T = lambda nu: TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, n1)
         
-    #Calculate interface to the final air barrier
+  # Calculate interface to the final air barrier
     n3 = 1.
     theta3 = numpy.arcsin((n1/n3)*sin(theta1))
 
-    #Transmission coefficients
+  # Transmission coefficients
     alphaT = lambda nu: (T(nu).item(0,0)*cos(theta3)+T(nu).item(0,1)*n3)/cos(theta1)
     betaT = lambda nu: (T(nu).item(0,2)+T(nu).item(0,3)*n3*cos(theta3))/cos(theta1)
     gammaT = lambda nu: (T(nu).item(1,0)*cos(theta3)+T(nu).item(1,1)*n3)/n1
@@ -852,7 +855,7 @@ def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr
     sigmaT = lambda nu: (T(nu).item(3,2)+T(nu).item(3,3)*n3*cos(theta3))/(n1*cos(theta1))
     GammaT = lambda nu: pow((alphaT(nu)+gammaT(nu))*(kappaT(nu)+sigmaT(nu))-(betaT(nu)+deltaT(nu))*(etaT(nu)+rhoT(nu)),-1.)
     
-    #Jones Transmission and Reflection Matrices
+  # Jones Transmission and Reflection Matrices
     JT = lambda nu: 2.*GammaT(nu)*numpy.matrix(
         [[(kappaT(nu)+sigmaT(nu)),
           (-betaT(nu)-deltaT(nu))],
@@ -866,43 +869,155 @@ def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr
           (alphaT(nu)+gammaT(nu))*(kappaT(nu)-sigmaT(nu))-(betaT(nu)+deltaT(nu))*(etaT(nu)-rhoT(nu))]]
         )
 
-    #Incident Electric Field Amplitude
+  # Incident Electric Field Amplitude
     Ei = numpy.array([abs(cos(numpy.radians(polAngle))), abs(sin(numpy.radians(polAngle)))])
-    #Incident Power
-    Pi = numpy.array([sq(Ei[0]), sq(Ei[1])])
     
-    #Transmitted Electric Field Amplitude
+  # Transmitted Electric Field Amplitude
     EPT = lambda nu: JT(nu).item(0,0)*Ei[0] + JT(nu).item(0,1)*Ei[1]
     EST = lambda nu: JT(nu).item(1,0)*Ei[0] + JT(nu).item(1,1)*Ei[1]
 
-    #Transmitted Power
-    # PPT = lambda nu: EPT(nu)*numpy.conj(EPT(nu))
-    # PST = lambda nu: EST(nu)*numpy.conj(EST(nu))
+  # Reflected Electric Field Amplitude
+    EPR = lambda nu: JR(nu).item(0,0)*Ei[0] + JR(nu).item(0,1)*Ei[1]
+    ESR = lambda nu: JR(nu).item(1,0)*Ei[0] + JR(nu).item(1,1)*Ei[1]
 
-    #Reflected Electric Field Amplitude
-    #EPR = lambda nu: JR(nu).item(0,0)*Ei[0] + JR(nu).item(0,1)*Ei[1]
-    #ESR = lambda nu: JR(nu).item(1,0)*Ei[0] + JR(nu).item(1,1)*Ei[1]
-
-    #Reflected Power
-    # PPR = lambda nu: EPR(nu)*numpy.conj(EPR(nu))
-    # PSR = lambda nu: ESR(nu)*numpy.conj(ESR(nu))
-    
-    #Loop over the frequencies and calculate transmission for each
+  # Loop over the frequencies and calculate transmission for each
     pT = []
     sT = []
     pR = []
     sR = []
     for nu in nuArr:
-        print "Analyzing %.1f GHz" % (nu)
-        # pT.append(PPT(nu))
-        # sT.append(PST(nu))
-        # pR.append(PPR(nu))
-        # sR.append(PSR(nu))
+        #print "Analyzing %.1f GHz" % (nu)
         pT.append(EPT(nu))
         sT.append(EST(nu))
-        # pR.append(EPR(nu))
-        # sR.append(ESR(nu))
+        pR.append(EPR(nu))
+        sR.append(ESR(nu))
         
-    #Return the transmission arrays
-    # return numpy.array(pT), numpy.array(sT), numpy.array(pR), numpy.array(sR)
-    return numpy.array(sT)
+  # Return the amplitude arrays
+    return numpy.array(pT), numpy.array(sT), numpy.array(pR), numpy.array(sR)
+
+# saphModel is designed to model thermal emission data from summer 2015
+# parameters for sep 2015 data
+# noArr = numpy.array([3.05]) #Actually measured
+# neArr = numpy.array([3.38]) #Actually measured
+# oltArr = numpy.array([0.5e-4]) #Estimated from Dick's and my measurement
+# eltArr = numpy.array([1.5e-4]) #Estimated from Dick's and my measurement
+# dArr = numpy.array([3.76e-1]) #[cm], Actually measured
+# plateAngles = numpy.array([0.]) #[deg]
+#otackRotAngle = 40. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
+# polAngle = 0. #Polarization is aligned with the plane of incidence (maximize transmission)
+# stackTilt = 45. #[deg]
+
+# parameters for jul 2015 data
+noArr = numpy.array([3.06]) #Actually measured
+neArr = numpy.array([3.39]) #Actually measured
+oltArr = numpy.array([0.5e-4]) #Estimated from Dick's and my measurement
+eltArr = numpy.array([1.5e-4]) #Estimated from Dick's and my measurement
+dArr = numpy.array([1.009]) #[cm], Actually measured
+plateAngles = numpy.array([0.]) #[deg]
+#otackRotAngle = 40. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
+polAngle = 90. # 3mm polarization (horiz) is perp to the plane of incidence 
+stackTilt = 42.5 #[deg]
+
+def saphModel( LOGHz, IFfrqArray, outFile, stackRotAngle=40. ) :
+   if outFile :
+     fout = open( outFile, "w" )
+     fout.write("# LOGHz = %.3f\n" % LOGHz)
+     fout.write("# stackRotAngle = %.2f\n" % stackRotAngle)
+   nuLSBArr = LOGHz - IFfrqArray
+   nuUSBArr = LOGHz + IFfrqArray 
+   pTLSB, sTLSB, pRLSB, sRLSB = anisotropicTransmissionPol(nuLSBArr, noArr, neArr, oltArr, eltArr, dArr, \
+      plateAngles, stackRotAngle, stackTilt, polAngle)
+   pTUSB, sTUSB, pRUSB, sRUSB = anisotropicTransmissionPol(nuUSBArr, noArr, neArr, oltArr, eltArr, dArr, \
+      plateAngles, stackRotAngle, stackTilt, polAngle)
+   T = 0.5 * ( (pTLSB * numpy.conj(pTLSB) + sTLSB * numpy.conj(sTLSB) ).astype(float) \
+             + (pTUSB * numpy.conj(pTUSB) + sTUSB * numpy.conj(sTUSB) ).astype(float) )
+   R = 0.5 * ( (pRLSB * numpy.conj(pRLSB) + sRLSB * numpy.conj(sRLSB) ).astype(float) \
+             + (pRUSB * numpy.conj(pRUSB) + sRUSB * numpy.conj(sRUSB) ).astype(float) )
+   A = numpy.ones( len(T), dtype=float) - T - R 
+   P3 = 295.*T + 77.*R + 295.*A
+   P4 = 77.*T + 295.*R + 295.*A
+   P5 = 77.*T + 77.*R + 295.*A
+   if outFile :
+     for n in range(0,len(T)) :
+       fout.write("%8.3f  %8.2f  %8.2f  %8.2f\n" % (IFfrqArray[n],P3[n],P4[n],P5[n]))
+     fout.close()
+   return P3,P4,P5
+
+# read P3,P4,P5 temperatures from input file, vs freq
+def saphReadData( infile ) :
+    fin = open( infile, "r" )
+    fGHz = []
+    P3 = []
+    P4 = []
+    P5 = []
+    for line in fin :
+      if not line.startswith("#") :
+        a = line.split()
+        fGHz.append( float(a[0]) )
+        P3.append( float(a[1]) )
+        P4.append( float(a[2]) )
+        P5.append( float(a[3]) )
+    fin.close()
+    return [ numpy.array(fGHz), numpy.array(P3), numpy.array(P4), numpy.array(P5) ]
+
+# use spline fits to find smoothed values at frequencies in frqArray (units: GHz)
+def saphSmooth( fGHzIn, Tin, frqArray ) :
+    #tck = scipy.interpolate.splrep( fGHzIn, Tin, k=3, task=-1, t=frqArray )
+    #Tsm = scipy.interpolate.splev( frqArray, tck )
+    tck = splrep( fGHzIn, Tin, k=3, task=-1, t=frqArray )
+    Tsm = splev( frqArray, tck )
+    return Tsm
+
+def saphPlot( infile,theta, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) :
+    #pyplot.figure(0)
+    #pyplot.plot( fGHz, P3, color='b'  )
+    #pyplot.plot( frqArray, P3m, color='b', linestyle='--' )
+    #pyplot.plot( fGHz, P4, color='g'  )
+    #pyplot.plot( frqArray, P4m, color='g', linestyle='--' )
+    #pyplot.plot( fGHz, P5, 'r'  )
+    #pyplot.plot( frqArray, P5m, 'r-' )
+    #pyplot.show()
+    #pyplot.ioff()
+    pp = PdfPages("saphFit.pdf")
+    pyplot.figure( figsize=(11,8) )
+    ax = pyplot.subplot(1,1,1)
+    ax.plot( fGHz, P3, color='b'  )
+    ax.plot( frqArray, P3m, color='b', linestyle='--' )
+    ax.plot( fGHz, P4, color='g'  )
+    ax.plot( frqArray, P4m, color='g', linestyle='--' )
+    ax.plot( fGHz, P5, 'r'  )
+    ax.plot( frqArray, P5m, 'r-' )
+    pyplot.suptitle( "%s   theta=%.1f deg" % (infile,theta), fontsize=14 )
+    pyplot.savefig( pp, format="pdf" )
+    pp.close()
+    pyplot.show()
+
+def saphFit( infile, LOGHz, thetaList=numpy.arange(0.,90.1,10.) ) :
+    fGHz,P3,P4,P5 = saphReadData( infile )
+    frqArray = numpy.array( numpy.arange(.3,9.91,.3) )
+    P3sm = saphSmooth( fGHz, P3, frqArray )
+    P4sm = saphSmooth( fGHz, P4, frqArray )
+    P5sm = saphSmooth( fGHz, P5, frqArray )
+    if len(thetaList) > 1 :
+      bestResid = 1.e6
+      thetaBest = -1000.
+      for theta in thetaList :
+        P3m, P4m, P5m =  saphModel( LOGHz, frqArray, None, stackRotAngle=theta ) 
+        resid3 = numpy.std( P3sm - P3m )
+        resid4 = numpy.std( P4sm - P4m )
+        print "... theta = %.1f  resid3 = %.3f  resid4 = %.3f" % (theta,resid3,resid4)
+        saphPlot( infile, theta, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) 
+        if (resid3 + resid4) < bestResid :
+          bestResid = resid3 + resid4
+          thetaBest = theta
+      print "theta = %.1f gives best fit" % thetaBest
+    else :
+      thetaBest = thetaList[0]
+    P3m, P4m, P5m =  saphModel( LOGHz, frqArray, None, stackRotAngle=thetaBest ) 
+    resid3 = numpy.std( P3sm - P3m )
+    resid4 = numpy.std( P4sm - P4m )
+    print "... theta = %.1f  resid3 = %.3f  resid4 = %.3f" % (thetaBest,resid3,resid4)
+    saphPlot( infile, thetaBest, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) 
+      
+    
+   
