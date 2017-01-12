@@ -807,6 +807,75 @@ def TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, incN
   # Return the transfer matrix
     return Tr
 
+# my version: calculate frequency-independent part of transfer matrix just once
+def TransMatrix( noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, incN):
+  # First medium is air
+    theta1 = numpy.radians(incAngle)    # internal to this routine, all angles are radians
+    n1 = incN
+    
+  # Create transfer matrix
+    Tr = numpy.identity(4)
+
+  # Loop over the layers
+    for i in range(len(chiArr)):
+        no = noArr[i]
+        ne = neArr[i]
+        oLT = oLTArr[i]
+        eLT = eLTArr[i]
+        t = tArr[i]
+        chi = numpy.radians( chiArr[i]+rho )   #Plate orientation w.r.t x-axis
+
+        nP = no
+        nPP = ne*numpy.sqrt(1+(pow(ne,-2)-pow(no,-2))*sq(n1)*sq(sin(theta1))*sq(cos(chi)))
+        
+        R = lambda chi: numpy.matrix([[cos(chi),-sin(chi),0],[sin(chi),cos(chi),0],[0,0,1]])
+        epsilonP = R(chi)*numpy.matrix([[sq(ne),0,0],[0,sq(no),0],[0,0,sq(no)]])*R(-chi)
+        
+        LTp = oLT
+        nPT = nP*numpy.sqrt(1-1j*LTp)
+     
+      # I added this to handle isotropic dielectrics
+        if ne != no :
+          LTpp = oLT + ((eLT - oLT)/(ne - no))*(nPP - no)
+        else :
+          LTpp = oLT
+
+        nPPT = nPP*numpy.sqrt(1-1j*LTpp)
+        
+        thetaP = numpy.arcsin(n1*sin(theta1)/nP)
+        thetaPP = numpy.arcsin(n1*sin(theta1)/nPP)
+        
+        deltaP = nPT*t*cos(thetaP)
+        deltaPP = nPPT*t*cos(thetaPP)
+        
+        DPt1 = pow(sq(cos(thetaP))+sq(sin(thetaP))*sq(sin(chi)),-0.5) * \
+           numpy.array([-sin(chi)*cos(thetaP),cos(chi)*cos(thetaP),sin(chi)*sin(thetaP)])
+        DPPt1 = pow(sq(cos(chi))*sq(cos(thetaP))+sq(sin(chi))*sq(cos(thetaP-thetaPP)),-0.5) * \
+           numpy.array([cos(chi)*cos(thetaP)*cos(thetaPP),sin(chi)*(sin(thetaP)*sin(thetaPP)+cos(thetaP)*cos(thetaPP)), \
+                  -cos(chi)*cos(thetaP)*sin(thetaPP)])
+        HPt1 = pow(sq(cos(thetaP))*sq(cos(chi))+sq(sin(chi)),-0.5) * \
+           numpy.array([-sq(cos(thetaP))*cos(chi),-sin(chi),cos(thetaP)*sin(thetaP)*cos(chi)])
+        HPPt1 = pow(sq(cos(thetaP-thetaPP))*sq(sin(chi))+sq(cos(thetaP))*sq(cos(chi)),-0.5) * \
+           numpy.array([-cos(thetaP-thetaPP)*cos(thetaPP)*sin(chi),cos(thetaP)*cos(chi),cos(thetaP-thetaPP)*sin(thetaPP)*sin(chi)])
+        Phi1 = numpy.matrix([[DPt1.item(0),DPPt1.item(0),DPt1.item(0),DPPt1.item(0)], \
+          [(1./nP)*HPt1.item(1),(1./nPP)*HPPt1.item(1),(-1./nP)*HPt1.item(1),(-1./nPP)*HPPt1.item(1)], \
+          [DPt1.item(1),DPPt1.item(1),DPt1.item(1),DPPt1.item(1)], \
+          [(-1./nP)*HPt1.item(0),(-1./nPP)*HPPt1.item(0),(1./nP)*HPt1.item(0),(1./nPP)*HPPt1.item(0)]])
+        Psi1 = numpy.matrix([[inv(epsilonP).item(0,0),0,inv(epsilonP).item(0,1),0],[0,1.,0,0], \
+          [inv(epsilonP).item(1,0),0,inv(epsilonP).item(1,1),0],[0,0,0,1.]])
+
+    return deltaP, deltaPP, Psi1, Phi1, inv(Phi1), inv(Psi1), Tr
+
+# this is the frequency-dependent part
+def TransMat1( nu, deltaP0, deltaPP0, Psi1, Phi1, invPhi1, invPsi1, Tr0 ):
+    k0 = (2*math.pi)/(clight/nu)
+    DeltaP = 1j*k0*deltaP0
+    DeltaPP = 1j*k0*deltaPP0
+    P = numpy.matrix([[numpy.exp(-DeltaP),0,0,0],[0,numpy.exp(-DeltaPP),0,0], \
+          [0,0,numpy.exp(DeltaP),0],[0,0,0,numpy.exp(DeltaPP)]])
+    Tr = Psi1*Phi1*inv(P)*invPhi1*invPsi1*Tr0
+    return Tr
+        
 
 #Arguments (all dielectric arrays should NOT include the air layers)
 #  - nuArr: array of frequencies to be analyzed [GHz *changed from Tom's code]
@@ -838,7 +907,14 @@ def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr
     theta1 = numpy.radians(incAngle)
 
   # Create transfer matrix for this stack
-    T = lambda nu: TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, n1)
+    # T = lambda nu: TransMat(nu, noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, n1)
+
+  # Calculate frequency-independent components of transfer matrix once
+    deltaP0, deltaPP0, Psi1, Phi1, invPhi1, invPsi1, Tr0 \
+       = TransMatrix( noArr, neArr, oLTArr, eLTArr, tArr, chiArr, rho, incAngle, n1)
+
+  # Full transfer matrix depends on frequency
+    T = lambda nu: TransMat1( nu, deltaP0, deltaPP0, Psi1, Phi1, invPhi1, invPsi1, Tr0 )
         
   # Calculate interface to the final air barrier
     n3 = 1.
@@ -907,28 +983,55 @@ def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr
 # polAngle = 0. #Polarization is aligned with the plane of incidence (maximize transmission)
 # stackTilt = 45. #[deg]
 
+# =====================================================================================
+# stackDesc describes the stack of dielectric layers
+# to maintain compatibility with Tom's code, stackDesc is a list of arrays
+# each of these arrays contains the relevant parameter for each layer in the stack --
+#   so, for example, each array will have 2 elements if there are 2 layers in the stack
 # parameters for jul 2015 data
+#
 noArr = numpy.array([3.06]) #Actually measured
 neArr = numpy.array([3.39]) #Actually measured
 oltArr = numpy.array([0.5e-4]) #Estimated from Dick's and my measurement
 eltArr = numpy.array([1.5e-4]) #Estimated from Dick's and my measurement
 dArr = numpy.array([1.009]) #[cm], Actually measured
-plateAngles = numpy.array([0.]) #[deg]
-#otackRotAngle = 40. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
+chiArr = numpy.array([0.]) #[deg]
+stackDesc = [ noArr, neArr, oltArr, eltArr, dArr, chiArr ]
+#
+# 3 other parameters are required:
+#   stackRotAngle is the azimuthal rotation of the entire stack
+#   stackTilt is the angle of incidence of radiation to the stack
+#   polAngle describes the angle of linear polarization relative to the plane of incidence;
+#     e.g., polAngle = 90 describes "S" polarization, perpendicular to plane of incidence
+#
+stackRotAngle = 40. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
 polAngle = 90. # 3mm polarization (horiz) is perp to the plane of incidence 
 stackTilt = 42.5 #[deg]
+# =====================================================================================
 
-def saphModel( LOGHz, IFfrqArray, outFile, stackRotAngle=40. ) :
+def saphModel( LOGHz, IFfrqArray, stackDesc, stackRotAngle, stackTilt, polAngle, outFile  ) :
+   noArr = stackDesc[0]
+   neArr = stackDesc[1]
+   oltArr = stackDesc[2]
+   eltArr = stackDesc[3]
+   dArr = stackDesc[4]
+   chiArr = stackDesc[5]
    if outFile :
      fout = open( outFile, "w" )
      fout.write("# LOGHz = %.3f\n" % LOGHz)
+     for n in range(0,len(noArr)) :
+       fout.write("# layer %d: no=%.3f  ne=%.3f  olt=%.2e  elt=%.2e  dcm=%.3f  chi=%.1f\n" % \
+          (n,noArr[n],neArr[n],oltArr[n],eltArr[n],dArr[n],chiArr[n]) )
      fout.write("# stackRotAngle = %.2f\n" % stackRotAngle)
+     fout.write("# stackTilt = %.2f\n" % stackTilt)
+     fout.write("# polAngle = %.2f\n" % polAngle) 
+     fout.write("# frq  P3  P4  P5\n")
    nuLSBArr = LOGHz - IFfrqArray
    nuUSBArr = LOGHz + IFfrqArray 
    pTLSB, sTLSB, pRLSB, sRLSB = anisotropicTransmissionPol(nuLSBArr, noArr, neArr, oltArr, eltArr, dArr, \
-      plateAngles, stackRotAngle, stackTilt, polAngle)
+      chiArr, stackRotAngle, stackTilt, polAngle)
    pTUSB, sTUSB, pRUSB, sRUSB = anisotropicTransmissionPol(nuUSBArr, noArr, neArr, oltArr, eltArr, dArr, \
-      plateAngles, stackRotAngle, stackTilt, polAngle)
+      chiArr, stackRotAngle, stackTilt, polAngle)
    T = 0.5 * ( (pTLSB * numpy.conj(pTLSB) + sTLSB * numpy.conj(sTLSB) ).astype(float) \
              + (pTUSB * numpy.conj(pTUSB) + sTUSB * numpy.conj(sTUSB) ).astype(float) )
    R = 0.5 * ( (pRLSB * numpy.conj(pRLSB) + sRLSB * numpy.conj(sRLSB) ).astype(float) \
@@ -992,6 +1095,7 @@ def saphPlot( infile,theta, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) :
     pp.close()
     pyplot.show()
 
+# this is my first attempt to model jun 2015 data; vary only theta
 def saphFit( infile, LOGHz, thetaList=numpy.arange(0.,90.1,10.) ) :
     fGHz,P3,P4,P5 = saphReadData( infile )
     frqArray = numpy.array( numpy.arange(.3,9.91,.3) )
@@ -1002,7 +1106,8 @@ def saphFit( infile, LOGHz, thetaList=numpy.arange(0.,90.1,10.) ) :
       bestResid = 1.e6
       thetaBest = -1000.
       for theta in thetaList :
-        P3m, P4m, P5m =  saphModel( LOGHz, frqArray, None, stackRotAngle=theta ) 
+        # P3m, P4m, P5m =  saphModel( LOGHz, frqArray, None, stackRotAngle=theta ) 
+        P3m, P4m, P5m = saphModel( LOGHz, frqArray, stackDesc, stackRotAngle, stackTilt, polAngle, None  ) 
         resid3 = numpy.std( P3sm - P3m )
         resid4 = numpy.std( P4sm - P4m )
         print "... theta = %.1f  resid3 = %.3f  resid4 = %.3f" % (theta,resid3,resid4)
@@ -1020,4 +1125,189 @@ def saphFit( infile, LOGHz, thetaList=numpy.arange(0.,90.1,10.) ) :
     saphPlot( infile, thetaBest, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) 
       
     
-   
+# saphFit2 is basically a copy of pol.doit6()
+# it is designed to fit data taken at one freq, multiple angles; looks for lowest variance overall
+# I imagine doing this one freq at a time, so plots 4 panels with final results
+# ... dataFileList = list of data file names, e.g., { 'file1.dat', 'file2.dat' ]
+# ... phOffsetList = list of phi offsets in degrees, e.g., [ 0, 60. ]
+# ... srchList is a dictionary of search ranges; if values are not filled out in it, srchDefault value is used
+# ... T5fit to find min variance in T5 (normally fits T3 and T4)
+# ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
+# unlike doit6, spline fit is used to obtain smoothed, measured values for freqArray
+# srcDefault ranges are below
+
+srchDefault = { 'tcm'    : [ 1.009, 1.010, .02 ], \
+                'nO'     : [ 3.050, 3.060, .02 ], \
+                'nE'     : [ 3.400, 3.410, .02 ], \
+                'angI'   : [ 45., 46., 2. ], \
+                'phi'    : [ 0., 1., 2. ], \
+                'alphaO' : [ 0.005, 0.006, .01 ], \
+                'alphaE' : [ 0.005, 0.006, .01 ] }
+
+def saphFit2( dataFileList, phiOffsetList, srchList, T5fit=False, T6override=None,  ) :
+  fout = open("saphFit2.log", "a")
+  fout.write("#\n#\n# %s, %s\n" % (datauid___A002_X8602fa_X208d.calibration/FileList, phiOffsetList) )
+  fout.close()
+
+# read in, smooth, concatenate all the data
+  frqArray = numpy.array( numpy.arange(.3,9.91,.3) )
+  P3sm = numpy.array( [], dtype=float )
+  P4sm = numpy.array( [], dtype=float )
+  P5sm = numpy.array( [], dtype=float )
+  phOff = numpy.array( [], dtype=float )
+  for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
+    LOGHz = float( dataFile.split("_")[0] )
+    print "LOGHz = %0f" % LOGHz
+    fGHz,P3,P4,P5 = saphReadData( infile )
+    P3sm = numpy.append( P3sm, saphSmooth( fGHz, P3, frqArray ) )
+    P4sm = numpy.append( P4sm, saphSmooth( fGHz, P4, frqArray ) )
+    P5sm = numpy.append( P5sm, saphSmooth( fGHz, P5, frqArray ) )
+    phOff = numpy.append( phOff, phiOff * numpy.ones( len(frqArray), dtype=float ) )
+
+    if T6override :
+      T6avg = T6override
+    else :
+      T6avg = numpy.mean(T6sm)
+    if T5fit :
+      print "... looking for min variance in T5; using T6avg = %.2f" % T6avg
+    
+
+# fit all, searching for min variance
+  srch = srchDefault
+  for key in [ 'tcm', 'nO', 'nE', 'angI', 'phi', 'alphaO', 'alphaE' ] :
+    if key in srchList :
+      srch[key] = srchList[key]
+  print srch
+  
+  varsave = 1.e6
+  for tcm in numpy.arange( srch['tcm'][0], srch['tcm'][1], srch['tcm'][2] ) :
+    for nO in numpy.arange( srch['nO'][0], srch['nO'][1], srch['nO'][2] ) :
+      for nE in numpy.arange( srch['nE'][0], srch['nE'][1], srch['nE'][2] ) :
+        for angI in numpy.arange( srch['angI'][0], srch['angI'][1], srch['angI'][2] ) :
+          for phi in numpy.arange( srch['phi'][0], srch['phi'][1], srch['phi'][2] ) :
+            for alphaO in numpy.arange( srch['alphaO'][0], srch['alphaO'][1], srch['alphaO'][2] ) :
+              for alphaE in numpy.arange( srch['alphaE'][0], srch['alphaE'][1], srch['alphaE'][2] ) :
+
+              # form the arrays (one value per layer, so just one value for this) needed by saphModel
+                noArr = numpy.array([3.06]) #Actually measured
+                neArr = numpy.array([3.39]) #Actually measured
+                oltArr = numpy.array([0.5e-4]) #Estimated from Dick's and my measurement
+                eltArr = numpy.array([1.5e-4]) #Estimated from Dick's and my measurement
+                dArr = numpy.array([1.009]) #[cm], Actually measured
+                plateAngles = numpy.array([0.]) #[deg]
+                stackRotAngle = 40. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
+                polAngle = 90. # 3mm polarization (horiz) is perp to the plane of incidence 
+                stackTilt = 42.5 #[deg]
+                stackModel = [ noArr, neArr, oltArr, eltArr, dArr, plateAngles ]
+
+
+                P3m, P4m, P5m =  saphModel( LOGHz, frqArray, None, stackRotAngle=theta ) 
+
+                T3,T4,T5 = Tfit2( LOGHz, fsm, phOff, angI, phi, alphaO, alphaE, nO, nE, tcm, T5fit, T6avg )  
+                variance = numpy.mean( pow( T3-T3sm, 2. )) + \
+                   numpy.mean( pow( T4-T4sm, 2. ))
+                var5 =  numpy.mean( pow( T5-T5sm, 2. ))
+                print "tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, alphaO,E = %.3f, %.3f, var34 = %.1f, var5 = %.2f" % \
+                  (tcm, nO, nE, angI, phi, alphaO, alphaE, variance, var5)
+                fout = open("doit6.log", "a")
+                fout.write( "tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  phi: %.1f  alphaO,E: %.3f %.3f  variance: %.1f  var5: %.2f\n" % \
+                  (tcm, nO, nE, angI, phi, alphaO, alphaE, variance, var5))
+                fout.close()
+                if T5fit and (var5 < varsave) :
+                  tcmbest = tcm
+                  nObest = nO
+                  nEbest = nE
+                  angIbest = angI
+                  phibest = phi 
+                  alphaObest = alphaO
+                  alphaEbest = alphaE
+                  varsave = var5
+                elif (variance < varsave) :
+                  tcmbest = tcm
+                  nObest = nO
+                  nEbest = nE
+                  angIbest = angI
+                  phibest = phi 
+                  alphaObest = alphaO
+                  alphaEbest = alphaE
+                  varsave = variance
+
+  print "# BEST: tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, alphaO,E = %.3f, %.3f, var34 = %.1f" % \
+             (tcmbest, nObest, nEbest, angIbest, phibest, alphaObest, alphaEbest, varsave )
+  fout = open("doit6.log", "a")
+  fout.write("# BEST tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  phi: %.1f  alphaO,E: %.3f %.3f  var34: %.1f" % \
+             (tcmbest, nObest, nEbest, angIbest, phibest, alphaObest, alphaEbest, varsave) )
+  fout.close()
+
+# plot data for all files; also dump results to "fit.dat"
+  plt.ioff()
+  nplot = 1
+  nmax = len( dataFileList)
+  nm = 1
+  fsize = 12
+  if nmax > 1 :
+    nm = 2 
+    fsize = 6
+
+  fout = open("fit.dat", "w")
+  fout.write( '# created by pol.doit6()\n' )
+  fout.write( '# dataFileList:  ' + ', '.join(dataFileList) + '\n' )
+  fout.write( '# phiOffsetList: ' + ', '.join( [str(q) for q in phiOffsetList] ) + '\n#\n' )
+  fout.write( "# tcm    : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['tcm'][0], srch['tcm'][1], srch['tcm'][2], tcmbest ) )
+  fout.write( "# nO     : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['nO'][0], srch['nO'][1], srch['nO'][2], nObest ) )
+  fout.write( "# nE     : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['nE'][0], srch['nE'][1], srch['nE'][2], nEbest ) )
+  fout.write( "# angI   : [ %.1f, %.1f, %.1f ] best %.1f\n" % \
+     ( srch['angI'][0], srch['angI'][1], srch['angI'][2], angIbest ) )
+  fout.write( "# phi    : [ %.1f, %.1f, %.1f ] best %.1f\n" % \
+     ( srch['phi'][0], srch['phi'][1], srch['phi'][2], phibest ) )
+  fout.write( "# alphaO : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
+     ( srch['alphaO'][0], srch['alphaO'][1], srch['alphaO'][2], alphaObest ) )
+  fout.write( "# alphaE is constrained to equal alphaO\n" )
+  if (T5fit) :
+    fout.write( "# minimized (T5-T5dat)^2\n")
+  else :
+    fout.write( "# minimized (T3-T3dat)^2 + (T4-T4dat)^2\n")
+
+    
+  for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
+    fdat, T3dat, T4dat, T5dat, T6dat = readDataFile( dataFile )
+    if nSmooth > 0 :
+      fdat = smArray( fdat, nSmooth )
+      T3dat = smArray( T3dat, nSmooth )
+      T4dat = smArray( T4dat, nSmooth ) 
+      T5dat = smArray( T5dat, nSmooth ) 
+      T6dat = smArray( T6dat, nSmooth ) 
+    phOff = phiOff * numpy.ones( len(fdat), dtype=float )
+    T3,T4,T5 = Tfit2( LOGHz, fdat, phOff, angIbest, phibest, alphaObest, alphaEbest, nObest, nEbest, tcmbest, T5fit, T6avg )  
+
+    fout.write( '#\n# %s\n' % dataFile )
+    for ifq in range(0,len(fdat)) :
+      fout.write("%8.5f  %6.2f %6.2f  %6.2f %6.2f  %6.2f %6.2f  %6.2f %6.2f\n" % \
+        ( fdat[ifq], T3dat[ifq], T3[ifq], T4dat[ifq], T4[ifq], T5dat[ifq], T5[ifq], T6dat[ifq], T6avg ) )
+    fout.close()
+
+    fig = plt.subplot(nm,nm,nplot)
+    fig.plot( fdat, T3, color='red' )
+    fig.plot( fdat, T3dat, color='red' )
+    fig.plot( fdat, T4, color='blue' )
+    fig.plot( fdat, T4dat, color='blue' )
+    fig.plot( fdat, T5, color='purple' )
+    fig.plot( fdat, T5dat, color='purple' )
+    fig.grid( True )
+    fig.set_title( dataFile, fontsize=12 )
+    fig.set_ylim(0,300)
+    fig.text( .05, .1, "tcm = %.3f, nO = %.3f, nE = %.3f, variance = %.1f" % \
+       ( tcmbest, nObest, nEbest, varsave), \
+       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
+    fig.text( .05, .05, "phi = %.1f, angI = %.1f, alphaO = %.3f, alphaE = %.3f" % (phibest,angIbest,alphaObest,alphaEbest), \
+       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
+    nplot = nplot + 1
+  plt.show( )
+
+# converts alpha to tanDelta, using average index of 3.25
+
+def tanD (fGHz, alpha) :
+  print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
