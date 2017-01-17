@@ -4,6 +4,7 @@
 import numpy
 import math
 import sys
+import time
 import string
 import matplotlib
 import pickle
@@ -1078,7 +1079,6 @@ def saphReadData( infile ) :
           Epar = float( Eitext[0:Eitext.find(",")] )
           Eperp = float( Eitext[Eitext.find(",")+1:] )
           Ei = numpy.array( [Epar,Eperp] )
-          print Ei
           EiMissing = False
     fin.close()
     if LOGHzMissing or phiOffsetMissing or EiMissing :
@@ -1165,24 +1165,21 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
-#tcmSrch = [1.009,1.011]            # plate thickness in cm
-tcmSrch = [1.011]
-#noSrch = [3.045,3.050,3.055]             # ordinary index
-noSrch = [3.055]             # ordinary index
-#neSrch = [3.395,3.400,3.405]             # extraordinary index
-neSrch = [3.395]             # extraordinary index
-oltSrch = [0.5e-4]           # ordinary loss tangent
-eltSrch = [1.5e-4]           # extraordinary loss tangent
-#angISrch = [43.,43.5,44.]     # angle of incidence ('stackTilt')
-angISrch = [43.]     # angle of incidence ('stackTilt')
-#rhoSrch = [84.,86.,88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
-rhoSrch = [88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
+tcmSrch = [1.009]                         # this is the measured thickness of the plate
+noSrch = [3.030,3.035,3.040,3.045,3.050]             # ordinary index
+neSrch = [3.380,3.385,3.390,3.395,3.400]             # extraordinary index
+oltSrch = [0.5e-4, 1.0e-4, 1.5e-4 ]           # ordinary loss tangent
+eltSrch = [0.5e-4, 1.0e-4, 1.5e-4 ]           # extraordinary loss tangent
+angISrch = [43.,43.5,44.]     # angle of incidence ('stackTilt')
+rhoSrch = [84.,86.,88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
-dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
-                "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat", \
-                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
-                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
+#dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
+#                "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat", \
+#                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
+#                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
+
+dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
@@ -1193,8 +1190,12 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
     fout.write("#\n#\n# %s\n" % (dataFileList) )
     fout.close()
 
-  # read in and smooth the data files; each file corresponds to a particular LOfreq, phiOffset,Ei 
     frqArray = numpy.array( numpy.arange(.3,9.91,.2) )
+    ntot = len(srchList[0]) * len(srchList[1]) * len(srchList[2]) * len(srchList[3]) \
+             * len(srchList[4]) * len(srchList[5]) * len(srchList[6])
+
+  # read in and smooth the data files; each file corresponds to a particular LOfreq, phiOffset,Ei 
+    print "read and smooth the data"
     T3sm = []
     T4sm = []
     T5sm = []
@@ -1217,67 +1218,80 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
     if T5fit :
       print "... looking for min variance in T5; using T6avg = %.2f" % T6avg
     
-  # fit all, searching for min variance
-    ntot = len(srchList[0]) * len(srchList[1]) * len(srchList[2]) * len(srchList[3]) \
-             * len(srchList[4]) * len(srchList[5]) * len(srchList[6])
-    print "... modeling %d possibilities" % ntot
-    nfinished = 0
-    var5min = var34min = 1.e6
-    for no in srchList[0] :
-      for ne in srchList[1] :
-        for olt in srchList[2] :
-          for elt in srchList[3] :
-            for tcm in srchList[4] :
-              for angI in srchList[5] :
-                for rho in srchList[6] :
+  # search for fit that gives min variance if ntot > 1
+    if ntot > 1 :
+      print "search for best fit -- modeling %d possibilities" % ntot
+      secs0 = time.time()
+      nfinished = 0
+      var5min = var34min = 1.e6
+      for no in srchList[0] :
+        for ne in srchList[1] :
+          for olt in srchList[2] :
+            for elt in srchList[3] :
+              for tcm in srchList[4] :
+                for angI in srchList[5] :
+                  for rho in srchList[6] :
 
-                # form the stackDesc arrays (one value per layer, in this case) needed by saphModel
-                  stackDesc = [ [no], [ne], [olt], [elt], [tcm], [0.] ]    
+                  # form the stackDesc arrays (one value per layer, in this case) needed by saphModel
+                    stackDesc = [ [no], [ne], [olt], [elt], [tcm], [0.] ]    
 
-                # model each dataFile separately (same stack, but LOfrq, rhoOff, or polAng could be different)
-                  var34 = []
-                  var5 = []
-                  for n in range(0,len(LOfrq)) :
-                    T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc, rho+rhoOff[n], angI, Ei[n], None  ) 
-                    var34.append( numpy.mean( pow( T3m-T3sm[n], 2. )) + numpy.mean( pow( T4m-T4sm[n], 2. )) )
-                    var5.append( numpy.mean( pow( T5m-T5sm[n], 2. )) )
-                    print "... %20s   var34: %.2f   var5: %.2f" % (dataFileList[n], var34[-1], var5[-1])
+                  # model each dataFile separately (same stack, but LOfrq, rhoOff, or polAng could be different)
+                    var34 = []
+                    var5 = []
+                    for n in range(0,len(LOfrq)) :
+                      T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc, rho+rhoOff[n], angI, Ei[n], None  ) 
+                      var34.append( numpy.mean( pow( T3m-T3sm[n], 2. )) + numpy.mean( pow( T4m-T4sm[n], 2. )) )
+                      var5.append( numpy.mean( pow( T5m-T5sm[n], 2. )) )
+                      print "... %20s   var34: %.2f   var5: %.2f" % (dataFileList[n], var34[-1], var5[-1])
+                      fout = open(outFile, "a")
+                      fout.write("...  %20s   var34: %.2f   var5: %.2f\n" % (dataFileList[n], var34[-1], var5[-1]))
+                      fout.close()
+                    nfinished = nfinished + 1
+                    secselapsed = time.time() - secs0
+                    secsremaining = (ntot-nfinished)*(secselapsed/nfinished)
+                    if secsremaining/60. > 60. :
+                      print "%d/%d finished; %.2f hours remaining" % (nfinished,ntot,secsremaining/3600.)
+                    else :
+                      print "%d/%d finished; %.2f minutes remaining" % (nfinished,ntot,secsremaining/60.)
+                    var34sum = numpy.sum(var34)
+                    var5sum = numpy.sum(var5)
+                    print "tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f, var5 = %.2f\n" % \
+                        (tcm, no, ne, angI, rho, olt, elt, var34sum, var5sum )
                     fout = open(outFile, "a")
-                    fout.write("...  %20s   var34: %.2f   var5: %.2f\n" % (dataFileList[n], var34[-1], var5[-1]))
+                    fout.write( "tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  rho: %.1f  olt,elt: %.2e %.2e  var34: %.1f  var5: %.2f\n" % \
+                       (tcm, no, ne, angI, rho, olt, elt, var34sum, var5sum ))
                     fout.close()
-                  nfinished = nfinished + 1
-                  var34sum = numpy.sum(var34)
-                  var5sum = numpy.sum(var5)
-                  print "%d/%d  tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f, var5 = %.2f" % \
-                      (nfinished, ntot, tcm, no, ne, angI, rho, olt, elt, var34sum, var5sum )
-                  fout = open(outFile, "a")
-                  fout.write( "tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  rho: %.1f  olt,elt: %.2e %.2e  var34: %.1f  var5: %.2f\n" % \
-                      (tcm, no, ne, angI, rho, olt, elt, var34sum, var5sum ))
-                  fout.close()
-                  if (var34sum < var34min) :
-                    stackDesc34 = stackDesc
-                    rho34 = rho
-                    angI34 = angI
-                    var34min = var34sum
-                  if (var5sum < var5min) :
-                    stackDesc5 = stackDesc
-                    rho5 = rho
-                    angI5 = angI
-                    var5min = var5sum
-
-  # when all possibilities have been modeled, print out best parameters
-    print "# lowest var34: tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f" % \
-       ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], angI34, rho34, stackDesc34[2][0], stackDesc34[3][0], var34min ) 
-    print "# lowest var5 : tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var5 = %.1f" % \
-       ( stackDesc5[4][0], stackDesc5[0][0], stackDesc5[1][0], angI5, rho5, stackDesc5[2][0], stackDesc5[3][0], var5min ) 
-    fout = open( outFile, "a")
-    fout.write("# lowest var34: tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f\n" % \
-       ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], angI34, rho34, stackDesc34[2][0], stackDesc34[3][0], var34min ))
-    fout.write("# lowest var5 : tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var5 = %.1f\n" % \
-       ( stackDesc5[4][0], stackDesc5[0][0], stackDesc5[1][0], angI5, rho5, stackDesc5[2][0], stackDesc5[3][0], var5min ) )
-    fout.close()
+                    if (var34sum < var34min) :
+                      stackDesc34 = stackDesc
+                      rho34 = rho
+                      angI34 = angI
+                      var34min = var34sum
+                    if (var5sum < var5min) :
+                      stackDesc5 = stackDesc
+                      rho5 = rho
+                      angI5 = angI
+                      var5min = var5sum
+  
+    # when all possibilities have been modeled, print out best parameters
+      print "# lowest var34: tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f" % \
+         ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], angI34, rho34, stackDesc34[2][0], stackDesc34[3][0], var34min ) 
+      print "# lowest var5 : tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var5 = %.1f" % \
+         ( stackDesc5[4][0], stackDesc5[0][0], stackDesc5[1][0], angI5, rho5, stackDesc5[2][0], stackDesc5[3][0], var5min ) 
+      fout = open( outFile, "a")
+      fout.write("# lowest var34: tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f\n" % \
+         ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], angI34, rho34, stackDesc34[2][0], stackDesc34[3][0], var34min ))
+      fout.write("# lowest var5 : tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var5 = %.1f\n" % \
+         ( stackDesc5[4][0], stackDesc5[0][0], stackDesc5[1][0], angI5, rho5, stackDesc5[2][0], stackDesc5[3][0], var5min ) )
+      fout.close()
+ 
+  # if there is only one possibility, skip over optimization above
+    else :
+      stackDesc34 = [ srchList[0], srchList[1], srchList[2], srchList[3], srchList[4], [0.] ]
+      angI34 = srchList[5][0]
+      rho34 = srchList[6][0]
 
   # plot best var34 fit  (4 datasets per page)
+    print "reread data files to get unsmoothed data"
     pyplot.ioff()
     pp = PdfPages("saphFit2.pdf")
     pyplot.figure( figsize=(11,8) )
@@ -1291,8 +1305,9 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
 
     for n in range(0,len(LOfrq)) :
       fGHz,T3,T4,T5,T6,LOGHz,rhoOffset,Eivec = saphReadData( dataFileList[n] )
-         # reread each data file so we can plot UNSMOOTHED data
+         # reread each data file so we can plot UNSMOOTHED data; smoothed data already in T3sm, T4sm, T5sm arrays
       T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc34, rho34+rhoOff[n], angI34, Ei[n], None  ) 
+      variance = numpy.mean( pow( T3m-T3sm[n], 2. )) + numpy.mean( pow( T4m-T4sm[n], 2. ))
       fig = pyplot.subplot(nm,nm,nplot)
       fig.plot( fGHz, T3, color='red' )
       fig.plot( frqArray, T3m, color='red' )
@@ -1304,18 +1319,21 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
       fig.set_title( dataFileList[n], fontsize=12 )
       fig.set_ylim(0,300)
       fig.text( .05, .1, "tcm = %.3f, no = %.3f, ne = %.3f, var = %.1f" % \
-          ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], var34min ), \
+          ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], variance ), \
           transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
-      fig.text( .05, .05, "rho = %.1f, angI = %.1f, olt = %.2f, elt = %.2e" % \
+      fig.text( .05, .05, "rho = %.1f, angI = %.1f, olt = %.2e, elt = %.2e" % \
           ( rho34, angI34, stackDesc34[2][0], stackDesc34[3][0]), \
           transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
       nplot = nplot + 1
       if nplot == 5 :
         pyplot.savefig( pp, format="pdf" )
+        print "plotting data on screen; delete plot window to continue"
         pyplot.show()
+        pyplot.figure( figsize=(11,8) )
         nplot = 1
     if (nplot > 1) :
       pyplot.savefig( pp, format="pdf" )
+      print "plotting data on screen; delete plot window to finish"
       pyplot.show()
     pp.close()
 
