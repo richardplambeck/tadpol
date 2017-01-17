@@ -1149,29 +1149,40 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
     saphPlot( infile, thetaBest, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) 
       
     
-# saphFit2 is adapted from pol.doit6()
-# it is designed to fit data taken at multiple angles; looks for lowest variance overall
-# I imagine doing this one freq at a time, so plots 4 panels with final results
-# ... dataFileList = list of data file names, e.g., { 'file1.dat', 'file2.dat' ]
-# ... srchList is a dictionary of search ranges; if values are not filled out in it, srchDefault value is used
+# saphFit2 searches for best fit for thermal emission data (jun and sep 2015),
+#    which are input temperature vs IF frequency measured with DSB receivers
+# it is designed to fit multiple data sets simultaneously (e.g, taken at different
+#    LO frequencies, different stack rotation angles, and different polarizations)
+#    these are given by dataFileList
+# the LO frequency, the stack rotation offset, and the input polarization for each
+#    data set within dataFileList are read from comment lines in the data file
+# input data are smoothed using spline fit so that smaller number of freqs can be 
+#    modeled
+# search ranges are specified with srchList, which contains a list of values to be
+#    checked for each of the parameters - note that this is just a list, not the
+#    inputs to numpy.arange
+# other variables:
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
-# unlike doit6, spline fit is used to obtain smoothed, measured values for freqArray
-# srcDefault ranges are below
 
-tcmSrch = [1.009]            # plate thickness in cm
-noSrch = [3.04,3.05,3.06]             # ordinary index
-neSrch = [3.38,3.39,3.40]             # extraordinary index
+#tcmSrch = [1.009,1.011]            # plate thickness in cm
+tcmSrch = [1.011]
+#noSrch = [3.045,3.050,3.055]             # ordinary index
+noSrch = [3.055]             # ordinary index
+#neSrch = [3.395,3.400,3.405]             # extraordinary index
+neSrch = [3.395]             # extraordinary index
 oltSrch = [0.5e-4]           # ordinary loss tangent
 eltSrch = [1.5e-4]           # extraordinary loss tangent
-angISrch = [42.,42.5,43.,43.5,44.,44.5,45.]     # angle of incidence ('stackTilt')
-rhoSrch = [85.,86.,87.,88.,89.]              # stack rotation angle relative to plane of incidence ('stackAngle')
+#angISrch = [43.,43.5,44.]     # angle of incidence ('stackTilt')
+angISrch = [43.]     # angle of incidence ('stackTilt')
+#rhoSrch = [84.,86.,88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
+rhoSrch = [88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
-                "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat" ]
-#dataFileList = ["100_0deg.dat", "110_30deg.dat"]
-
+                "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat", \
+                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
+                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
@@ -1183,7 +1194,7 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
     fout.close()
 
   # read in and smooth the data files; each file corresponds to a particular LOfreq, phiOffset,Ei 
-    frqArray = numpy.array( numpy.arange(.3,9.91,.3) )
+    frqArray = numpy.array( numpy.arange(.3,9.91,.2) )
     T3sm = []
     T4sm = []
     T5sm = []
@@ -1211,7 +1222,7 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
              * len(srchList[4]) * len(srchList[5]) * len(srchList[6])
     print "... modeling %d possibilities" % ntot
     nfinished = 0
-    varsave = 1.e6
+    var5min = var34min = 1.e6
     for no in srchList[0] :
       for ne in srchList[1] :
         for olt in srchList[2] :
@@ -1223,7 +1234,7 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
                 # form the stackDesc arrays (one value per layer, in this case) needed by saphModel
                   stackDesc = [ [no], [ne], [olt], [elt], [tcm], [0.] ]    
 
-                # model each dataFile separately (could have different LOfrq, rhoOff, or polAng), compute total variance
+                # model each dataFile separately (same stack, but LOfrq, rhoOff, or polAng could be different)
                   var34 = []
                   var5 = []
                   for n in range(0,len(LOfrq)) :
@@ -1232,112 +1243,84 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
                     var5.append( numpy.mean( pow( T5m-T5sm[n], 2. )) )
                     print "... %20s   var34: %.2f   var5: %.2f" % (dataFileList[n], var34[-1], var5[-1])
                     fout = open(outFile, "a")
-                    fout.write("...  %20s   var34: %.2f   var5: %.2f" % (dataFileList[n], var34[-1], var5[-1]))
+                    fout.write("...  %20s   var34: %.2f   var5: %.2f\n" % (dataFileList[n], var34[-1], var5[-1]))
                     fout.close()
-                  print "tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f, var5 = %.2f" % \
-                      (tcm, no, ne, angI, rho, olt, elt, numpy.sum(var34), numpy.sum(var5))
+                  nfinished = nfinished + 1
+                  var34sum = numpy.sum(var34)
+                  var5sum = numpy.sum(var5)
+                  print "%d/%d  tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f, var5 = %.2f" % \
+                      (nfinished, ntot, tcm, no, ne, angI, rho, olt, elt, var34sum, var5sum )
                   fout = open(outFile, "a")
-                  fout.write( "tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  rho: %.1f  olt,elt: %.3f %.3f  var34: %.1f  var5: %.2f\n" % \
-                      (tcm, no, ne, angI, rho, olt, elt, numpy.sum(var34), numpy.sum(var5) ))
+                  fout.write( "tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  rho: %.1f  olt,elt: %.2e %.2e  var34: %.1f  var5: %.2f\n" % \
+                      (tcm, no, ne, angI, rho, olt, elt, var34sum, var5sum ))
                   fout.close()
+                  if (var34sum < var34min) :
+                    stackDesc34 = stackDesc
+                    rho34 = rho
+                    angI34 = angI
+                    var34min = var34sum
+                  if (var5sum < var5min) :
+                    stackDesc5 = stackDesc
+                    rho5 = rho
+                    angI5 = angI
+                    var5min = var5sum
 
-"""
-                  if T5fit and (var5 < varsave) :
-                    tcmbest = tcm
-                    nObest = nO
-                    nEbest = nE
-                    angIbest = angI
-                    best = phi 
-                    alphaObest = alphaO
-                    alphaEbest = alphaE
-                    varsave = var5
-                   elif (variance < varsave) :
-                  tcmbest = tcm
-                  nObest = nO
-                  nEbest = nE
-                  angIbest = angI
-                  phibest = phi 
-                  alphaObest = alphaO
-                  alphaEbest = alphaE
-                  varsave = variance
-
-  print "# BEST: tcm = %.3f, nO = %.3f, nE = %.3f, angI = %.1f, phi = %.1f, alphaO,E = %.3f, %.3f, var34 = %.1f" % \
-             (tcmbest, nObest, nEbest, angIbest, phibest, alphaObest, alphaEbest, varsave )
-  fout = open( outFile, "a")
-  fout.write("# BEST tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  phi: %.1f  alphaO,E: %.3f %.3f  var34: %.1f" % \
-             (tcmbest, nObest, nEbest, angIbest, phibest, alphaObest, alphaEbest, varsave) )
-  fout.close()
-
-# plot data for all files; also dump results to "fit.dat"
-  plt.ioff()
-  nplot = 1
-  nmax = len( dataFileList)
-  nm = 1
-  fsize = 12
-  if nmax > 1 :
-    nm = 2 
-    fsize = 6
-
-  fout = open("fit.dat", "w")
-  fout.write( '# created by pol.doit6()\n' )
-  fout.write( '# dataFileList:  ' + ', '.join(dataFileList) + '\n' )
-  fout.write( '# phiOffsetList: ' + ', '.join( [str(q) for q in phiOffsetList] ) + '\n#\n' )
-  fout.write( "# tcm    : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
-     ( srch['tcm'][0], srch['tcm'][1], srch['tcm'][2], tcmbest ) )
-  fout.write( "# nO     : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
-     ( srch['nO'][0], srch['nO'][1], srch['nO'][2], nObest ) )
-  fout.write( "# nE     : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
-     ( srch['nE'][0], srch['nE'][1], srch['nE'][2], nEbest ) )
-  fout.write( "# angI   : [ %.1f, %.1f, %.1f ] best %.1f\n" % \
-     ( srch['angI'][0], srch['angI'][1], srch['angI'][2], angIbest ) )
-  fout.write( "# phi    : [ %.1f, %.1f, %.1f ] best %.1f\n" % \
-     ( srch['phi'][0], srch['phi'][1], srch['phi'][2], phibest ) )
-  fout.write( "# alphaO : [ %.3f, %.3f, %.3f ] best %.3f\n" % \
-     ( srch['alphaO'][0], srch['alphaO'][1], srch['alphaO'][2], alphaObest ) )
-  fout.write( "# alphaE is constrained to equal alphaO\n" )
-  if (T5fit) :
-    fout.write( "# minimized (T5-T5dat)^2\n")
-  else :
-    fout.write( "# minimized (T3-T3dat)^2 + (T4-T4dat)^2\n")
-
-    
-  for dataFile, phiOff in zip( dataFileList, phiOffsetList) :  
-    fdat, T3dat, T4dat, T5dat, T6dat = readDataFile( dataFile )
-    if nSmooth > 0 :
-      fdat = smArray( fdat, nSmooth )
-      T3dat = smArray( T3dat, nSmooth )
-      T4dat = smArray( T4dat, nSmooth ) 
-      T5dat = smArray( T5dat, nSmooth ) 
-      T6dat = smArray( T6dat, nSmooth ) 
-    phOff = phiOff * numpy.ones( len(fdat), dtype=float )
-    T3,T4,T5 = Tfit2( LOGHz, fdat, phOff, angIbest, phibest, alphaObest, alphaEbest, nObest, nEbest, tcmbest, T5fit, T6avg )  
-
-    fout.write( '#\n# %s\n' % dataFile )
-    for ifq in range(0,len(fdat)) :
-      fout.write("%8.5f  %6.2f %6.2f  %6.2f %6.2f  %6.2f %6.2f  %6.2f %6.2f\n" % \
-        ( fdat[ifq], T3dat[ifq], T3[ifq], T4dat[ifq], T4[ifq], T5dat[ifq], T5[ifq], T6dat[ifq], T6avg ) )
+  # when all possibilities have been modeled, print out best parameters
+    print "# lowest var34: tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f" % \
+       ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], angI34, rho34, stackDesc34[2][0], stackDesc34[3][0], var34min ) 
+    print "# lowest var5 : tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var5 = %.1f" % \
+       ( stackDesc5[4][0], stackDesc5[0][0], stackDesc5[1][0], angI5, rho5, stackDesc5[2][0], stackDesc5[3][0], var5min ) 
+    fout = open( outFile, "a")
+    fout.write("# lowest var34: tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f\n" % \
+       ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], angI34, rho34, stackDesc34[2][0], stackDesc34[3][0], var34min ))
+    fout.write("# lowest var5 : tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var5 = %.1f\n" % \
+       ( stackDesc5[4][0], stackDesc5[0][0], stackDesc5[1][0], angI5, rho5, stackDesc5[2][0], stackDesc5[3][0], var5min ) )
     fout.close()
 
-    fig = plt.subplot(nm,nm,nplot)
-    fig.plot( fdat, T3, color='red' )
-    fig.plot( fdat, T3dat, color='red' )
-    fig.plot( fdat, T4, color='blue' )
-    fig.plot( fdat, T4dat, color='blue' )
-    fig.plot( fdat, T5, color='purple' )
-    fig.plot( fdat, T5dat, color='purple' )
-    fig.grid( True )
-    fig.set_title( dataFile, fontsize=12 )
-    fig.set_ylim(0,300)
-    fig.text( .05, .1, "tcm = %.3f, nO = %.3f, nE = %.3f, variance = %.1f" % \
-       ( tcmbest, nObest, nEbest, varsave), \
-       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
-    fig.text( .05, .05, "phi = %.1f, angI = %.1f, alphaO = %.3f, alphaE = %.3f" % (phibest,angIbest,alphaObest,alphaEbest), \
-       transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
-    nplot = nplot + 1
-  plt.show( )
+  # plot best var34 fit  (4 datasets per page)
+    pyplot.ioff()
+    pp = PdfPages("saphFit2.pdf")
+    pyplot.figure( figsize=(11,8) )
+    nplot = 1
+    nmax = len( dataFileList)
+    nm = 1
+    fsize = 12
+    if nmax > 1 :
+      nm = 2 
+      fsize = 6
+
+    for n in range(0,len(LOfrq)) :
+      fGHz,T3,T4,T5,T6,LOGHz,rhoOffset,Eivec = saphReadData( dataFileList[n] )
+         # reread each data file so we can plot UNSMOOTHED data
+      T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc34, rho34+rhoOff[n], angI34, Ei[n], None  ) 
+      fig = pyplot.subplot(nm,nm,nplot)
+      fig.plot( fGHz, T3, color='red' )
+      fig.plot( frqArray, T3m, color='red' )
+      fig.plot( fGHz, T4, color='blue' )
+      fig.plot( frqArray, T4m, color='blue' )
+      fig.plot( fGHz, T5, color='purple' )
+      fig.plot( frqArray, T5m, color='purple' )
+      fig.grid( True )
+      fig.set_title( dataFileList[n], fontsize=12 )
+      fig.set_ylim(0,300)
+      fig.text( .05, .1, "tcm = %.3f, no = %.3f, ne = %.3f, var = %.1f" % \
+          ( stackDesc34[4][0], stackDesc34[0][0], stackDesc34[1][0], var34min ), \
+          transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
+      fig.text( .05, .05, "rho = %.1f, angI = %.1f, olt = %.2f, elt = %.2e" % \
+          ( rho34, angI34, stackDesc34[2][0], stackDesc34[3][0]), \
+          transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
+      nplot = nplot + 1
+      if nplot == 5 :
+        pyplot.savefig( pp, format="pdf" )
+        pyplot.show()
+        nplot = 1
+    if (nplot > 1) :
+      pyplot.savefig( pp, format="pdf" )
+      pyplot.show()
+    pp.close()
 
 # converts alpha to tanDelta, using average index of 3.25
 
 def tanD (fGHz, alpha) :
   print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
-"""
+
