@@ -6,8 +6,8 @@ import math
 import sys
 import time
 import string
-import matplotlib
 import pickle
+import matplotlib
 matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
@@ -1037,9 +1037,9 @@ def saphModel( LOGHz, IFfrqArray, stackDesc, stackRotAngle, stackTilt, Ei, outFi
    R = 0.5 * ( (pRLSB * numpy.conj(pRLSB) + sRLSB * numpy.conj(sRLSB) ).astype(float) \
              + (pRUSB * numpy.conj(pRUSB) + sRUSB * numpy.conj(sRUSB) ).astype(float) )
    A = numpy.ones( len(T), dtype=float) - T - R 
-   P3 = 295.*T + 77.*R + 295.*A
-   P4 = 77.*T + 295.*R + 295.*A
-   P5 = 77.*T + 77.*R + 295.*A
+   P3 = 291.*T + 78.*R + 294.*A
+   P4 = 80.*T + 294.*R + 294.*A
+   P5 = 80.*T + 78.*R + 294.*A
    if outFile :
      for n in range(0,len(T)) :
        fout.write("%8.3f  %8.2f  %8.2f  %8.2f\n" % (IFfrqArray[n],P3[n],P4[n],P5[n]))
@@ -1166,12 +1166,12 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
 tcmSrch = [1.009]                         # this is the measured thickness of the plate
-noSrch = [3.030,3.035,3.040,3.045,3.050]             # ordinary index
-neSrch = [3.380,3.385,3.390,3.395,3.400]             # extraordinary index
-oltSrch = [0.5e-4, 1.0e-4, 1.5e-4 ]           # ordinary loss tangent
-eltSrch = [0.5e-4, 1.0e-4, 1.5e-4 ]           # extraordinary loss tangent
-angISrch = [43.,43.5,44.]     # angle of incidence ('stackTilt')
-rhoSrch = [84.,86.,88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
+noSrch = [3.032,3.034,3.036,3.038]             # ordinary index
+neSrch = [3.398,3.400,3.402,3.404]             # extraordinary index
+oltSrch = [1.e-4,1.5e-4,2.e-4,2.5e-4 ]           # ordinary loss tangent
+eltSrch = [1.e-4,1.5e-4,2.e-4,2.5e-4 ]           # extraordinary loss tangent
+angISrch = [42.,42.5,43.]     # angle of incidence ('stackTilt')
+rhoSrch = [88.,89.,90.]              # stack rotation angle relative to plane of incidence ('stackAngle')
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1184,7 +1184,7 @@ dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.da
 def doit6() :
     saphFit2( dataFileList, srchList)
 
-def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, outFile="saphFit2.log" ) :
+def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit2.log", Search=True ) :
 
     fout = open( outFile, "a")
     fout.write("#\n#\n# %s\n" % (dataFileList) )
@@ -1215,8 +1215,6 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
       T6avg.append = T6override
     else :
       T6avg.append( numpy.mean( T6 ) )
-    if T5fit :
-      print "... looking for min variance in T5; using T6avg = %.2f" % T6avg
     
   # search for fit that gives min variance if ntot > 1
     if ntot > 1 :
@@ -1338,7 +1336,140 @@ def saphFit2( dataFileList, srchList=srchList, T5fit=False, T6override=None, out
     pp.close()
 
 # converts alpha to tanDelta, using average index of 3.25
-
 def tanD (fGHz, alpha) :
   print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
+
+# read tail end of SaphFit2 to find best fit
+def plotFit( dataFileList, stackDesc, rho, angI ) :
+
+    frqArray = numpy.array( numpy.arange(.3,9.91,.2) )
+    pyplot.ioff()
+    pp = PdfPages("BestFit.pdf")
+    pyplot.figure( figsize=(11,8) )
+    nplot = 1
+    nmax = len( dataFileList)
+    nm = 1
+    fsize = 12
+    if nmax > 1 :
+      nm = 2 
+      fsize = 6
+
+    for n in range(0,len(dataFileList)) :
+      fGHz,T3,T4,T5,T6,LOGHz,rhoOffset,Eivec = saphReadData( dataFileList[n] )
+         # reread each data file so we can plot UNSMOOTHED data; smoothed data already in T3sm, T4sm, T5sm arrays
+      T3sm = saphSmooth( fGHz, T3, frqArray )
+      T4sm = saphSmooth( fGHz, T4, frqArray )
+      T5sm = saphSmooth( fGHz, T5, frqArray )
+      T3m,T4m,T5m = saphModel( LOGHz, frqArray, stackDesc, rho+rhoOffset, angI, Eivec, None  ) 
+      variance = numpy.mean( pow( T3m-T3sm[n], 2. )) + numpy.mean( pow( T4m-T4sm[n], 2. ))
+      fig = pyplot.subplot(nm,nm,nplot)
+      fig.plot( fGHz, T3, color='red' )
+      fig.plot( frqArray, T3m, color='red' )
+      fig.plot( fGHz, T4, color='blue' )
+      fig.plot( frqArray, T4m, color='blue' )
+      fig.plot( fGHz, T5, color='purple' )
+      fig.plot( frqArray, T5m, color='purple' )
+      fig.grid( True )
+      fig.set_title( dataFileList[n], fontsize=12 )
+      fig.set_ylim(0,300)
+      fig.text( .05, .1, "tcm = %.3f, no = %.3f, ne = %.3f, var = %.1f" % \
+          ( stackDesc[0][0], stackDesc[0][0], stackDesc[1][0], variance ), \
+          transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
+      fig.text( .05, .05, "rho = %.1f, angI = %.1f, olt = %.2e, elt = %.2e" % \
+          ( rho, angI, stackDesc[2][0], stackDesc[3][0]), \
+          transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
+      nplot = nplot + 1
+      if nplot == 5 :
+        pyplot.savefig( pp, format="pdf" )
+        print "plotting data on screen; delete plot window to continue"
+        pyplot.show()
+        pyplot.figure( figsize=(11,8) )
+        nplot = 1
+    if (nplot > 1) :
+      pyplot.savefig( pp, format="pdf" )
+      print "plotting data on screen; delete plot window to finish"
+      pyplot.show()
+    pp.close()
+
+# reads SaphFit2.log to find best fit, plots it
+def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log", plot5=False) :
+    fin = open( resultsLog, "r" )
+    for line in fin :
+      if (plot5 and line.startswith("# lowest var5")) or \
+           (not plot5 and line.startswith("# lowest var34")) : 
+        a = line.split()
+        tcm = float(a[4])
+        no = float(a[6])
+        ne = float(a[8])
+        angI = float(a[10])
+        rho = float(a[12])
+        olt = float(a[14])
+        elt = float(a[15])
+    stackDesc = [ [no], [ne], [olt], [elt], [tcm], [0.] ]    
+    print stackDesc, rho, angI
+    plotFit( dataFileList, stackDesc, rho, angI ) 
+        
+
+# read in results from saphFit2.log
+def fitReadLog( infile="junk" ) :
+  fin = open( infile, "r" )
+  tcm = []
+  no = []
+  ne = []
+  angI = []
+  rho = []
+  olt = []
+  elt = []
+  var34 = []
+  var5 = []
+  for line in fin :
+    if line.startswith("tcm:") :
+      a = line.split()
+      tcm.append( float(a[1]) )
+      no.append( float(a[3]) )
+      ne.append( float(a[5]) )
+      angI.append( float(a[7]) )
+      rho.append( float(a[9]) )
+      olt.append( float(a[11]) )
+      elt.append( float(a[12]) )
+      var34.append( float(a[14]) )
+      var5.append( float(a[16]) )
+  fin.close()
+  return tcm,no,ne,angI,rho,olt,elt,var34,var5
+
+def fitPlot( infile='junk' ) :
+  # read in data arrays
+    vec = fitReadLog( infile )
+  # find the index of the best fit
+    var34 = vec[7]
+    ibest = var34.index( min(var34) )
+
+    print "ibest = %d" % ibest
+    pyplot.figure(0)
+    nplot = 0
+    for jx in range(1,6) :
+      for jy in range( jx+1,7 ) :
+        x,y,z = stripout( vec, ibest, jx, jy, 7 )
+        nplot = nplot + 1
+        fig = pyplot.subplot(4,4,nplot)
+        fig.scatter(x,y,c=z,s=200)
+        xmin,xmax = minmax(x,margin=0.2)
+        ymin,ymax = minmax(y,margin=0.2)
+        fig.axis( [xmin, xmax, ymin, ymax] )
+    pyplot.show()
+
+def stripout( vec, ibest, jx, jy, jz ) :
+    x = []
+    y = []
+    z = []
+    for i in range(0,len(vec[0])) :  
+      usePt = True
+      for j in range(1,6) :
+        if (j != jx) and (j != jy) and (vec[j][i] != vec[j][ibest] ) :
+          usePt = False
+      if usePt :
+        x.append( vec[jx][i] )
+        y.append( vec[jy][i] )
+        z.append( vec[jz][i] )
+    return numpy.array(x),numpy.array(y),numpy.array(z)
 
