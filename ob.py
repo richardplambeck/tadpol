@@ -1051,7 +1051,7 @@ def saphReadData( infile ) :
     fin = open( infile, "r" )
     LOGHz = 0.
     phiOffset = 0.
-    LOGHzMissing = phiOffsetMissing = EiMissing = True
+    LOGHzMissing = phiOffsetMissing = rcvrPolMissing = True
     fGHz = []
     P3 = []
     P4 = []
@@ -1074,17 +1074,23 @@ def saphReadData( infile ) :
         elif "phiOffset" in line :
           phiOffset = float( line[line.find("=")+1:] )
           phiOffsetMissing = False
-        elif "Ei" in line :
-          Eitext = line[line.find("[")+1:line.find("]") ]
-          Epar = float( Eitext[0:Eitext.find(",")] )
-          Eperp = float( Eitext[Eitext.find(",")+1:] )
-          Ei = numpy.array( [Epar,Eperp] )
-          EiMissing = False
+      # receiver polarization (H,V,L,R) - will be converted to Ei = [Epar, Eperp]
+      # plane of incidence is V (vertical reflection into bucket); this is polAngle=0 in Tom's code
+        elif "rcvrPol" in line :
+          if 'H' in line[line.find("=")+1:].upper() :
+            Ei = numpy.array( [0.,1.], dtype=complex )
+          elif 'V' in line[line.find("=")+1:].upper() :
+            Ei = numpy.array( [1.,0.], dtype=complex )
+          elif 'L' in line[line.find("=")+1:].upper() :
+            Ei = numpy.array( [1/math.sqrt(2.),1j/math.sqrt(2)], dtype=complex )
+          elif 'R' in line[line.find("=")+1:].upper() :
+            Ei = numpy.array( [1/math.sqrt(2.),-1j/math.sqrt(2)], dtype=complex )
+          rcvrPolMissing = False
     fin.close()
-    if LOGHzMissing or phiOffsetMissing or EiMissing :
+    if LOGHzMissing or phiOffsetMissing or rcvrPolMissing :
       print "... saphReadData WARNING - missing parameter" 
-    print "... read data from %s -- npts = %d, LOGHz = %.1f, phiOffset = %.1f deg, Epar,Eperp = %.3f,%.3f" % \
-       (infile, len(P3), LOGHz, phiOffset, Ei[0],Ei[1])
+    print "... read data from %s -- npts = %d, LOGHz = %.1f, phiOffset = %.1f deg, Ei = " % \
+       (infile, len(P3), LOGHz, phiOffset), Ei
     return numpy.array(fGHz), numpy.array(P3), numpy.array(P4), numpy.array(P5), numpy.array(P6), LOGHz, phiOffset, Ei 
 
 # use spline fits to find smoothed values at frequencies in frqArray (units: GHz)
@@ -1165,13 +1171,13 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
-tcmSrch = [1.007,1.008,1.009,1.010,1.011]                         # this is the measured thickness of the plate
-noSrch = [3.026,3.028,3.030,3.032]             # ordinary index
-neSrch = [3.398,3.400,3.402,3.404]             # extraordinary index
-oltSrch = [3.0e-4 ]           # ordinary loss tangent
-eltSrch = [3.0e-4]           # extraordinary loss tangent
-angISrch = [ 41.,41.5,42.,42.5,43.0,43.5]     # angle of incidence ('stackTilt')
-rhoSrch = numpy.arange(60,91.,2.)              # stack rotation angle relative to plane of incidence ('stackAngle')
+tcmSrch = [1.009]                         # this is the measured thickness of the plate
+noSrch = [3.03,3.032,3.034,3.036]             # ordinary index
+neSrch = [3.390,3.392,3.394,3.396]             # extraordinary index
+oltSrch = [1.5e-4 ]           # ordinary loss tangent
+eltSrch = [2.0e-4]           # extraordinary loss tangent
+angISrch = [ 42.,42.5,43.]     # angle of incidence ('stackTilt')
+rhoSrch = numpy.arange(0.,90.1,5.)              # stack rotation angle relative to plane of incidence ('stackAngle')
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1181,7 +1187,7 @@ srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 # dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-dataFileList = [ "250_60deg.dat" ]
+dataFileList = [ "220_60deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
@@ -1198,13 +1204,13 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
 
   # read in and smooth the data files; each file corresponds to a particular LOfreq, phiOffset,Ei 
     print "read and smooth the data"
-    T3sm = []
-    T4sm = []
-    T5sm = []
-    T6avg = []
-    LOfrq = []
-    rhoOff = []
-    Ei = []
+    T3sm = []       # list of arrays
+    T4sm = []       # list of arrays
+    T5sm = []       # list of arrays
+    T6avg = []      # list of numbers
+    LOfrq = []      # list of numbers
+    rhoOff = []     # list of numbers
+    Ei = []         # list of vectors
     for dataFile in dataFileList :  
       fGHz,T3,T4,T5,T6,LOGHz,rhoOffset,Eivec = saphReadData( dataFile )
       T3sm.append( saphSmooth( fGHz, T3, frqArray ) )
@@ -1238,10 +1244,20 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
                   # model each dataFile separately (same stack, but LOfrq, rhoOff, or polAng could be different)
                     var34 = []
                     var5 = []
-                    for n in range(0,len(LOfrq)) :
+                    for n in range(0,len(dataFileList)) :
+                      #print LOfrq[n],rhoOff[n],Ei[n]
                       T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc, rho+rhoOff[n], angI, Ei[n], None  ) 
-                      var34.append( numpy.mean( pow( T3m-T3sm[n], 2. )) + numpy.mean( pow( T4m-T4sm[n], 2. )) )
-                      var5.append( numpy.mean( pow( T5m-T5sm[n], 2. )) )
+                      #print "\n T4m"
+                      #print T4m
+                      #print "\n T4sm"
+                      #print T4sm[n]
+                      #print "\n T4m-T4sm"
+                      #print T4m-T4sm[n]
+                      #print "\n sq(T4m-T4sm)"
+                      #print numpy.power(T4m-T4sm[n],2.)
+                      #print "\n mean = %.2f" % (numpy.mean(numpy.power(T4m-T4sm[n],2.)))
+                      var34.append( numpy.mean( numpy.power( T3m-T3sm[n], 2. )) + numpy.mean( numpy.power( T4m-T4sm[n], 2. )) )
+                      var5.append( numpy.mean( numpy.power( T5m-T5sm[n], 2. )) )
                       print "... %20s   var34: %.2f   var5: %.2f" % (dataFileList[n], var34[-1], var5[-1])
                       fout = open(outFile, "a")
                       fout.write("...  %20s   var34: %.2f   var5: %.2f\n" % (dataFileList[n], var34[-1], var5[-1]))
@@ -1319,12 +1335,24 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
       T3sm = saphSmooth( fGHz, T3, frqArray )
       T4sm = saphSmooth( fGHz, T4, frqArray )
       T5sm = saphSmooth( fGHz, T5, frqArray )
+      #Eivec = [.707,-1j*.707]
       T3m,T4m,T5m = saphModel( LOGHz, frqArray, stackDesc, rho+rhoOffset, angI, Eivec, None  ) 
-      variance = numpy.mean( pow( T3m-T3sm[n], 2. )) + numpy.mean( pow( T4m-T4sm[n], 2. ))
+      #print "\n T4m"
+      #print T4m
+      #print "\n T4sm"
+      #print T4sm
+      #print "\n T4m-T4sm"
+      #print T4m-T4sm
+      #print "\n sq(T4m-T4sm)"
+      #print numpy.power(T4m-T4sm,2.)
+      #print "\n mean = %.2f" % (numpy.mean(numpy.power(T4m-T4sm,2.)))
+      variance = numpy.mean( numpy.power( T3m-T3sm, 2. )) + numpy.mean( numpy.power( T4m-T4sm, 2. ))
       fig = pyplot.subplot(nm,nm,nplot)
       fig.plot( fGHz, T3, color='red' )
+      fig.plot( frqArray, T3sm, color='red', linestyle='--' )
       fig.plot( frqArray, T3m, color='red' )
       fig.plot( fGHz, T4, color='blue' )
+      fig.plot( frqArray, T4sm, color='blue', linestyle='--' )
       fig.plot( frqArray, T4m, color='blue' )
       fig.plot( fGHz, T5, color='purple' )
       fig.plot( frqArray, T5m, color='purple' )
@@ -1413,6 +1441,7 @@ def fitPlot( infile='junk' ) :
         x,y,z = stripout( vec, ibest, jx, jy, 7 )
         nplot = nplot + 1
         fig = pyplot.subplot(4,4,nplot)
+        #fig.scatter(x,y,c=z,s=200,edgecolors='none',cmap="Greys")
         fig.scatter(x,y,c=z,s=200,edgecolors='none')
         xmin,xmax = minmax(x,margin=0.2)
         ymin,ymax = minmax(y,margin=0.2)
