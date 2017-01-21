@@ -1172,12 +1172,12 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
 tcmSrch = [1.009]                         # this is the measured thickness of the plate
-noSrch = [3.03,3.032,3.034,3.036]             # ordinary index
-neSrch = [3.390,3.392,3.394,3.396]             # extraordinary index
+noSrch = [3.032,3.034,3.036]             # ordinary index
+neSrch = [3.384,3.386,3.388,3.390]             # extraordinary index
 oltSrch = [1.5e-4 ]           # ordinary loss tangent
 eltSrch = [2.0e-4]           # extraordinary loss tangent
-angISrch = [ 42.,42.5,43.]     # angle of incidence ('stackTilt')
-rhoSrch = numpy.arange(0.,90.1,5.)              # stack rotation angle relative to plane of incidence ('stackAngle')
+angISrch = [ 43.,43.5]     # angle of incidence ('stackTilt')
+rhoSrch = numpy.arange(-5.,5.1,.5)              # stack rotation angle relative to plane of incidence ('stackAngle')
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1245,17 +1245,7 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
                     var34 = []
                     var5 = []
                     for n in range(0,len(dataFileList)) :
-                      #print LOfrq[n],rhoOff[n],Ei[n]
                       T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc, rho+rhoOff[n], angI, Ei[n], None  ) 
-                      #print "\n T4m"
-                      #print T4m
-                      #print "\n T4sm"
-                      #print T4sm[n]
-                      #print "\n T4m-T4sm"
-                      #print T4m-T4sm[n]
-                      #print "\n sq(T4m-T4sm)"
-                      #print numpy.power(T4m-T4sm[n],2.)
-                      #print "\n mean = %.2f" % (numpy.mean(numpy.power(T4m-T4sm[n],2.)))
                       var34.append( numpy.mean( numpy.power( T3m-T3sm[n], 2. )) + numpy.mean( numpy.power( T4m-T4sm[n], 2. )) )
                       var5.append( numpy.mean( numpy.power( T5m-T5sm[n], 2. )) )
                       print "... %20s   var34: %.2f   var5: %.2f" % (dataFileList[n], var34[-1], var5[-1])
@@ -1400,7 +1390,7 @@ def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log", plot5=False
         
 
 # read in results from saphFit2.log
-def fitReadLog( infile="junk" ) :
+def fitReadLog( infile="saphFit2.log" ) :
   fin = open( infile, "r" )
   tcm = []
   no = []
@@ -1426,40 +1416,55 @@ def fitReadLog( infile="junk" ) :
   fin.close()
   return tcm,no,ne,angI,rho,olt,elt,var34,var5
 
-def fitPlot( infile='junk' ) :
-  # read in data arrays
+def fitPlot( infile='saphFit2.log' ) :
+  # read data; vec = [tcm,no,ne,angI,rho,olt,elt,var34,var5]
     vec = fitReadLog( infile )
   # find the index of the best fit
     var34 = vec[7]
+    print var34
     ibest = var34.index( min(var34) )
-
-    print "ibest = %d" % ibest
+    print ibest, min(var34)
     pyplot.figure(0)
     nplot = 0
-    for jx in range(1,6) :
+    for jx in range(0,7) :
       for jy in range( jx+1,7 ) :
         x,y,z = stripout( vec, ibest, jx, jy, 7 )
-        nplot = nplot + 1
-        fig = pyplot.subplot(4,4,nplot)
-        #fig.scatter(x,y,c=z,s=200,edgecolors='none',cmap="Greys")
-        fig.scatter(x,y,c=z,s=200,edgecolors='none')
-        xmin,xmax = minmax(x,margin=0.2)
-        ymin,ymax = minmax(y,margin=0.2)
-        fig.axis( [xmin, xmax, ymin, ymax] )
+        if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
+          nplot = nplot + 1
+          if nplot > 9 :
+            pyplot.show()
+            pyplot.figure(0)
+            nplot = 1
+          fig = pyplot.subplot(3,3,nplot)
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',cmap="Greys")
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
+          fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=100.)
+          xmin,xmax = minmax(x,margin=0.2)
+          ymin,ymax = minmax(y,margin=0.2)
+          fig.axis( [xmin, xmax, ymin, ymax],fontsize=10 )
     pyplot.show()
 
 def stripout( vec, ibest, jx, jy, jz ) :
     x = []
     y = []
     z = []
+
+  # select data points to include in x,y,z arrays
     for i in range(0,len(vec[0])) :  
+
+    # usePt = True only if all variables other than jx and jy are their best-fit values
       usePt = True
-      for j in range(1,6) :
+      for j in range(0,7) :
         if (j != jx) and (j != jy) and (vec[j][i] != vec[j][ibest] ) :
           usePt = False
+
+    # include this value in the array
       if usePt :
-        x.append( vec[jx][i] )
-        y.append( vec[jy][i] )
-        z.append( vec[jz][i] )
+        x1 = vec[jx][i]
+        y1 = vec[jy][i]
+        z1 = vec[jz][i]
+        x.append(x1)
+        y.append(y1)
+        z.append(z1)
     return numpy.array(x),numpy.array(y),numpy.array(z)
 
