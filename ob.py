@@ -12,7 +12,7 @@ matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 import pol
-#import scipy
+import scipy
 from scipy.interpolate import splrep, splev
 #import hou
 
@@ -1171,13 +1171,13 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
-tcmSrch = [1.009]                         # this is the measured thickness of the plate
-noSrch = [3.032,3.034,3.036]             # ordinary index
-neSrch = [3.384,3.386,3.388,3.390]             # extraordinary index
-oltSrch = [1.5e-4 ]           # ordinary loss tangent
-eltSrch = [2.0e-4]           # extraordinary loss tangent
-angISrch = [ 43.,43.5]     # angle of incidence ('stackTilt')
-rhoSrch = numpy.arange(-5.,5.1,.5)              # stack rotation angle relative to plane of incidence ('stackAngle')
+tcmSrch = [1.009,1.010,1.011]                         # this is the measured thickness of the plate
+noSrch = [3.030, 3.034, 3.046]             # ordinary index
+neSrch = [3.390, 3.392, 3.394]             # extraordinary index
+oltSrch = [1.0e-4, 1.5e-4, 2.0e-4, 2.5e-4 ]           # ordinary loss tangent
+eltSrch = [1.0e-4, 1.5e-4, 2.0e-4, 2.5e-4 ]           # extraordinary loss tangent
+angISrch = [ 41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
+rhoSrch = [85.,86.,87.,88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1187,7 +1187,7 @@ srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 # dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-dataFileList = [ "220_60deg.dat" ]
+dataFileList = [ "220_0deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
@@ -1416,49 +1416,64 @@ def fitReadLog( infile="saphFit2.log" ) :
   fin.close()
   return tcm,no,ne,angI,rho,olt,elt,var34,var5
 
-def fitPlot( infile='saphFit2.log' ) :
-  # read data; vec = [tcm,no,ne,angI,rho,olt,elt,var34,var5]
+def fitPlot( infile='saphFit3.log' ) :
+    label = ['tcm','no','ne','angI','rho','olt','elt']
     vec = fitReadLog( infile )
-  # find the index of the best fit
     var34 = vec[7]
-    print var34
     ibest = var34.index( min(var34) )
-    print ibest, min(var34)
-    pyplot.figure(0)
+    print "ibest = %d, min(var34) = %.2f" % (ibest, min(var34))
+    pyplot.ioff()
+    pp = PdfPages("fitPlot.pdf")
+    pyplot.figure( figsize=(11,8) )
     nplot = 0
     for jx in range(0,7) :
       for jy in range( jx+1,7 ) :
         x,y,z = stripout( vec, ibest, jx, jy, 7 )
+        jbest = numpy.argmin(z)
         if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
           nplot = nplot + 1
-          if nplot > 9 :
-            pyplot.show()
-            pyplot.figure(0)
+          if nplot > 12 :
+            pyplot.savefig( pp, format="pdf" )
+            #pyplot.show()
+            pyplot.figure( figsize=(11,8) )
             nplot = 1
-          fig = pyplot.subplot(3,3,nplot)
-          #fig.scatter(x,y,c=z,s=200,edgecolors='none',cmap="Greys")
+          fig = pyplot.subplot(4,3,nplot)
+          xmin,xmax = minmax(x,margin=0.01)
+          ymin,ymax = minmax(y,margin=0.01)
+        # section below copied from web example
+          xi,yi = numpy.linspace( xmin, xmax, 100), numpy.linspace(ymin, ymax, 100)
+          xi,yi = numpy.meshgrid(xi,yi)
+          zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
+          fig.imshow( zi, aspect='auto', origin='lower', vmin=50., vmax=200., \
+              extent=[xmin,xmax,ymin,ymax] )
+          fig.scatter(x,y,s=20, marker='x', c='black')
+          fig.scatter(x[jbest],y[jbest],s=50, marker='x', c='white')
+          fig.ticklabel_format(useOffset=False)
+          fig.set_xlabel( label[jx], fontsize=6 )
+          fig.set_ylabel( label[jy], fontsize=6 )
           #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
-          fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=100.)
-          xmin,xmax = minmax(x,margin=0.2)
-          ymin,ymax = minmax(y,margin=0.2)
-          fig.axis( [xmin, xmax, ymin, ymax],fontsize=10 )
-    pyplot.show()
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
+          fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
+          pyplot.locator_params( axis='x', nbins=5)
+          pyplot.locator_params( axis='y', nbins=5)
+          fig.tick_params( axis='both', which='major', labelsize=6 )
+          pyplot.tight_layout( h_pad=1)
+    if (nplot > 1) :
+      pyplot.savefig( pp, format="pdf" )
+      #pyplot.show()
+    pp.close()
 
+# strip out one plane of a multidimensional data cube, passing through point with lowest variance
+# 
 def stripout( vec, ibest, jx, jy, jz ) :
     x = []
     y = []
     z = []
-
-  # select data points to include in x,y,z arrays
     for i in range(0,len(vec[0])) :  
-
-    # usePt = True only if all variables other than jx and jy are their best-fit values
-      usePt = True
+      usePt = True         
       for j in range(0,7) :
         if (j != jx) and (j != jy) and (vec[j][i] != vec[j][ibest] ) :
           usePt = False
-
-    # include this value in the array
       if usePt :
         x1 = vec[jx][i]
         y1 = vec[jy][i]
