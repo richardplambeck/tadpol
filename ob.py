@@ -8,6 +8,7 @@ import time
 import string
 import pickle
 import matplotlib
+import datetime
 matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
@@ -1171,13 +1172,17 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
-tcmSrch = [1.009,1.010,1.011]                         # this is the measured thickness of the plate
-noSrch = [3.030, 3.034, 3.046]             # ordinary index
-neSrch = [3.390, 3.392, 3.394]             # extraordinary index
-oltSrch = [1.0e-4, 1.5e-4, 2.0e-4, 2.5e-4 ]           # ordinary loss tangent
-eltSrch = [1.0e-4, 1.5e-4, 2.0e-4, 2.5e-4 ]           # extraordinary loss tangent
-angISrch = [ 41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
-rhoSrch = [85.,86.,87.,88.]              # stack rotation angle relative to plane of incidence ('stackAngle')
+tcmSrch = [1.005, 1.006, 1.007, 1.008, 1.009, 1.010, 1.011, 1.012]                         # this is the measured thickness of the plate 
+#noSrch = [3.020, 3.025, 3.030, 3.035, 3.040]             # ordinary index
+noSrch = numpy.arange(3.02,3.081,.05)             # ordinary index
+#neSrch = [3.380, 3.385, 3.390, 3.395, 3.400]             # extraordinary index
+neSrch = numpy.arange(3.36,3.421,.05)             # extraordinary index
+oltSrch = [2.0e-4 ]           # ordinary loss tangent
+eltSrch = [ 2.0e-4 ]           # extraordinary loss tangent
+#angISrch = [ 40., 40.5, 41.,41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
+angISrch = [ 41.,42.,43.,44. ]     # angle of incidence ('stackTilt')
+rhoSrch = numpy.arange(-90.,90.1,10)              # stack rotation angle relative to plane of incidence ('stackAngle')
+#rhoSrch = [-118.]
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1185,9 +1190,8 @@ srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 #                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
 #                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-# dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
-
-dataFileList = [ "220_0deg.dat" ]
+# dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
+dataFileList = [ "220_90deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
@@ -1195,7 +1199,16 @@ def doit6() :
 def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit2.log", Search=True ) :
 
     fout = open( outFile, "a")
-    fout.write("#\n#\n# %s\n" % (dataFileList) )
+    fout.write("#\n# %s\n" % datetime.datetime.now().strftime("%m/%d/%Y %H:%M") )
+    fout.write("# dataFileList: %s\n" % (dataFileList) )
+    #fout.write("# tcmSrch:  %s\n" % numpy.array_str(tcmSrch, precision=3, max_line_width=200 ) )
+    #fout.write("# noSrch:   %s\n" % numpy.array_str(noSrch, precision=3, max_line_width=200 ) )
+    #fout.write("# neSrch:   %s\n" % numpy.array_str(neSrch, precision=3, max_line_width=200 ) )
+    #fout.write("# oltSrch:  %s\n" % numpy.array_str(oltSrch, precision=5, max_line_width=200 ) )
+    #fout.write("# eltSrch:  %s\n" % numpy.array_str(eltSrch, precision=5, max_line_width=200 ) )
+    #fout.write("# angISrch: %s\n" % numpy.array_str(angISrch, precision=2, max_line_width=200 ) )
+    #fout.write("# rhoSrch:  %s\n" % numpy.array_str(rhoSrch, precision=2, max_line_width=200 ) )
+    fout.write("#\n")
     fout.close()
 
     frqArray = numpy.array( numpy.arange(.3,9.91,.2) )
@@ -1325,17 +1338,7 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
       T3sm = saphSmooth( fGHz, T3, frqArray )
       T4sm = saphSmooth( fGHz, T4, frqArray )
       T5sm = saphSmooth( fGHz, T5, frqArray )
-      #Eivec = [.707,-1j*.707]
       T3m,T4m,T5m = saphModel( LOGHz, frqArray, stackDesc, rho+rhoOffset, angI, Eivec, None  ) 
-      #print "\n T4m"
-      #print T4m
-      #print "\n T4sm"
-      #print T4sm
-      #print "\n T4m-T4sm"
-      #print T4m-T4sm
-      #print "\n sq(T4m-T4sm)"
-      #print numpy.power(T4m-T4sm,2.)
-      #print "\n mean = %.2f" % (numpy.mean(numpy.power(T4m-T4sm,2.)))
       variance = numpy.mean( numpy.power( T3m-T3sm, 2. )) + numpy.mean( numpy.power( T4m-T4sm, 2. ))
       fig = pyplot.subplot(nm,nm,nplot)
       fig.plot( fGHz, T3, color='red' )
@@ -1414,21 +1417,29 @@ def fitReadLog( infile="saphFit2.log" ) :
       var34.append( float(a[14]) )
       var5.append( float(a[16]) )
   fin.close()
+  print "read in %d lines from file %s" % (len(tcm),infile)
+  print var34[-1]
   return tcm,no,ne,angI,rho,olt,elt,var34,var5
 
-def fitPlot( infile='saphFit3.log' ) :
+# show correlations between params
+def fitPlot( infile='saphFit2.log', plot5=False ) :
     label = ['tcm','no','ne','angI','rho','olt','elt']
     vec = fitReadLog( infile )
-    var34 = vec[7]
-    ibest = var34.index( min(var34) )
-    print "ibest = %d, min(var34) = %.2f" % (ibest, min(var34))
+    if plot5 :
+      jz = 8
+      var = vec[8]
+    else :
+      jz = 7
+      var = vec[7]
+    ibest = var.index( min(var) )
+    print "ibest = %d, min(var) = %.2f" % (ibest, min(var))
     pyplot.ioff()
     pp = PdfPages("fitPlot.pdf")
     pyplot.figure( figsize=(11,8) )
     nplot = 0
     for jx in range(0,7) :
       for jy in range( jx+1,7 ) :
-        x,y,z = stripout( vec, ibest, jx, jy, 7 )
+        x,y,z = stripout( vec, ibest, jx, jy, jz )
         jbest = numpy.argmin(z)
         if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
           nplot = nplot + 1
@@ -1440,14 +1451,22 @@ def fitPlot( infile='saphFit3.log' ) :
           fig = pyplot.subplot(4,3,nplot)
           xmin,xmax = minmax(x,margin=0.01)
           ymin,ymax = minmax(y,margin=0.01)
+          vmin,vmax = minmax(z,margin=0.0)
+          vmin = 0
+          vmax = 200
         # section below copied from web example
-          xi,yi = numpy.linspace( xmin, xmax, 100), numpy.linspace(ymin, ymax, 100)
+          xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
           xi,yi = numpy.meshgrid(xi,yi)
           zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
-          fig.imshow( zi, aspect='auto', origin='lower', vmin=50., vmax=200., \
+          xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
+              # return position of interpolated minimum
+              # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
+          # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
+          fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
               extent=[xmin,xmax,ymin,ymax] )
           fig.scatter(x,y,s=20, marker='x', c='black')
           fig.scatter(x[jbest],y[jbest],s=50, marker='x', c='white')
+          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=50, marker='s', c='white')
           fig.ticklabel_format(useOffset=False)
           fig.set_xlabel( label[jx], fontsize=6 )
           fig.set_ylabel( label[jy], fontsize=6 )
@@ -1462,19 +1481,23 @@ def fitPlot( infile='saphFit3.log' ) :
       pyplot.savefig( pp, format="pdf" )
       #pyplot.show()
     pp.close()
+    print "plot fitPlot.pdf written to disk"
 
 # strip out one plane of a multidimensional data cube, passing through point with lowest variance
 # 
 def stripout( vec, ibest, jx, jy, jz ) :
+    print "\nplot plane passing through %.5f, %.5f (var = %.1f)" % (vec[jx][ibest],vec[jy][ibest],vec[jz][ibest])
     x = []
     y = []
     z = []
     for i in range(0,len(vec[0])) :  
       usePt = True         
       for j in range(0,7) :
+      # all variables except jx and jy must be equal to best values
         if (j != jx) and (j != jy) and (vec[j][i] != vec[j][ibest] ) :
           usePt = False
       if usePt :
+        # print vec[0][i], vec[1][i], vec[2][i], vec[3][i], vec[4][i], vec[5][i], vec[6][i], vec[jz][i]
         x1 = vec[jx][i]
         y1 = vec[jy][i]
         z1 = vec[jz][i]
