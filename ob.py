@@ -1051,8 +1051,8 @@ def saphModel( LOGHz, IFfrqArray, stackDesc, stackRotAngle, stackTilt, Ei, outFi
 def saphReadData( infile ) :
     fin = open( infile, "r" )
     LOGHz = 0.
-    phiOffset = 0.
-    LOGHzMissing = phiOffsetMissing = rcvrPolMissing = True
+    rhoOffset = 0.
+    LOGHzMissing = rhoOffsetMissing = rcvrPolMissing = True
     fGHz = []
     P3 = []
     P4 = []
@@ -1072,9 +1072,9 @@ def saphReadData( infile ) :
         if "LOGHz" in line :
           LOGHz = float( line[line.find("=")+1:] )
           LOGHzMissing = False
-        elif "phiOffset" in line :
-          phiOffset = float( line[line.find("=")+1:] )
-          phiOffsetMissing = False
+        elif "rhoOffset" in line :
+          rhoOffset = float( line[line.find("=")+1:] )
+          rhoOffsetMissing = False
       # receiver polarization (H,V,L,R) - will be converted to Ei = [Epar, Eperp]
       # plane of incidence is V (vertical reflection into bucket); this is polAngle=0 in Tom's code
         elif "rcvrPol" in line :
@@ -1088,11 +1088,11 @@ def saphReadData( infile ) :
             Ei = numpy.array( [1/math.sqrt(2.),-1j/math.sqrt(2)], dtype=complex )
           rcvrPolMissing = False
     fin.close()
-    if LOGHzMissing or phiOffsetMissing or rcvrPolMissing :
+    if LOGHzMissing or rhoOffsetMissing or rcvrPolMissing :
       print "... saphReadData WARNING - missing parameter" 
-    print "... read data from %s -- npts = %d, LOGHz = %.1f, phiOffset = %.1f deg, Ei = " % \
-       (infile, len(P3), LOGHz, phiOffset), Ei
-    return numpy.array(fGHz), numpy.array(P3), numpy.array(P4), numpy.array(P5), numpy.array(P6), LOGHz, phiOffset, Ei 
+    print "... read data from %s -- npts = %d, LOGHz = %.1f, rhoOffset = %.1f deg, Ei = " % \
+       (infile, len(P3), LOGHz, rhoOffset), Ei
+    return numpy.array(fGHz), numpy.array(P3), numpy.array(P4), numpy.array(P5), numpy.array(P6), LOGHz, rhoOffset, Ei 
 
 # use spline fits to find smoothed values at frequencies in frqArray (units: GHz)
 def saphSmooth( fGHzIn, Tin, frqArray ) :
@@ -1128,7 +1128,7 @@ def saphPlot( infile,theta, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) :
 
 # this is my first attempt to model jun 2015 data; vary only theta
 def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
-    fGHz,P3,P4,P5,P6,LOGHz,phiOffset,Ei = saphReadData( infile )
+    fGHz,P3,P4,P5,P6,LOGHz,rhoOffset,Ei = saphReadData( infile )
     frqArray = numpy.array( numpy.arange(.3,9.91,.3) )
     P3sm = saphSmooth( fGHz, P3, frqArray )
     P4sm = saphSmooth( fGHz, P4, frqArray )
@@ -1138,7 +1138,7 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
       thetaBest = -1000.
       for theta in thetaList :
         # P3m, P4m, P5m =  saphModel( LOGHz, frqArray, None, stackRotAngle=theta ) 
-        P3m, P4m, P5m = saphModel( LOGHz, frqArray, stackDesc, theta+phiOffset, stackTilt, Ei, None  ) 
+        P3m, P4m, P5m = saphModel( LOGHz, frqArray, stackDesc, theta+rhoOffset, stackTilt, Ei, None  ) 
         resid3 = numpy.std( P3sm - P3m )
         resid4 = numpy.std( P4sm - P4m )
         print "... theta = %.1f  resid3 = %.3f  resid4 = %.3f" % (theta,resid3,resid4)
@@ -1149,7 +1149,7 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
       print "theta = %.1f gives best fit" % thetaBest
     else :
       thetaBest = thetaList[0]
-    P3m, P4m, P5m = saphModel( LOGHz, frqArray, stackDesc, thetaBest+phiOffset, stackTilt, Ei, None  ) 
+    P3m, P4m, P5m = saphModel( LOGHz, frqArray, stackDesc, thetaBest+rhoOffset, stackTilt, Ei, None  ) 
     resid3 = numpy.std( P3sm - P3m )
     resid4 = numpy.std( P4sm - P4m )
     print "... theta = %.1f  resid3 = %.3f  resid4 = %.3f" % (thetaBest,resid3,resid4)
@@ -1172,17 +1172,24 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
-tcmSrch = [1.005, 1.006, 1.007, 1.008, 1.009, 1.010, 1.011, 1.012]                         # this is the measured thickness of the plate 
-#noSrch = [3.020, 3.025, 3.030, 3.035, 3.040]             # ordinary index
-noSrch = numpy.arange(3.02,3.081,.05)             # ordinary index
-#neSrch = [3.380, 3.385, 3.390, 3.395, 3.400]             # extraordinary index
-neSrch = numpy.arange(3.36,3.421,.05)             # extraordinary index
+#tcmSrch = [1.005, 1.007, 1.009, 1.011, 1.013]                       
+tcmSrch = [ 1.009, 1.010, 1.011]                         # measured thickness of the plate was 1.009
+
+# noSrch = [3.020, 3.025, 3.030, 3.035, 3.040]             # ordinary index
+noSrch = numpy.arange(3.024,3.041,.004)             # ordinary index
+#noSrch = [3.044]
+
+# neSrch = [3.380, 3.385, 3.390, 3.395, 3.400]             # extraordinary index
+neSrch = numpy.arange(3.386,3.403,.004)             # extraordinary index
+# neSrch = [3.408]
+
 oltSrch = [2.0e-4 ]           # ordinary loss tangent
 eltSrch = [ 2.0e-4 ]           # extraordinary loss tangent
+
 #angISrch = [ 40., 40.5, 41.,41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
-angISrch = [ 41.,42.,43.,44. ]     # angle of incidence ('stackTilt')
-rhoSrch = numpy.arange(-90.,90.1,10)              # stack rotation angle relative to plane of incidence ('stackAngle')
-#rhoSrch = [-118.]
+angISrch = [ 44. ]     # angle of incidence ('stackTilt')
+#rhoSrch = numpy.arange(-90.,90.1,15)              # stack rotation angle relative to plane of incidence ('stackAngle')
+rhoSrch = [-92.,-90.,-88.,-86.,-84.]
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1190,8 +1197,8 @@ srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 #                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
 #                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-# dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
-dataFileList = [ "220_90deg.dat" ]
+dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
+#dataFileList = [ "220_0deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
@@ -1215,7 +1222,7 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
     ntot = len(srchList[0]) * len(srchList[1]) * len(srchList[2]) * len(srchList[3]) \
              * len(srchList[4]) * len(srchList[5]) * len(srchList[6])
 
-  # read in and smooth the data files; each file corresponds to a particular LOfreq, phiOffset,Ei 
+  # read in and smooth the data files; each file corresponds to a particular LOfreq, rhoOffset,Ei 
     print "read and smooth the data"
     T3sm = []       # list of arrays
     T4sm = []       # list of arrays
@@ -1422,7 +1429,7 @@ def fitReadLog( infile="saphFit2.log" ) :
   return tcm,no,ne,angI,rho,olt,elt,var34,var5
 
 # show correlations between params
-def fitPlot( infile='saphFit2.log', plot5=False ) :
+def covarPlot( infile='saphFit2.log', plot5=False ) :
     label = ['tcm','no','ne','angI','rho','olt','elt']
     vec = fitReadLog( infile )
     if plot5 :
@@ -1434,26 +1441,20 @@ def fitPlot( infile='saphFit2.log', plot5=False ) :
     ibest = var.index( min(var) )
     print "ibest = %d, min(var) = %.2f" % (ibest, min(var))
     pyplot.ioff()
-    pp = PdfPages("fitPlot.pdf")
+    pp = PdfPages("covarPlot.pdf")
     pyplot.figure( figsize=(11,8) )
-    nplot = 0
+    nplot = 1
     for jx in range(0,7) :
       for jy in range( jx+1,7 ) :
         x,y,z = stripout( vec, ibest, jx, jy, jz )
         jbest = numpy.argmin(z)
         if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
-          nplot = nplot + 1
-          if nplot > 12 :
-            pyplot.savefig( pp, format="pdf" )
-            #pyplot.show()
-            pyplot.figure( figsize=(11,8) )
-            nplot = 1
           fig = pyplot.subplot(4,3,nplot)
           xmin,xmax = minmax(x,margin=0.01)
           ymin,ymax = minmax(y,margin=0.01)
           vmin,vmax = minmax(z,margin=0.0)
-          vmin = 0
-          vmax = 200
+          vmin = 700
+          vmax = 3000
         # section below copied from web example
           xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
           xi,yi = numpy.meshgrid(xi,yi)
@@ -1463,10 +1464,10 @@ def fitPlot( infile='saphFit2.log', plot5=False ) :
               # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
           # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
           fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
-              extent=[xmin,xmax,ymin,ymax] )
-          fig.scatter(x,y,s=20, marker='x', c='black')
-          fig.scatter(x[jbest],y[jbest],s=50, marker='x', c='white')
-          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=50, marker='s', c='white')
+              extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
+          fig.scatter(x,y,s=10, marker='x', c='black')
+          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='white')
+          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
           fig.ticklabel_format(useOffset=False)
           fig.set_xlabel( label[jx], fontsize=6 )
           fig.set_ylabel( label[jy], fontsize=6 )
@@ -1476,12 +1477,33 @@ def fitPlot( infile='saphFit2.log', plot5=False ) :
           pyplot.locator_params( axis='x', nbins=5)
           pyplot.locator_params( axis='y', nbins=5)
           fig.tick_params( axis='both', which='major', labelsize=6 )
-          pyplot.tight_layout( h_pad=1)
+          pyplot.tight_layout( pad=3, h_pad=1)
+
+        # increment the subplot; begin new page if too many panels
+          nplot = nplot + 1
+          if nplot > 12 :
+            pyplot.savefig( pp, format="pdf" )
+            #pyplot.show()
+            pyplot.figure( figsize=(11,8) )
+            nplot = 1
+
+  # final panel gives point through which planes pass
+    fig = pyplot.subplot(4,3,nplot)
+    ylab = .9 
+    fig.text( 0.03, ylab, "planes pass through the following point:", \
+      transform=fig.transAxes, horizontalalignment='left', fontsize=10, \
+      color="black", rotation='horizontal' )
+    for jx in range(0,7) :
+      ylab = ylab - .1
+      fig.text( 0.03, ylab, "%s = %.4f" % (label[jx],vec[jx][ibest]), \
+        transform=fig.transAxes, horizontalalignment='left', fontsize=10, \
+        color="black", rotation='horizontal' )
+      pyplot.axis('off')
     if (nplot > 1) :
       pyplot.savefig( pp, format="pdf" )
       #pyplot.show()
     pp.close()
-    print "plot fitPlot.pdf written to disk"
+    print "plot covarPlot.pdf written to disk"
 
 # strip out one plane of a multidimensional data cube, passing through point with lowest variance
 # 
