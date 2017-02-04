@@ -1048,7 +1048,7 @@ def saphModel( LOGHz, IFfrqArray, stackDesc, stackRotAngle, stackTilt, Ei, outFi
    return P3,P4,P5
 
 # read P3,P4,P5 temperatures from input file, vs freq
-def saphReadData( infile ) :
+def saphReadData( infile, logfile="saphFit2.log" ) :
     fin = open( infile, "r" )
     LOGHz = 0.
     rhoOffset = 0.
@@ -1090,8 +1090,12 @@ def saphReadData( infile ) :
     fin.close()
     if LOGHzMissing or rhoOffsetMissing or rcvrPolMissing :
       print "... saphReadData WARNING - missing parameter" 
-    print "... read data from %s -- npts = %d, LOGHz = %.1f, rhoOffset = %.1f deg, Ei = " % \
-       (infile, len(P3), LOGHz, rhoOffset), Ei
+    fout = open( logfile, "a")
+    fout.write( "# ... read data from %s -- npts = %d, LOGHz = %.1f, rhoOffset = %.1f deg, Ei = [%.2f+j%.2f, %.2f+j%.2f]\n" % \
+       (infile, len(P3), LOGHz, rhoOffset, Ei[0].real, Ei[0].imag, Ei[1].real, Ei[1].imag))
+    fout.close()
+    print " ... read data from %s -- npts = %d, LOGHz = %.1f, rhoOffset = %.1f deg, Ei = [%.2f+j%.2f, %.2f+j%.2f]" % \
+       (infile, len(P3), LOGHz, rhoOffset, Ei[0].real, Ei[0].imag, Ei[1].real, Ei[1].imag)
     return numpy.array(fGHz), numpy.array(P3), numpy.array(P4), numpy.array(P5), numpy.array(P6), LOGHz, rhoOffset, Ei 
 
 # use spline fits to find smoothed values at frequencies in frqArray (units: GHz)
@@ -1173,23 +1177,24 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
 #tcmSrch = [1.005, 1.007, 1.009, 1.011, 1.013]                       
-tcmSrch = [ 1.009, 1.010, 1.011]                         # measured thickness of the plate was 1.009
+#tcmSrch = [ 1.009, 1.010, 1.011]                         # measured thickness of the plate was 1.009
+tcmSrch = [1.009]
 
 # noSrch = [3.020, 3.025, 3.030, 3.035, 3.040]             # ordinary index
-noSrch = numpy.arange(3.024,3.041,.004)             # ordinary index
-#noSrch = [3.044]
+#noSrch = numpy.arange(3.024,3.041,.004)             # ordinary index
+noSrch = [3.031]
 
 # neSrch = [3.380, 3.385, 3.390, 3.395, 3.400]             # extraordinary index
-neSrch = numpy.arange(3.386,3.403,.004)             # extraordinary index
-# neSrch = [3.408]
+# neSrch = numpy.arange(3.386,3.403,.004)             # extraordinary index
+neSrch = [3.390]
 
-oltSrch = [2.0e-4 ]           # ordinary loss tangent
-eltSrch = [ 2.0e-4 ]           # extraordinary loss tangent
+oltSrch = [0.5e-4 ]           # ordinary loss tangent
+eltSrch = [ 0.5e-4 ]           # extraordinary loss tangent
 
 #angISrch = [ 40., 40.5, 41.,41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
 angISrch = [ 44. ]     # angle of incidence ('stackTilt')
-#rhoSrch = numpy.arange(-90.,90.1,15)              # stack rotation angle relative to plane of incidence ('stackAngle')
-rhoSrch = [-92.,-90.,-88.,-86.,-84.]
+rhoSrch = numpy.arange(-90.,90.1,2)              # stack rotation angle relative to plane of incidence ('stackAngle')
+#rhoSrch = [-92.,-90.,-88.,-86.,-84.]
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1197,8 +1202,8 @@ srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 #                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
 #                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
-#dataFileList = [ "220_0deg.dat" ]
+# dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
+dataFileList = [ "110_30deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
