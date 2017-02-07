@@ -1178,23 +1178,27 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 
 #tcmSrch = [1.005, 1.007, 1.009, 1.011, 1.013]                       
 #tcmSrch = [ 1.009, 1.010, 1.011]                         # measured thickness of the plate was 1.009
-tcmSrch = [1.009]
+tcmSrch = [1.010]
 
 # noSrch = [3.020, 3.025, 3.030, 3.035, 3.040]             # ordinary index
-#noSrch = numpy.arange(3.024,3.041,.004)             # ordinary index
-noSrch = [3.031]
+#noSrch = numpy.arange(3.020,3.061,.004)             # ordinary index
+noSrch = [3.032]
 
 # neSrch = [3.380, 3.385, 3.390, 3.395, 3.400]             # extraordinary index
-# neSrch = numpy.arange(3.386,3.403,.004)             # extraordinary index
-neSrch = [3.390]
+#neSrch = numpy.arange(3.370,3.413,.004)             # extraordinary index
+neSrch = [3.402]
 
-oltSrch = [0.5e-4 ]           # ordinary loss tangent
-eltSrch = [ 0.5e-4 ]           # extraordinary loss tangent
+oltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
+#oltSrch = [0.5e-4 ]           # ordinary loss tangent
+eltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
+#eltSrch = [ 0.5e-4 ]           # extraordinary loss tangent
 
 #angISrch = [ 40., 40.5, 41.,41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
 angISrch = [ 44. ]     # angle of incidence ('stackTilt')
-rhoSrch = numpy.arange(-90.,90.1,2)              # stack rotation angle relative to plane of incidence ('stackAngle')
+
+rhoSrch = numpy.arange(-92.,-84.1,2)              # stack rotation angle relative to plane of incidence ('stackAngle')
 #rhoSrch = [-92.,-90.,-88.,-86.,-84.]
+
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
@@ -1202,8 +1206,9 @@ srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 #                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
 #                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-# dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
-dataFileList = [ "110_30deg.dat" ]
+dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
+#dataFileList = [ "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat" ]
+#dataFileList = [ "100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat" ]
 
 def doit6() :
     saphFit2( dataFileList, srchList)
@@ -1384,24 +1389,26 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
     pp.close()
 
 
-# reads final fit parameters from logFile (e.g. SaphFit2.log) generates plot
-# this avoids having to enter stackDesc, rho, angI by hand
-def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log", plot5=False) :
-    fin = open( resultsLog, "r" )
-    for line in fin :
-      if (plot5 and line.startswith("# lowest var5")) or \
-           (not plot5 and line.startswith("# lowest var34")) : 
-        a = line.split()
-        tcm = float(a[4])
-        no = float(a[6])
-        ne = float(a[8])
-        angI = float(a[10])
-        rho = float(a[12])
-        olt = float(a[14])
-        elt = float(a[15])
-    stackDesc = [ [no], [ne], [olt], [elt], [tcm], [0.] ]    
-    print stackDesc, rho, angI
-    plotFit( dataFileList, stackDesc, rho, angI ) 
+# reads fit parameters from logFile (e.g., saphFit2.log) and plots model curves
+#   vs data for files in dataFileList
+# uses fitReadLog to retrieve the fit parameters; these will be taken from last
+#   line beginning with "*tcm:" if such a line exists, otherwise from line with
+#   smallest var34 
+# note 1: last parameter returned by fitReadLog is an ascii string with the
+#   dataFileList used by the fitting routine; this parameter is ignored by
+#   plotFinal, which plots the data in the list of files given by dataFileList;
+#   this latter is a true list,not an ascii string; also, it makes it possible
+#   to test fit parameters from one plot to fit other data files
+# note 2: fitReadLog returns lists of variables no, ne, etc; unfortunately
+#   these are NOT the same as the lists required by anisotropicTransmissionPol;
+#   in the first case, no[i] is the ordinary index used for a particular trial
+#   fit; in the second case, no[i] is the ordinary index of the ith layer
+#
+def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log") :
+    tcm,no,ne,angI,rho,olt,elt,var34,var5,iplot,fitList = fitReadLog( infile=resultsLog )
+    stackDesc = [ [no[iplot]], [ne[iplot]], [olt[iplot]], [elt[iplot]], [tcm[iplot]], [0.] ]    
+    print stackDesc, rho[iplot], angI[iplot]
+    plotFit( dataFileList, stackDesc, rho[iplot], angI[iplot] ) 
         
 
 # read in results from saphFit2.log
@@ -1416,8 +1423,10 @@ def fitReadLog( infile="saphFit2.log" ) :
   elt = []
   var34 = []
   var5 = []
+  iplot = -1
+  dataFileList = ""
   for line in fin :
-    if line.startswith("tcm:") :
+    if line.startswith("tcm:") or line.startswith("*tcm:") :
       a = line.split()
       tcm.append( float(a[1]) )
       no.append( float(a[3]) )
@@ -1428,14 +1437,21 @@ def fitReadLog( infile="saphFit2.log" ) :
       elt.append( float(a[12]) )
       var34.append( float(a[14]) )
       var5.append( float(a[16]) )
+    if line.startswith("*tcm:") :
+      iplot = len(tcm) - 1
+    if line.startswith("# dataFileList:") :    
+      dataFileList = line[ line.find("[")+1 : line.find("]")-1 ]
   fin.close()
+  if (iplot == -1) :
+    iplot = var34.index( min(var34) )
   print "read in %d lines from file %s" % (len(tcm),infile)
-  print var34[-1]
-  return tcm,no,ne,angI,rho,olt,elt,var34,var5
+  print var34[iplot]
+  return tcm,no,ne,angI,rho,olt,elt,var34,var5,iplot,dataFileList
+    # first 9 items are lists, last 2 are values
 
 # show correlations between params
-def covarPlot( infile='saphFit2.log', plot5=False ) :
-    label = ['tcm','no','ne','angI','rho','olt','elt']
+def covarPlot( infile='saphFit2.log', plot5=False, vmin=0., vmax=0. ) :
+    label = ['tcm','no','ne','angI','rho','olt','elt','var34','var5']
     vec = fitReadLog( infile )
     if plot5 :
       jz = 8
@@ -1443,7 +1459,9 @@ def covarPlot( infile='saphFit2.log', plot5=False ) :
     else :
       jz = 7
       var = vec[7]
-    ibest = var.index( min(var) )
+    ibest = vec[9]
+    if ibest < 0 :
+      ibest = var.index( min(var) )
     print "ibest = %d, min(var) = %.2f" % (ibest, min(var))
     pyplot.ioff()
     pp = PdfPages("covarPlot.pdf")
@@ -1457,9 +1475,8 @@ def covarPlot( infile='saphFit2.log', plot5=False ) :
           fig = pyplot.subplot(4,3,nplot)
           xmin,xmax = minmax(x,margin=0.01)
           ymin,ymax = minmax(y,margin=0.01)
-          vmin,vmax = minmax(z,margin=0.0)
-          vmin = 700
-          vmax = 3000
+          if (vmin == 0.) and (vmax == 0.) :
+            vmin,vmax = minmax(z,margin=0.0)
         # section below copied from web example
           xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
           xi,yi = numpy.meshgrid(xi,yi)
@@ -1488,25 +1505,28 @@ def covarPlot( infile='saphFit2.log', plot5=False ) :
           nplot = nplot + 1
           if nplot > 12 :
             pyplot.savefig( pp, format="pdf" )
-            #pyplot.show()
+            pyplot.show()
             pyplot.figure( figsize=(11,8) )
             nplot = 1
 
   # final panel gives point through which planes pass
     fig = pyplot.subplot(4,3,nplot)
-    ylab = .9 
-    fig.text( 0.03, ylab, "planes pass through the following point:", \
-      transform=fig.transAxes, horizontalalignment='left', fontsize=10, \
+    fig.text( 0.03, .92, "dataFileList: %s" % vec[10], \
+        transform=fig.transAxes, horizontalalignment='left', fontsize=8, \
+        color="black", rotation='horizontal' )
+    ylab = .82 
+    fig.text( 0.03, ylab, "planes pass through the following point: (record #%d)" % ibest, \
+      transform=fig.transAxes, horizontalalignment='left', fontsize=8, \
       color="black", rotation='horizontal' )
-    for jx in range(0,7) :
+    for jx in range(0,8) :
       ylab = ylab - .1
-      fig.text( 0.03, ylab, "%s = %.4f" % (label[jx],vec[jx][ibest]), \
-        transform=fig.transAxes, horizontalalignment='left', fontsize=10, \
+      fig.text( 0.04, ylab, "%s = %.4f" % (label[jx],vec[jx][ibest]), \
+        transform=fig.transAxes, horizontalalignment='left', fontsize=8, \
         color="black", rotation='horizontal' )
       pyplot.axis('off')
     if (nplot > 1) :
       pyplot.savefig( pp, format="pdf" )
-      #pyplot.show()
+      pyplot.show()
     pp.close()
     print "plot covarPlot.pdf written to disk"
 
