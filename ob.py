@@ -1213,8 +1213,12 @@ dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.da
 def doit6() :
     saphFit2( dataFileList, srchList)
 
-def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit2.log", Search=True ) :
-
+# does forward modeling of data given in dataFileList, using parameters given in srchList;
+#   computes variances for each set of parameters, writes results to outFile
+# when finished, writes bestfit parameters for lowest var34 and var5 to outFile,
+#   and plots results for lowest var34 on screen
+#
+def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit2.log" ) :
     fout = open( outFile, "a")
     fout.write("#\n# %s\n" % datetime.datetime.now().strftime("%m/%d/%Y %H:%M") )
     fout.write("# dataFileList: %s\n" % (dataFileList) )
@@ -1289,6 +1293,8 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
                       print "%d/%d finished; %.2f hours remaining" % (nfinished,ntot,secsremaining/3600.)
                     else :
                       print "%d/%d finished; %.2f minutes remaining" % (nfinished,ntot,secsremaining/60.)
+
+                  # var34sum and var5sum are summed over the independent data files
                     var34sum = numpy.sum(var34)
                     var5sum = numpy.sum(var5)
                     print "tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f, var5 = %.2f\n" % \
@@ -1356,7 +1362,8 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
       T4sm = saphSmooth( fGHz, T4, frqArray )
       T5sm = saphSmooth( fGHz, T5, frqArray )
       T3m,T4m,T5m = saphModel( LOGHz, frqArray, stackDesc, rho+rhoOffset, angI, Eivec, None  ) 
-      variance = numpy.mean( numpy.power( T3m-T3sm, 2. )) + numpy.mean( numpy.power( T4m-T4sm, 2. ))
+      variance = numpy.mean( numpy.power( T3m-T3sm, 2.) ) + numpy.mean( numpy.power( T4m-T4sm, 2. ))
+      var5 = numpy.mean( numpy.power( T5m-T5sm, 2.) )
       fig = pyplot.subplot(nm,nm,nplot)
       fig.plot( fGHz, T3, color='red' )
       fig.plot( frqArray, T3sm, color='red', linestyle='--' )
@@ -1369,8 +1376,8 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
       fig.grid( True )
       fig.set_title( dataFileList[n], fontsize=12 )
       fig.set_ylim(0,300)
-      fig.text( .05, .1, "tcm = %.3f, no = %.3f, ne = %.3f, var = %.1f" % \
-          ( stackDesc[4][0], stackDesc[0][0], stackDesc[1][0], variance ), \
+      fig.text( .05, .1, "tcm = %.3f, no = %.3f, ne = %.3f, var34 = %.1f, var5 = %.1f" % \
+          ( stackDesc[4][0], stackDesc[0][0], stackDesc[1][0], variance, var5 ), \
           transform=fig.transAxes, horizontalalignment="left", verticalalignment="center", fontsize=fsize )
       fig.text( .05, .05, "rho = %.1f, angI = %.1f, olt = %.2e, elt = %.2e" % \
           ( rho, angI, stackDesc[2][0], stackDesc[3][0]), \
@@ -1387,6 +1394,7 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
       print "plotting data on screen; delete plot window to finish"
       pyplot.show()
     pp.close()
+    print "BestFit.pdf written to disk"
 
 
 # reads fit parameters from logFile (e.g., saphFit2.log) and plots model curves
@@ -1404,15 +1412,21 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
 #   in the first case, no[i] is the ordinary index used for a particular trial
 #   fit; in the second case, no[i] is the ordinary index of the ith layer
 #
-def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log") :
-    tcm,no,ne,angI,rho,olt,elt,var34,var5,iplot,fitList = fitReadLog( infile=resultsLog )
+def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log", plot5=False ) :
+    tcm,no,ne,angI,rho,olt,elt,var34,var5,iplot,fitList = fitReadLog( resultsLog, plot5 )
     stackDesc = [ [no[iplot]], [ne[iplot]], [olt[iplot]], [elt[iplot]], [tcm[iplot]], [0.] ]    
     print stackDesc, rho[iplot], angI[iplot]
     plotFit( dataFileList, stackDesc, rho[iplot], angI[iplot] ) 
         
 
 # read in results from saphFit2.log
-def fitReadLog( infile="saphFit2.log" ) :
+# returns vectors of fit values; also iplot and dataFileList
+# iplot is the index of the value that should be plotted:
+#   - if plot5 == True, plot line corresponding to min(var5)
+#   - else if file contains lines beginning with "*tcm:", iplot is index of LAST of these
+#   - default is to plot line corresponding to min(var34)
+#   - 
+def fitReadLog( infile, plot5 ) :
   fin = open( infile, "r" )
   tcm = []
   no = []
@@ -1438,11 +1452,13 @@ def fitReadLog( infile="saphFit2.log" ) :
       var34.append( float(a[14]) )
       var5.append( float(a[16]) )
     if line.startswith("*tcm:") :
-      iplot = len(tcm) - 1
+      iplot = len(tcm) - 1         # line number of vector 
     if line.startswith("# dataFileList:") :    
       dataFileList = line[ line.find("[")+1 : line.find("]")-1 ]
   fin.close()
-  if (iplot == -1) :
+  if plot5 :
+    iplot=var5.index( min(var5) )
+  elif (iplot == -1) :
     iplot = var34.index( min(var34) )
   print "read in %d lines from file %s" % (len(tcm),infile)
   print var34[iplot]
@@ -1452,19 +1468,15 @@ def fitReadLog( infile="saphFit2.log" ) :
 # show correlations between params
 def covarPlot( infile='saphFit2.log', plot5=False, vmin=0., vmax=0. ) :
     label = ['tcm','no','ne','angI','rho','olt','elt','var34','var5']
-    vec = fitReadLog( infile )
-    if plot5 :
-      jz = 8
-      var = vec[8]
-    else :
-      jz = 7
-      var = vec[7]
+    vec = fitReadLog( infile, plot5 )
     ibest = vec[9]
-    if ibest < 0 :
-      ibest = var.index( min(var) )
-    print "ibest = %d, min(var) = %.2f" % (ibest, min(var))
+       # ibest is the index of the point through which all planes will pass
+    if plot5 :
+      jz = 8      # var5
+    else :
+      jz = 7      # var34
     pyplot.ioff()
-    pp = PdfPages("covarPlot.pdf")
+    pp = PdfPages("Covar.pdf")
     pyplot.figure( figsize=(11,8) )
     nplot = 1
     for jx in range(0,7) :
@@ -1528,7 +1540,7 @@ def covarPlot( infile='saphFit2.log', plot5=False, vmin=0., vmax=0. ) :
       pyplot.savefig( pp, format="pdf" )
       pyplot.show()
     pp.close()
-    print "plot covarPlot.pdf written to disk"
+    print "Covar.pdf written to disk"
 
 # strip out one plane of a multidimensional data cube, passing through point with lowest variance
 # 
