@@ -31,9 +31,9 @@ ccgs = 2.99792e10   # speed of light in cm/sec
 plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
-               "ymin" : -.1,       # -.1 for band7, -.2 for band9
-               "ymax" : 1.5,      # 1.95 for band7, 4.8 for band9
-               "linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
+               "ymin" : -.2,       # -.1 for band7, -.2 for band9
+               "ymax" : 8.,      # 1.95 for band7, 4.8 for band9
+               "linelistFile" : "/o/plambeck/OriALMA/Band8/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
@@ -62,6 +62,25 @@ B9spw2 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw2.100plus.a.txt",
           'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a2"}
 B9spw3 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw3.100plus.a.txt", 
           'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a3"}
+
+BN7spw0 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw0.ch100.txt", 
+           'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b0"}
+BN7spw1 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw1.ch100.txt", 
+           'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b1"}
+BN7spw2 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw2.ch100.txt", 
+           'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b2"}
+BN7spw3 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw3.ch100.txt", 
+           'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b3"}
+
+B8spw0 = {'file': "/big_scr6/plambeck/460GHz/miriad/spw0.ch250.txt", 
+           'flag': "/o/plambeck/OriALMA/Band8/Spectra/flags_a0"}
+B8spw1 = {'file': "/big_scr6/plambeck/460GHz/miriad/spw1.ch250.txt", 
+           'flag': "/o/plambeck/OriALMA/Band8/Spectra/flags_a1"}
+B8spw2 = {'file': "/big_scr6/plambeck/460GHz/miriad/spw2.ch250.txt", 
+           'flag': "/o/plambeck/OriALMA/Band8/Spectra/flags_a2"}
+B8spw3 = {'file': "/big_scr6/plambeck/460GHz/miriad/spw3.ch250.txt", 
+           'flag': "/o/plambeck/OriALMA/Band8/Spectra/flags_a3"}
+
 specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
 
 
@@ -347,15 +366,18 @@ def processLineList( lineListFile, vsource=5. ) :
     return name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth
 
 # ----------------------------------------------------------------------------------------------
-# parse splatalogue output, remove unobserved frequencies, duplicates 
+# parse splatalogue output, remove unobserved frequencies, duplicates u
 
-def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/plambeck/OriALMA/Spectra/splat_ann.csv" ) :
-    freqRanges = [ [340.545, 344.310], [352.665, 356.430], [649.282, 651.177], [661.303, 665.067], [665.922, 667.817] ]
+#def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/plambeck/OriALMA/Spectra/extra.csv" ) :
+def pruneLineList( infile="/o/plambeck/OriALMA/Band8/Spectra/splatalogue.csv", outfile="/o/plambeck/OriALMA/Band8/Spectra/splat_ann.csv" ) :
+    #freqRanges = [ [340.545, 344.310], [352.665, 356.430], [649.282, 651.177], [661.303, 665.067], [665.922, 667.817] ]
+    freqRanges = [ [462.5, 463.5], [463.6, 465.6], [473.9, 474.9], [475.7, 477.7] ]
     copy = []
     name = []
     QN = []
     freq = []
     cat = []
+    EL = []
 
   # pass 1: read file, create lists of species, freq, QN, linelist for each input line 
     fin = open( infile, "r" )
@@ -365,6 +387,7 @@ def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/p
       freq.append( 0. )
       QN.append( "" )
       cat.append( "" )
+      EL.append( 0. )
       if len(line) > 0 :
         a = line.split(":")
         if "Species" in a[0] :
@@ -376,11 +399,15 @@ def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/p
               QNcol = n
             if "Linelist" in a[n] :
               catCol = n
+            if "E_L (K)" in a[n] :
+              ELCol = n
+              print "ELCol = %d" % ELCol
         else : 
           name[-1] = a[nameCol]
           freq[-1] = float(a[freqCol])
           QN[-1] = a[QNcol]
           cat[-1] = a[catCol]
+          EL[-1] = float(a[ELCol])
 
         # for catalog lines, copy only those in observed freq ranges
           copy[-1] = 0
@@ -397,7 +424,7 @@ def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/p
           nsrchmax = len(copy)
         for m in range(n+1,nsrchmax) :
           if (name[m] == name[n] ) and (QN[m].replace(" ","") == QN[n].replace(" ","")) :
-            print freq[m],cat[m]
+            # print freq[m],cat[m]
             if "CDMS" in cat[n] :
               copy[m] = 0
             elif "CDMS" in cat[m] :
@@ -413,7 +440,11 @@ def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/p
     n = 0
     for line in fin :
       if copy[n] :
-        fout.write("%s:None:None:\n" % line.rstrip('\n'))
+        if EL[n] > 500. :
+        #fout.write("%s:None:None:\n" % line.rstrip('\n'))
+          fout.write("%s:yellow:36.:\n" % line.rstrip('\n'))
+        else :
+          fout.write("%s:green:36.:\n" % line.rstrip('\n'))
       n = n+1
     fin.close()
     fout.close()
@@ -474,7 +505,7 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
 # return continuum level, continuum rms, and flaggedBad array
 # DANGER - spectra are expected to cover the entire spectral window; partial spectra will mess up
 
-def findRMS( chan, freq, flux, flagtable ) :
+def findRMS( chan, freq, flux, flagtable, nchans=1920 ) :
 
     flaggedBad = numpy.zeros( len(chan), dtype=int )
     if flagtable :
@@ -484,19 +515,17 @@ def findRMS( chan, freq, flux, flagtable ) :
         print "couldn't find flagtable %s - skipping rms and contLevel calculation" % flagtable
         return [0.,0.,flaggedBad] 
 
-    # note that flagtable is based on 3840 chans/spectrum, whereas spectrum we are
-    #   evaluating may have been made with line=chan,3840/nscale,1,nscale,nscale
+    # note that flagtable is just a list of channels "nchans" in the original uv data;
+    # there may be a different number of channels "nch" in the map if it was made
+    #    with line=chan,nch,1,nstep,nstep
+    # figure out nstep based on nchans (input parameter) and nch (length of array) 
+    # for B7 and B9 data, nchans=3840 (the default), but for B8 Hirota data, nchans=1920
     # figure out nscale from number of channels in spectrum; then, to prevent mistakes,
     #   confirm that frequency increment makes sense
     # note that there is no protection against mixing up flagtables
       
-      nscale = 3840/len(chan)
-      freqStep = (freq[-1] - freq[0])/len(freq)
-      expectedFreqStep = nscale * 1.875/3840.
-      if abs(freqStep - expectedFreqStep) > 1.e-5 :
-        print "ERROR: incorrect freqStep - skippin grms and contLevel calculation"
-        return [0.,0.,flaggedBad]
- 
+      
+      nscale = nchans/len(chan)
       for line in fin :
         if not line.startswith("#") :
           a=line.split(",")
@@ -749,13 +778,16 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 # designed to make figures for publication
 # each figure is a full page with 4 panels, each covering a single spectral window
 
-#def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams ) :
-def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
+# CAUTION: edit nchans in findRMS
 
-    vsource=5.
-    if plotParams["pdf"] :
-      pyplot.ioff()
-      pp = PdfPages("spectrum.pdf")
+#def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams, vsource=5. ) :
+#def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams, vsource=5. ) :
+#def pubFig( specList=[BN7spw0,BN7spw1,BN7spw2,BN7spw3], plotParams=plotParams, vsource=9. ) :
+#def pubFig( specList=[BN7spw0,BN7spw1], plotParams=plotParams, vsource=9. ) :
+def pubFig( specList=[B8spw0,B8spw1,B8spw2,B8spw3], plotParams=plotParams, vsource=5. ) :
+
+    pyplot.ioff()
+    pp = PdfPages("spectrum.pdf")
     ymin = plotParams["ymin"]
     ymax = plotParams["ymax"]
     npanels = 4
@@ -795,12 +827,17 @@ def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams ) :
       if npanel == npanels :
          p.set_xlabel("freq (GHz)", fontsize=8)
       p.set_ylabel("flux density (Jy)", fontsize=8)
-      npanel = npanel + 1
+      if npanel >= npanels :
+        pyplot.savefig( pp, format='pdf' )
+        pyplot.show()
+        npanel = 1
+      else :
+        npanel = npanel + 1
 
-    if plotParams["pdf"] :
+    if npanel > 1 :
       pyplot.savefig( pp, format='pdf' )
-      pp.close()
-    pyplot.show()
+      pyplot.show()
+    pp.close()
 
 # returns line intensities in LINEAR units for a particular temperature T
 def calcIntensity( infile, T ) :
@@ -948,19 +985,25 @@ def plotSnippets( infile ) :
     pyplot.show()
 
 # special-purpose routine to read fluxes from xxGHz.csv files and plot
-# csvFileList = [ '90GHz.csv', '229GHz.csv', '350GHz.csv', '660GHz.csv' ]
-csvFileList = [ '229GHz_500.csv', '350GHz_500.csv', '660GHz_500.csv' ]
-srcNameList = [ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' ]
+csvFileList = [ '90GHz.csv', '229GHz.csv', '350GHz.csv', '460GHz.csv', '660GHz.csv' ]
+# csvFileList = [ '6.1GHz.csv', '229GHz_500.csv', '350GHz_500.csv', '660GHz_500.csv' ]
+srcNameList = [ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l' ]
 def plotFluxes( ) :
+  nx = 3
+  ny = 2
+  pyplot.ioff()
+  pp = PdfPages("pointSrcFluxes.pdf")
   nplot=0
   for srcName in srcNameList :
     nplot = nplot+1
-    p = pyplot.subplot(2,4,nplot)
-    p.axis( [70., 1000., 2., 10000.] )
+    p = pyplot.subplot(ny,nx,nplot)
+    p.axis( [70., 1000., 1., 10000.] )
     p.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
     frqGHz = []
+    melfrqGHz = []
     SmJy = []
     uncSmJy = []
+    melJy = []
     print " "
     for csvFile in csvFileList :
       fin = open( csvFile, 'r' )
@@ -968,6 +1011,7 @@ def plotFluxes( ) :
         if len(line) > 0 :
           a = line.split(',')
           if (len(a[0]) > 0 ) and (a[0] == srcName) :
+          # values from me
             try :
               mJy = 1000. * float(a[10]) * float(a[16]) 
               if mJy > 0. :
@@ -980,6 +1024,22 @@ def plotFluxes( ) :
                 pass     # don't include if flux is zero
             except :             # handles case where flux = '-'
               pass
+          # values from Mel
+            try: 
+              mJy = 1000. * float(a[22])
+              if mJy > 0. :
+                n = csvFile.find("GHz") 
+                melfrqGHz.append( float( csvFile[0:n] ) )
+                melJy.append( mJy )
+              else :
+                pass     # don't include if flux is zero
+            except :             # handles case where flux = '-'
+              pass
+              
+    print "source %s" % srcName
+    print "frqGHz, SmJy, uncSmJy: ",frqGHz,SmJy,uncSmJy
+    print "melGHz, melJy: ", melfrqGHz, melJy
+
     if len(frqGHz) == len(SmJy) :
       Sf2 = []
       for frq,S in zip(frqGHz,SmJy) : 
@@ -989,13 +1049,24 @@ def plotFluxes( ) :
       for frq,S in zip(frqGHz,SmJy) : 
           Sf2.append( pow(frq/fref, 2.) * Sref )
       p.loglog( frqGHz, SmJy )
+      p.loglog( melfrqGHz, melJy, color='b', marker='o') 
       p.loglog( frqGHz, Sf2, linestyle='dashed')
       p.errorbar( frqGHz, SmJy, yerr=uncSmJy)
-      p.text( .1, .8, "%s" % srcName, transform=p.transAxes )
+      p.text( .1, .9, "%s" % srcName, transform=p.transAxes )
       p.tick_params( axis='both', which='major', labelsize=8 )
     else :
       print srcName, frqGHz, SmJy
-  pyplot.show()
+    if nplot >= (nx*ny) :
+      pyplot.tight_layout( )
+      pyplot.savefig( pp, format='pdf' )
+      pyplot.show()
+      nplot = 0
+      
+  if nplot > 0 :
+    pyplot.tight_layout( )
+    pyplot.savefig( pp, format='pdf' )
+    pyplot.show()
+  pp.close()
 
 def makeEllintList( csvFile ) :
   fin = open( csvFile, 'r' )
@@ -1160,12 +1231,28 @@ regiona = "arcsec,box(.1)"
 regionb = "arcsec,box(.15)"
 regionc = "arcsec,box(-.3,-.45,-.45,-.3)"
 regiond = "arcsec,box(1.3,2,1,2.3)"
+BNbox = 'arcsec,box(.14,-.05,-.16,.25)'
+
+def makespec460() :
+  dumpspec( "spw0.ch250.cm", "spw0.ch250.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
+  dumpspec( "spw1.ch250.cm", "spw1.ch250.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
+  dumpspec( "spw2.ch250.cm", "spw2.ch250.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
+  dumpspec( "spw3.ch250.cm", "spw3.ch250.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
 
 def makespec() :
   dumpspec( "spw0.100plus.cm", "spw0.100plus.c.txt", region=regionc, vsource=0., hann=3 )
   dumpspec( "spw1.100plus.cm", "spw1.100plus.c.txt", region=regionc, vsource=0., hann=3 )
   dumpspec( "spw2.100plus.cm", "spw2.100plus.c.txt", region=regionc, vsource=0., hann=3 )
   dumpspec( "spw3.100plus.cm", "spw3.100plus.c.txt", region=regionc, vsource=0., hann=3 )
+
+# BNmakespec created 1 feb 2017
+def BNmakespec() :
+  dumpspec( "spw0.ch500.cm", "spw0.ch500.txt", region=BNbox, vsource=0., hann=3 )
+  dumpspec( "spw1.ch500.cm", "spw1.ch500.txt", region=BNbox, vsource=0., hann=3 )
+  #dumpspec( "spw0.ch100.cm", "spw0.ch100.txt", region=BNbox, vsource=0., hann=3 )
+  #dumpspec( "spw1.ch100.cm", "spw1.ch100.txt", region=BNbox, vsource=0., hann=3 )
+  #dumpspec( "spw2.ch100.cm", "spw2.ch100.txt", region=BNbox, vsource=0., hann=3 )
+  #dumpspec( "spw3.ch100.cm", "spw3.ch100.txt", region=BNbox, vsource=0., hann=3 )
 
 # helper routine for evalSnippets; returns math.log(value), or -100 if value is negative
 def evalLog( value ) :
@@ -1443,7 +1530,7 @@ def plotRecomb( infile='snip_recomb', nrows=2, ncols=1, vmin=-45., vmax=55. ) :
       p.text(.97, .78,  "%.4f GHz" % Line["linefreq"], horizontalalignment='right', transform=p.transAxes, fontsize=6, color='b' )
     else :
       p.plot( vel, flux, color="red", linewidth=1 )
-      p.plot( [7.,21.], [1.05*Line["contLevel"],1.06*Line["contLevel"]], color="black", linewidth=0.8 )
+      p.plot( [7.,21.], [1.05*Line["contLevel"],1.05*Line["contLevel"]], color="black", linewidth=0.6 )
       p.text(14., 1.07*Line["contLevel"], "limit", horizontalalignment='center', fontsize=6, color='black' )
       p.axhline( y=Line["contLevel"], linestyle='--', color='blue')
       p.axhline( y=0, linestyle='-', lw=0.1, color='blue')
@@ -1460,12 +1547,13 @@ def plotRecomb( infile='snip_recomb', nrows=2, ncols=1, vmin=-45., vmax=55. ) :
       p.set_xlabel("V$_{LSR}$ (km/sec)", fontsize=6)
   
   # comment in following lines for recomb line plot; plot shaded box over presumed location of line
-    goodRect1 = Rectangle( (-13.,Line["contLevel"]), 36., 0.2*(ymax-ymin), \
-       fill=False, edgecolor='black',linewidth=0.5, facecolor='yellow', alpha=.1)   # target range
-    goodRect2 = Rectangle( (5.,Line["contLevel"]), 18., 0.2*(ymax-ymin), \
-       fill=True, edgecolor='none', facecolor='yellow', alpha=.5)   # target range
-    p.add_patch( goodRect1 )
-    p.add_patch( goodRect2 )
+    if (nn == 0) or (nn == 3) :
+      goodRect2 = Rectangle( (5.,Line["contLevel"]), 18., 0.2*(ymax-ymin), \
+         fill=True, edgecolor='none', facecolor='yellow', alpha=.5)   # target range
+      goodRect1 = Rectangle( (-13.,Line["contLevel"]), 36., 0.2*(ymax-ymin), \
+         fill=False, edgecolor='black',linewidth=0.5, facecolor='yellow', alpha=.5)   # target range
+      p.add_patch( goodRect2 )
+      p.add_patch( goodRect1 )
 
   # advance panel number at the very end
     nn = nn + 1
@@ -2067,19 +2155,22 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
     pp = PdfPages("Flx.pdf")
     pyplot.figure( figsize=(8,8) )
     ax = pyplot.subplot(1,1,1)
-    ax.axis( [4, 1000, .1, 20000.], fontsize=12, linewidth=1.1 )
+    # ax.axis( [4, 1000, .1, 20000.], fontsize=12, linewidth=1.1 )
+    ax.axis( [4, 1000, .1, 20000.], fontsize=20, linewidth=1.1 )
     ax.set_xscale( "log" )
     ax.set_yscale( "log" )
-    ax.set_xlabel("freq (GHz)", fontsize=12)
-    ax.set_ylabel("flux density (mJy)", fontsize=12)
-    ax.tick_params(length=8, which='major')
-    ax.tick_params(length=6, which='minor')
+    # ax.set_xlabel("freq (GHz)", fontsize=12)
+    ax.set_xlabel("freq (GHz)", fontsize=16)
+    # ax.set_ylabel("flux density (mJy)", fontsize=12)
+    ax.set_ylabel("flux density (mJy)", fontsize=16)
+    ax.tick_params(length=8, which='major', labelsize=16)
+    ax.tick_params(length=6, which='minor', labelsize=16)
     pyplot.grid(True)
 
   # plot nu^2 curve; show as dashed line below 30 GHz
   # nu^2 curve passes through 340 mJy at 229 GHz
-    ax.plot([1,30.],[.00648,5.8351],linestyle='--',color='black',linewidth=0.8)
-    ax.plot([30.,1000.],[5.8351,6483.],linestyle='-',color='black',linewidth=1.2)
+    ax.plot([1,30.],[.00629,5.6635],linestyle='--',color='black',linewidth=0.8)
+    ax.plot([30.,1000.],[5.6635,6293.],linestyle='-',color='black',linewidth=1.2)
 
   # plot Hminus curve from file Hminus.dat, if it can be found
     hfreq = []
@@ -2105,10 +2196,10 @@ def plotFlux( FluxFile="SrcIFlux.dat") :
   # label the dust and free-free curves
     #ax.text( 0.07, .9, "Orion SrcI", transform=ax.transAxes, \
     #    horizontalalignment='left', fontsize=18, rotation='horizontal' )
-    ax.text( 0.66, .33, "free-free", transform=ax.transAxes, \
-        horizontalalignment='center', fontsize=14, color="red", rotation='horizontal' )
+    ax.text( 0.66, .31, "free-free", transform=ax.transAxes, \
+        horizontalalignment='center', fontsize=16, color="red", rotation='horizontal' )
     ax.text( 0.66, .56, "dust", transform=ax.transAxes, \
-        horizontalalignment='center', fontsize=14, color="black", rotation=41 )
+        horizontalalignment='center', fontsize=16, color="black", rotation=41 )
 
   # brute force way to add legends; symbol size scheme is different, but this looks OK
   # another problem is that a line is drawn through symbols on the legend, but it is so short that it mostly doesn't show
@@ -2134,3 +2225,20 @@ def dEllipse( major, minor, majDeg, paDeg ) :
     theta = math.radians( majDeg - paDeg )
     rsq = pow(major*minor,2)/( pow(major*math.sin(theta), 2) + pow(minor*math.cos(theta), 2) )
     print (majDeg - paDeg), math.sqrt(rsq)
+
+# generate olay file from ForbrichCatalog.txt
+def Forbrich() :
+    fin = open( "/o/plambeck/OriALMA/Refs/ForbrichCatalog.txt", "r" )
+    fout = open( "forbrich.olay", "w" )
+    for line in fin :
+      if not line.startswith("#") :
+        a = line.split()
+        fout.write("sym hms dms %s no %s %s %s %s %s %s 2 1\n" % (a[0], a[2], a[3], a[4], a[6], a[7], a[8]))
+    fin.close()
+    fout.close()
+      
+# check our solution to eqn 3 for the referee
+def check3( ) :
+    for tauff in numpy.arange(1.,5.,.5) :
+      tauL = 5.7*tauff
+      print "%8.1f  %8.4f" % ( tauff, (1.-math.exp(-1.*(tauff+tauL)))/(1.-math.exp(-1.*tauff)))
