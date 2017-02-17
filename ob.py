@@ -974,6 +974,26 @@ def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr
   # Return the amplitude arrays
     return numpy.array(pT), numpy.array(sT), numpy.array(pR), numpy.array(sR)
 
+# I am searching for some kind of conceptual problem in dealing with circular pol
+def doit7() :
+   nuArr = numpy.array( [220.] )
+   noArr = numpy.array( [3.066] )
+   neArr = numpy.array( [3.404] )
+   oltArr = numpy.array( [2.e-4] )
+   eltArr = numpy.array( [2.e-4] )
+   dArr = numpy.array( [1.008] )
+   chiArr = numpy.array( [0.] )
+   stackRotAngle = 0. 
+   stackTilt = 44.
+   for Ei in [ numpy.array([0.,1.]), numpy.array([1.,0.]), numpy.array([.707,1j*.707]), numpy.array([.707,-1j*.707]) ] :
+     pT, sT, pR, sR = anisotropicTransmissionPol(nuArr, noArr, neArr, oltArr, eltArr, dArr, \
+        chiArr, stackRotAngle, stackTilt, Ei)
+     print "\nEi: ", Ei
+     print "pT: %.4f" % (pT*numpy.conj(pT)).astype(float), pT
+     print "sT: %.4f" % (sT*numpy.conj(sT)).astype(float), sT
+     print "pR: %.4f" % (pR*numpy.conj(pR)).astype(float), pR
+     print "sR: %.4f" % (sR*numpy.conj(sR)).astype(float), sR 
+
 # =====================================================================================
 # stackDesc describes the stack of dielectric layers
 # to maintain compatibility with Tom's code, stackDesc is a list of arrays
@@ -985,13 +1005,13 @@ def anisotropicTransmissionPol(nuArr, noArr, neArr, oLTArr, eLTArr, tArr, chiArr
 #   polarized (polAngle=0); plate thickness was .376 cm
 # parameters for jul 2015 data
 #
-noArr = numpy.array([3.06]) #Actually measured
-neArr = numpy.array([3.39]) #Actually measured
-oltArr = numpy.array([0.5e-4]) #Estimated from Dick's and my measurement
-eltArr = numpy.array([1.5e-4]) #Estimated from Dick's and my measurement
-dArr = numpy.array([1.009]) #[cm], Actually measured
-chiArr = numpy.array([0.]) #[deg]
-stackDesc = [ noArr, neArr, oltArr, eltArr, dArr, chiArr ]
+#noArr = numpy.array([3.06]) #Actually measured
+#neArr = numpy.array([3.39]) #Actually measured
+#oltArr = numpy.array([0.5e-4]) #Estimated from Dick's and my measurement
+#eltArr = numpy.array([1.5e-4]) #Estimated from Dick's and my measurement
+#dArr = numpy.array([1.009]) #[cm], Actually measured
+#chiArr = numpy.array([0.]) #[deg]
+#stackDesc = [ noArr, neArr, oltArr, eltArr, dArr, chiArr ]
 #
 # 3 other parameters are required:
 #   stackRotAngle is the azimuthal rotation of the entire stack
@@ -999,9 +1019,9 @@ stackDesc = [ noArr, neArr, oltArr, eltArr, dArr, chiArr ]
 #   polAngle describes the angle of linear polarization relative to the plane of incidence;
 #     e.g., polAngle = 90 describes "S" polarization, perpendicular to plane of incidence
 #
-stackRotAngle = 40. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
+#stackRotAngle = 40. #[deg], arbitrary (but maybe one of the angles that Dick and I measured?)
 # polAngle = 90. # 3mm polarization (horiz) is perp to the plane of incidence 
-stackTilt = 42.5 #[deg]
+#stackTilt = 42.5 #[deg]
 #
 # parameters for sep 2015 data:
 # dArr = numpy.array([3.76e-1]) #[cm], Actually measured
@@ -1010,7 +1030,7 @@ stackTilt = 42.5 #[deg]
 
 # saphModel is designed to model thermal emission data from summer 2015, where LSB and USB
 #   are folded together
-def saphModel( LOGHz, IFfrqArray, stackDesc, stackRotAngle, stackTilt, Ei, outFile  ) :
+def saphModel( LOGHz, IFfrqArray, stackDesc, stackRotAngle, stackTilt, Ei, outFile, Lfrac=0.5  ) :
    noArr = stackDesc[0]
    neArr = stackDesc[1]
    oltArr = stackDesc[2]
@@ -1029,14 +1049,21 @@ def saphModel( LOGHz, IFfrqArray, stackDesc, stackRotAngle, stackTilt, Ei, outFi
      fout.write("# frq  P3  P4  P5\n")
    nuLSBArr = LOGHz - IFfrqArray
    nuUSBArr = LOGHz + IFfrqArray 
-   pTLSB, sTLSB, pRLSB, sRLSB = anisotropicTransmissionPol(nuLSBArr, noArr, neArr, oltArr, eltArr, dArr, \
-      chiArr, stackRotAngle, stackTilt, Ei)
-   pTUSB, sTUSB, pRUSB, sRUSB = anisotropicTransmissionPol(nuUSBArr, noArr, neArr, oltArr, eltArr, dArr, \
-      chiArr, stackRotAngle, stackTilt, Ei)
-   T = 0.5 * ( (pTLSB * numpy.conj(pTLSB) + sTLSB * numpy.conj(sTLSB) ).astype(float) \
-             + (pTUSB * numpy.conj(pTUSB) + sTUSB * numpy.conj(sTUSB) ).astype(float) )
-   R = 0.5 * ( (pRLSB * numpy.conj(pRLSB) + sRLSB * numpy.conj(sRLSB) ).astype(float) \
-             + (pRUSB * numpy.conj(pRUSB) + sRUSB * numpy.conj(sRUSB) ).astype(float) )
+   if (Lfrac != 0.) :
+     pTLSB, sTLSB, pRLSB, sRLSB = anisotropicTransmissionPol(nuLSBArr, noArr, neArr, oltArr, eltArr, dArr, \
+        chiArr, stackRotAngle, stackTilt, Ei)
+   else :
+     pTLSB = sTLSB = pRLSB = sRLSB = 0 + 0j
+   if (Lfrac != 1.) :
+     pTUSB, sTUSB, pRUSB, sRUSB = anisotropicTransmissionPol(nuUSBArr, noArr, neArr, oltArr, eltArr, dArr, \
+        chiArr, stackRotAngle, stackTilt, Ei)
+   else :
+     pTUSB = sTUSB = pRUSB = sRUSB = 0 + 0j
+ 
+   T = Lfrac * (pTLSB * numpy.conj(pTLSB) + sTLSB * numpy.conj(sTLSB) ).astype(float) \
+             + (1.-Lfrac) * (pTUSB * numpy.conj(pTUSB) + sTUSB * numpy.conj(sTUSB) ).astype(float) 
+   R = Lfrac * (pRLSB * numpy.conj(pRLSB) + sRLSB * numpy.conj(sRLSB) ).astype(float) \
+             + (1.-Lfrac) * (pRUSB * numpy.conj(pRUSB) + sRUSB * numpy.conj(sRUSB) ).astype(float) 
    A = numpy.ones( len(T), dtype=float) - T - R 
    P3 = 291.*T + 78.*R + 294.*A
    P4 = 80.*T + 294.*R + 294.*A
@@ -1176,40 +1203,44 @@ def saphFit( infile, thetaList=numpy.arange(0.,90.1,10.) ) :
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
-#tcmSrch = [1.005, 1.007, 1.009, 1.011, 1.013]                       
-#tcmSrch = [ 1.009, 1.010, 1.011]                         # measured thickness of the plate was 1.009
-tcmSrch = [1.010]
+#tcmSrch = numpy.array( [ 1.007, 1.009, 1.011, 1.013])                       
+# tcmSrch = numpy.array( [1.009] )
+tcmSrch = numpy.array( [.3750,.3755,.3760] )
 
 # noSrch = [3.020, 3.025, 3.030, 3.035, 3.040]             # ordinary index
-#noSrch = numpy.arange(3.020,3.061,.004)             # ordinary index
-noSrch = [3.032]
+noSrch = numpy.arange(3.064,3.0701,.002)             # ordinary index
+#noSrch = numpy.array( [3.066] )
 
 # neSrch = [3.380, 3.385, 3.390, 3.395, 3.400]             # extraordinary index
-#neSrch = numpy.arange(3.370,3.413,.004)             # extraordinary index
-neSrch = [3.402]
+neSrch = numpy.arange(3.402,3.4061,.002)             # extraordinary index
+#neSrch = numpy.array( [3.404] )
 
-oltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
-#oltSrch = [0.5e-4 ]           # ordinary loss tangent
-eltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
-#eltSrch = [ 0.5e-4 ]           # extraordinary loss tangent
+# oltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
+oltSrch = numpy.array( [2.0e-4 ] )          # ordinary loss tangent
+# eltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
+eltSrch = numpy.array( [2.0e-4 ] )          # extraordinary loss tangent 
 
-#angISrch = [ 40., 40.5, 41.,41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
-angISrch = [ 44. ]     # angle of incidence ('stackTilt')
+# angISrch = [ 40., 40.5, 41.,41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
+angISrch = numpy.array( [ 44. ] )     # angle of incidence ('stackTilt')
+angISrch = numpy.arange( 42.,48.1,1.)
 
-rhoSrch = numpy.arange(-92.,-84.1,2)              # stack rotation angle relative to plane of incidence ('stackAngle')
-#rhoSrch = [-92.,-90.,-88.,-86.,-84.]
+rhoSrch = numpy.arange(-90.,88.1,2.)              # stack rotation angle relative to plane of incidence ('stackAngle')
+#rhoSrch = numpy.array( [0.] )
 
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
 #dataFileList = ["100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat", \
-#                "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat", \
+#                "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat" ]
 #                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
 #                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
+#dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
+#dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
 #dataFileList = [ "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat" ]
 #dataFileList = [ "100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat" ]
+dataFileList = [ "220_pos10.dat" ]
 
+# doit6 makes it quick to run saphFit2 without remembering the input variables
 def doit6() :
     saphFit2( dataFileList, srchList)
 
@@ -1222,17 +1253,17 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
     fout = open( outFile, "a")
     fout.write("#\n# %s\n" % datetime.datetime.now().strftime("%m/%d/%Y %H:%M") )
     fout.write("# dataFileList: %s\n" % (dataFileList) )
-    #fout.write("# tcmSrch:  %s\n" % numpy.array_str(tcmSrch, precision=3, max_line_width=200 ) )
-    #fout.write("# noSrch:   %s\n" % numpy.array_str(noSrch, precision=3, max_line_width=200 ) )
-    #fout.write("# neSrch:   %s\n" % numpy.array_str(neSrch, precision=3, max_line_width=200 ) )
-    #fout.write("# oltSrch:  %s\n" % numpy.array_str(oltSrch, precision=5, max_line_width=200 ) )
-    #fout.write("# eltSrch:  %s\n" % numpy.array_str(eltSrch, precision=5, max_line_width=200 ) )
-    #fout.write("# angISrch: %s\n" % numpy.array_str(angISrch, precision=2, max_line_width=200 ) )
-    #fout.write("# rhoSrch:  %s\n" % numpy.array_str(rhoSrch, precision=2, max_line_width=200 ) )
+    fout.write("# tcmSrch:  %s\n" % numpy.array_str(tcmSrch, precision=4, max_line_width=200 ) )
+    fout.write("# noSrch:   %s\n" % numpy.array_str(noSrch, precision=3, max_line_width=200 ) )
+    fout.write("# neSrch:   %s\n" % numpy.array_str(neSrch, precision=3, max_line_width=200 ) )
+    fout.write("# oltSrch:  %s\n" % numpy.array_str(oltSrch, precision=5, max_line_width=200 ) )
+    fout.write("# eltSrch:  %s\n" % numpy.array_str(eltSrch, precision=5, max_line_width=200 ) )
+    fout.write("# angISrch: %s\n" % numpy.array_str(angISrch, precision=2, max_line_width=200 ) )
+    fout.write("# rhoSrch:  %s\n" % numpy.array_str(rhoSrch, precision=2, max_line_width=200 ) )
     fout.write("#\n")
     fout.close()
 
-    frqArray = numpy.array( numpy.arange(.3,9.91,.2) )
+    frqArray = numpy.array( numpy.arange(.3,9.91,.4) )
     ntot = len(srchList[0]) * len(srchList[1]) * len(srchList[2]) * len(srchList[3]) \
              * len(srchList[4]) * len(srchList[5]) * len(srchList[6])
 
@@ -1279,7 +1310,7 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
                     var34 = []
                     var5 = []
                     for n in range(0,len(dataFileList)) :
-                      T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc, rho+rhoOff[n], angI, Ei[n], None  ) 
+                      T3m,T4m,T5m = saphModel( LOfrq[n], frqArray, stackDesc, rho-rhoOff[n], angI, Ei[n], None  ) 
                       var34.append( numpy.mean( numpy.power( T3m-T3sm[n], 2. )) + numpy.mean( numpy.power( T4m-T4sm[n], 2. )) )
                       var5.append( numpy.mean( numpy.power( T5m-T5sm[n], 2. )) )
                       print "... %20s   var34: %.2f   var5: %.2f" % (dataFileList[n], var34[-1], var5[-1])
@@ -1297,7 +1328,7 @@ def saphFit2( dataFileList, srchList=srchList, T6override=None, outFile="saphFit
                   # var34sum and var5sum are summed over the independent data files
                     var34sum = numpy.sum(var34)
                     var5sum = numpy.sum(var5)
-                    print "tcm = %.3f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f, var5 = %.2f\n" % \
+                    print "tcm = %.4f, no = %.3f, ne = %.3f, angI = %.1f, rho = %.1f, olt,elt = %.2e, %.2e, var34 = %.1f, var5 = %.2f\n" % \
                         (tcm, no, ne, angI, rho, olt, elt, var34sum, var5sum )
                     fout = open(outFile, "a")
                     fout.write( "tcm: %.3f  nO: %.3f  nE: %.3f  angI: %.1f  rho: %.1f  olt,elt: %.2e %.2e  var34: %.1f  var5: %.2f\n" % \
@@ -1361,15 +1392,22 @@ def plotFit( dataFileList, stackDesc, rho, angI ) :
       T3sm = saphSmooth( fGHz, T3, frqArray )
       T4sm = saphSmooth( fGHz, T4, frqArray )
       T5sm = saphSmooth( fGHz, T5, frqArray )
-      T3m,T4m,T5m = saphModel( LOGHz, frqArray, stackDesc, rho+rhoOffset, angI, Eivec, None  ) 
+      T3mL,T4mL,T5mL = saphModel( LOGHz, frqArray, stackDesc, rho-rhoOffset, angI, Eivec, None, Lfrac=1.  ) 
+      T3mU,T4mU,T5mU = saphModel( LOGHz, frqArray, stackDesc, rho-rhoOffset, angI, Eivec, None, Lfrac=0.  ) 
+      Lfrac = 0.5
+      T3m = Lfrac*T3mL + (1.-Lfrac)*T3mU
+      T4m = Lfrac*T4mL + (1.-Lfrac)*T4mU
+      T5m = Lfrac*T5mL + (1.-Lfrac)*T5mU
       variance = numpy.mean( numpy.power( T3m-T3sm, 2.) ) + numpy.mean( numpy.power( T4m-T4sm, 2. ))
       var5 = numpy.mean( numpy.power( T5m-T5sm, 2.) )
       fig = pyplot.subplot(nm,nm,nplot)
       fig.plot( fGHz, T3, color='red' )
-      fig.plot( frqArray, T3sm, color='red', linestyle='--' )
+      fig.plot( frqArray, T3mU, color='red', linestyle='dashed' )
+      fig.plot( frqArray, T3mL, color='red', linestyle='dotted' )
       fig.plot( frqArray, T3m, color='red' )
       fig.plot( fGHz, T4, color='blue' )
-      fig.plot( frqArray, T4sm, color='blue', linestyle='--' )
+      fig.plot( frqArray, T4mU, color='blue', linestyle='dashed' )
+      fig.plot( frqArray, T4mL, color='blue', linestyle='dotted' )
       fig.plot( frqArray, T4m, color='blue' )
       fig.plot( fGHz, T5, color='purple' )
       fig.plot( frqArray, T5m, color='purple' )
