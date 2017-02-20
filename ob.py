@@ -1040,6 +1040,12 @@ def saphModel1( nuArr, stackDesc, stackRotAngle, stackTilt, Ei ) :
       chiArr, stackRotAngle, stackTilt, Ei)
    T = (pT * numpy.conj(pT) + sT * numpy.conj(sT) ).astype(float) 
    R = (pR * numpy.conj(pR) + sR * numpy.conj(sR) ).astype(float)
+
+   # verified that the following expressions give exactly same answer as those above,
+   #   but take slightly longer (7.3 minutes vs 6.8 mins, for example)
+   # T = numpy.power( numpy.absolute( pT), 2.) + numpy.power( numpy.absolute(sT), 2.)
+   # R = numpy.power( numpy.absolute( pR), 2.) + numpy.power( numpy.absolute(sR), 2.)
+
    A = numpy.ones( len(T), dtype=float) - T - R
    P3 = 291.*T + 78.*R + 294.*A
    P4 = 80.*T + 294.*R + 294.*A
@@ -1105,15 +1111,18 @@ def saphReadData( infile, logfile="saphFit2.log" ) :
           rhoOffsetMissing = False
       # receiver polarization (H,V,L,R) - will be converted to Ei = [Epar, Eperp]
       # plane of incidence is V (vertical reflection into bucket); this is polAngle=0 in Tom's code
+      # 2/20/2017: changed def of L and R to make Y pol have same sign as H
         elif "rcvrPol" in line :
           if 'H' in line[line.find("=")+1:].upper() :
             Ei = numpy.array( [0.,1.], dtype=complex )
           elif 'V' in line[line.find("=")+1:].upper() :
             Ei = numpy.array( [1.,0.], dtype=complex )
           elif 'L' in line[line.find("=")+1:].upper() :
-            Ei = numpy.array( [1/math.sqrt(2.),1j/math.sqrt(2)], dtype=complex )
+            #Ei = numpy.array( [1/math.sqrt(2.),1j/math.sqrt(2)], dtype=complex )
+            Ei = numpy.array( [-1j/math.sqrt(2.),1./math.sqrt(2)], dtype=complex )
           elif 'R' in line[line.find("=")+1:].upper() :
-            Ei = numpy.array( [1/math.sqrt(2.),-1j/math.sqrt(2)], dtype=complex )
+            #Ei = numpy.array( [1/math.sqrt(2.),-1j/math.sqrt(2)], dtype=complex )
+            Ei = numpy.array( [1j/math.sqrt(2.),1/math.sqrt(2)], dtype=complex )
           rcvrPolMissing = False
     fin.close()
     if LOGHzMissing or rhoOffsetMissing or rcvrPolMissing :
@@ -1175,31 +1184,32 @@ def saphPlot( infile,theta, fGHz,P3,P4,P5, frqArray,P3m,P4m,P5m ) :
 # ... T5fit to find min variance in T5 (normally fits T3 and T4)
 # ... T6override to manually set temperature seen by reflection off the plate; this is important only for T5fit=True
 
-#tcmSrch = numpy.array( [ 1.007, 1.009, 1.011, 1.013])                       
-tcmSrch = numpy.array( [1.009] )
+# tcmSrch = numpy.array( [ 1.007, 1.009, 1.011, 1.013])                       
+# tcmSrch = numpy.array( [1.009] )
 # tcmSrch = numpy.array( [.3750,.3755,.3760] )
-#tcmSrch = numpy.array( [.3750] )
+# tcmSrch = numpy.array( [.3750] )
+tcmSrch = numpy.arange( 1.0085,1.0101,.0005)
 
 # noSrch = [3.020, 3.025, 3.030, 3.035, 3.040]             # ordinary index
-# noSrch = numpy.arange(3.064,3.0701,.002)             # ordinary index
-noSrch = numpy.array( [3.066] )
+noSrch = numpy.arange(3.063,3.0671,.001)             # ordinary index
+# noSrch = numpy.array( [3.065] )
 
 # neSrch = [3.380, 3.385, 3.390, 3.395, 3.400]             # extraordinary index
-# neSrch = numpy.arange(3.402,3.4061,.002)             # extraordinary index
-neSrch = numpy.array( [3.404] )
+neSrch = numpy.arange(3.402,3.4061,.001)             # extraordinary index
+# neSrch = numpy.array( [3.405] )
 
 # oltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
-oltSrch = numpy.array( [2.0e-4 ] )          # ordinary loss tangent
+oltSrch = numpy.array( [3.0e-4 ] )          # ordinary loss tangent
 # eltSrch = numpy.arange(1.5e-4, 5.1e-4, 0.5e-4)
-eltSrch = numpy.array( [2.0e-4 ] )          # extraordinary loss tangent 
+eltSrch = numpy.array( [3.0e-4 ] )          # extraordinary loss tangent 
 
 # angISrch = [ 40., 40.5, 41.,41.5, 42., 42.5 ]     # angle of incidence ('stackTilt')
 # angISrch = numpy.arange( 42.,48.1,1.)
-angISrch = numpy.array( [ 44. ] )     # angle of incidence ('stackTilt')
+angISrch = numpy.array( [ 43.,44.,45.,46.,47. ] )     # angle of incidence ('stackTilt')
+# angISrch = numpy.array( [ 44.] )     # angle of incidence ('stackTilt')
 
-# rhoSrch = numpy.arange(-90.,88.1,2.)              # stack rotation angle relative to plane of incidence ('stackAngle')
-# rhoSrch = numpy.array( [-12.] )
-rhoSrch = numpy.array( [48.] )
+rhoSrch = numpy.arange(-90.,88.1,4.)              # stack rotation angle relative to plane of incidence ('stackAngle')
+#rhoSrch = numpy.array( [38.] )
 
 srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 
@@ -1208,11 +1218,12 @@ srchList = [ noSrch, neSrch, oltSrch, eltSrch, tcmSrch, angISrch, rhoSrch ]
 #                "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat", \
 #                "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
 
-#dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
-dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
+dataFileList = [ "250_0deg.dat", "250_30deg.dat", "250_60deg.dat", "250_90deg.dat" ]
+#dataFileList = [ "220_0deg.dat", "220_30deg.dat", "220_60deg.dat", "220_90deg.dat" ]
 #dataFileList = [ "110_0deg.dat", "110_30deg.dat", "110_60deg.dat", "110_90deg.dat" ]
 #dataFileList = [ "100_0deg.dat", "100_30deg.dat", "100_60deg.dat", "100_90deg.dat" ]
 #dataFileList = [ "220_pos10.dat" ]
+#dataFileList = [ "229.5_pos12.dat" ]
 
 # doit6 makes it quick to run saphFit2 without remembering the input variables
 def doit6() :
@@ -1429,11 +1440,11 @@ def plotFit( dataFileList, stackDesc, rho, angI, showSB=False ) :
 #   in the first case, no[i] is the ordinary index used for a particular trial
 #   fit; in the second case, no[i] is the ordinary index of the ith layer
 #
-def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log", plot5=False ) :
+def plotFinal( dataFileList=dataFileList, resultsLog="saphFit2.log", plot5=False, showSB=False ) :
     tcm,no,ne,angI,rho,olt,elt,var34,var5,iplot,fitList = fitReadLog( resultsLog, plot5 )
     stackDesc = [ [no[iplot]], [ne[iplot]], [olt[iplot]], [elt[iplot]], [tcm[iplot]], [0.] ]    
     print stackDesc, rho[iplot], angI[iplot]
-    plotFit( dataFileList, stackDesc, rho[iplot], angI[iplot] ) 
+    plotFit( dataFileList, stackDesc, rho[iplot], angI[iplot], showSB=showSB ) 
         
 
 # read in results from saphFit2.log
