@@ -31,9 +31,9 @@ ccgs = 2.99792e10   # speed of light in cm/sec
 plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
-               "ymin" : -.2,       # -.1 for band7, -.2 for band9
-               "ymax" : 8.,      # 1.95 for band7, 4.8 for band9
-               "linelistFile" : "/o/plambeck/OriALMA/Band8/Spectra/splat_ann.csv", 
+               "ymin" : -.1,       # -.1 for band7, -.2 for band9
+               "ymax" : 1.,      # 1.95 for band7, 4.8 for band9
+               "linelistFile" : "/o/plambeck/OriALMA/Band6/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
@@ -80,6 +80,15 @@ B8spw2 = {'file': "/big_scr6/plambeck/460GHz/miriad/spw2.ch250.txt",
            'flag': "/o/plambeck/OriALMA/Band8/Spectra/flags_a2"}
 B8spw3 = {'file': "/big_scr6/plambeck/460GHz/miriad/spw3.ch250.txt", 
            'flag': "/o/plambeck/OriALMA/Band8/Spectra/flags_a3"}
+
+B6spw0 = {'file': "/big_scr6/plambeck/220GHz/miriad/spw0.ch100.txt", 
+           'flag': "/big_scr6/plambeck/220GHz/miriad/flags_a0"}
+B6spw1 = {'file': "/big_scr6/plambeck/220GHz/miriad/spw1.ch100.txt", 
+           'flag': "/big_scr6/plambeck/220GHz/miriad/flags_a1"}
+B6spw2 = {'file': "/big_scr6/plambeck/220GHz/miriad/spw2.ch100.txt", 
+           'flag': "/big_scr6/plambeck/220GHz/miriad/flags_a2"}
+B6spw3 = {'file': "/big_scr6/plambeck/220GHz/miriad/spw3.ch100.txt", 
+           'flag': "/big_scr6/plambeck/220GHz/miriad/flags_a3"}
 
 specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
 
@@ -369,9 +378,10 @@ def processLineList( lineListFile, vsource=5. ) :
 # parse splatalogue output, remove unobserved frequencies, duplicates u
 
 #def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/plambeck/OriALMA/Spectra/extra.csv" ) :
-def pruneLineList( infile="/o/plambeck/OriALMA/Band8/Spectra/splatalogue.csv", outfile="/o/plambeck/OriALMA/Band8/Spectra/splat_ann.csv" ) :
+def pruneLineList( infile="/o/plambeck/OriALMA/Band6/Spectra/splatalogue.csv", outfile="/o/plambeck/OriALMA/Band6/Spectra/splat_ann.csv" ) :
     #freqRanges = [ [340.545, 344.310], [352.665, 356.430], [649.282, 651.177], [661.303, 665.067], [665.922, 667.817] ]
-    freqRanges = [ [462.5, 463.5], [463.6, 465.6], [473.9, 474.9], [475.7, 477.7] ]
+    #freqRanges = [ [462.5, 463.5], [463.6, 465.6], [473.9, 474.9], [475.7, 477.7] ]
+    freqRanges = [ [229.17, 231.05], [231.83, 233.71], [214.28, 216.16], [216.98, 218.86] ]
     copy = []
     name = []
     QN = []
@@ -784,14 +794,15 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 #def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams, vsource=5. ) :
 #def pubFig( specList=[BN7spw0,BN7spw1,BN7spw2,BN7spw3], plotParams=plotParams, vsource=9. ) :
 #def pubFig( specList=[BN7spw0,BN7spw1], plotParams=plotParams, vsource=9. ) :
-def pubFig( specList=[B8spw0,B8spw1,B8spw2,B8spw3], plotParams=plotParams, vsource=5. ) :
+#def pubFig( specList=[B8spw0,B8spw1,B8spw2,B8spw3], plotParams=plotParams, vsource=5. ) :
+def pubFig( specList=[B6spw0,B6spw1,B6spw2,B6spw3], plotParams=plotParams, vsource=5. ) :
 
     pyplot.ioff()
     pp = PdfPages("spectrum.pdf")
     ymin = plotParams["ymin"]
     ymax = plotParams["ymax"]
-    npanels = 4
-    fig = pyplot.figure( figsize=(8,11) )
+    npanels = 1
+    fig = pyplot.figure( figsize=(11,8) )
 
     npanel = 1
     for spectrum in specList: 
@@ -805,7 +816,18 @@ def pubFig( specList=[B8spw0,B8spw1,B8spw2,B8spw3], plotParams=plotParams, vsour
       fmin = fmin - .04*delta
       fmax = fmax + .04*delta
 
+      chmin = chan[0]
+      chmax = chan[-1]
+      delta = chmax - chmin    # note that delta can be negative!
+      chmin = chmin - .04*delta
+      chmax = chmax + .04*delta
+
       p.axis( [fmin, fmax, ymin, ymax] )
+      p3 = p.twiny()   
+      p3.axis( [chmin, chmax, ymin, ymax] )
+      #p3.xaxis.set_minor_locator( x_locator )
+      p3.tick_params( axis='x', which='major', labelsize=8 )
+
       x_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
       p.xaxis.set_major_formatter( x_formatter )
       x_locator = matplotlib.ticker.AutoMinorLocator()
@@ -1233,6 +1255,12 @@ regionc = "arcsec,box(-.3,-.45,-.45,-.3)"
 regiond = "arcsec,box(1.3,2,1,2.3)"
 BNbox = 'arcsec,box(.14,-.05,-.16,.25)'
 
+def makespec220() :
+  dumpspec( "spw0.ch100.cm", "spw0.ch100.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
+  dumpspec( "spw1.ch100.cm", "spw1.ch100.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
+  dumpspec( "spw2.ch100.cm", "spw2.ch100.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
+  dumpspec( "spw3.ch100.cm", "spw3.ch100.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
+
 def makespec460() :
   dumpspec( "spw0.ch250.cm", "spw0.ch250.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
   dumpspec( "spw1.ch250.cm", "spw1.ch250.txt", region="arcsec,box(.2)", vsource=0., hann=3 )
@@ -1616,19 +1644,19 @@ def readpv( imageFile, vmin=-1.e8, vmax=1.e8, pmin=-1.e8, pmax=1.e8 ) :
     return [ numpy.array(vel), numpy.array(pos), numpy.array(flx) ]
 
 # pv plot
-def plotpv( imageFile ) :
+def plotpv( imageFile, pmin=-1.1, pmax=1.5 ) :
     fig = pyplot.figure()
     ax1 = fig.add_axes( [.1,.1,.7,.7])      # main plot
     ax2 = fig.add_axes([.85,.1,.015,.7])    # color wedge
     ax2.tick_params( labelsize=10 )
     ax1.tick_params( labelsize=10 )
-    [vel, pos, flx] = readpv( imageFile )
+    [vel, pos, flx] = readpv( imageFile, pmin=pmin, pmax=pmax )
     ax1.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
     nv = len( numpy.unique( vel ) )
     np = len( numpy.unique( pos ) )
     print "nv = %d, np = %d" % (nv,np)
     imgplot = ax1.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
-        extent=[vel[0],vel[-1],pos[-1],pos[0]] )
+        extent=[vel[0],vel[-1],pos[-1],pos[0]], vmin=-.02, vmax=.1 )
     ax1.grid( True, linewidth=1, color="white")   # color=0.1 is a light gray
     pyplot.colorbar( imgplot, cax=ax2  )
     pyplot.show()
@@ -2242,3 +2270,43 @@ def check3( ) :
     for tauff in numpy.arange(1.,5.,.5) :
       tauL = 5.7*tauff
       print "%8.1f  %8.4f" % ( tauff, (1.-math.exp(-1.*(tauff+tauL)))/(1.-math.exp(-1.*tauff)))
+
+# make list of cuts through SiS map - for velplot and for cgdisp olay
+# note: x coordinate into velplot has reversed sign (negative is to the left)
+#   relative to convention in cgdisp, for arcsec offsets
+def cuts() :
+  pacut = 140
+  pastep = 50
+  n = 0
+  for dist in numpy.arange(-1.4,1.5,.2) :
+    n = n+1
+    dx = dist * math.sin( math.radians(pastep) )
+    dy = dist * math.cos( math.radians(pastep) )
+    #print "vector arcsec arcsec %d yes %.3f %.3f 40 %d" % (n,dx,dy,pacut)
+    #print "vector arcsec arcsec %d no %.3f %.3f 40 %d 0" % (n,dx,dy,pacut-180.)
+    print "%d, %.3f, %.3f, %d" % (n,-dx,dy,pacut)
+
+def plotcuts( ) :
+    pmin = -1.5
+    pmax = 1.5
+    npanel = 0 
+    maxPanelsPerPage = 16
+    pyplot.ioff()
+    pp = PdfPages("pvcuts.pdf")
+    for ncut in range(1,16,1) :
+      npanel = npanel + 1
+      p = pyplot.subplot(4,4,npanel)
+      [vel, pos, flx] = readpv( "pv%d.mp" % ncut, pmin=pmin, pmax=pmax )
+      nv = len( numpy.unique( vel ) )
+      np = len( numpy.unique( pos ) )
+      p.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
+      p.tick_params( which='major', labelsize=6)
+      p.tick_params( which='minor', labelsize=6)
+      imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
+          extent=[vel[0],vel[-1],pos[-1],pos[0]], vmin=-.03, vmax=.08 )
+      p.grid( True, linewidth=0.1, color='0.1' )   # color=0.1 is a light gray
+      p.text(.04, .88,  "pos %d" % ncut, horizontalalignment='left', transform=p.transAxes, fontsize=8 )
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+
