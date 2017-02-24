@@ -22,8 +22,9 @@ import matplotlib.pyplot as pyplot
 
 # readspec reads text file created by uvspec (usually with options=ampscalar,avall,nobase)
 def readspec( infile, flagtable=None ) :
-    chn = numpy.arange(0,1921,1) 
+    chn = numpy.arange(0,1920)              
     amp = numpy.full( 1920, numpy.nan )
+       # channel range might have been flagged inside casa; if so, amp is 'nan'
     fin = open( infile, "r" )
     for line in fin:
       a = line.split()
@@ -41,9 +42,9 @@ def fitbaseline( amp, outfile='junk', nchPerSegment=192, flagtable=None ) :
     print "... spectrum has %d channels" % nch
     print "... splitting spectrum into %d segments, %d channels per segment" % (ndiv, nch/ndiv)
     segments = numpy.split( amp, ndiv )
-      # split amp into ndiv sections
+      # split array "amp" into list of ndiv subarrays "segments"
     nSegmin = numpy.nanargmin(segments, axis=1)
-      # return array containing channel number of min within each segment
+      # return array containing channel number of minimum amplitude within each segment
     nBase = []
     yBase = []
     for n in range(0,ndiv) :
@@ -63,10 +64,25 @@ def fitbaseline( amp, outfile='junk', nchPerSegment=192, flagtable=None ) :
     r = numpy.ma.masked_greater( ratio, 1.05 )
     legity = numpy.ma.masked_where( numpy.ma.getmask(r), amp)
     legitx = numpy.ma.masked_where( numpy.ma.getmask(r), xInterp)
+  
+  # list channel ranges that are above cutoff - these form possible list of flags
+    InBadRange = False
+    for n in range(0,len(amp)) :
+      if ratio[n] > 1.05 :
+        if not InBadRange :
+          xstart = n
+          InBadRange = True
+      else :
+        if InBadRange :
+          print "%d,%d" % (xstart+1,n)   # note: Miriad format, chans labeled beginning with 1
+          InBadRange = False
     pyplot.ioff()
     fig = pyplot.subplot( 1,1,1 )
     print "opening plot"
-    fig.axis( [xInterp[0],xInterp[-1],numpy.nanmin(amp), numpy.nanmax(amp)] )
+    ymax = numpy.nanmax(amp)
+    if ymax > 3. :
+       ymax = 3.
+    fig.axis( [xInterp[0],xInterp[-1],numpy.nanmin(amp), ymax] )
     fig.plot( xInterp, amp, "-",color='blue')
     fig.plot( xInterp, yInterp, "-", color="red")
     fig.plot( legitx, legity, "-", color='cyan')
@@ -113,12 +129,13 @@ def doit() :
     # readspec( 'spw1.gt200.ampvector.txt', flagtable="flags_a1" )
     # readspec( 'spw2.gt200.ampvector.txt', flagtable="flags_a2" )
     # readspec( 'spw3.gt200.ampvector.txt', flagtable="flags_a3" )
-    readspec( 'spw0.gt200.ampscalar.txt', flagtable="flags_a0" )
-    readspec( 'spw1.gt200.ampscalar.txt', flagtable="flags_a1" )
-    readspec( 'spw2.gt200.ampscalar.txt', flagtable="flags_a2" )
-    readspec( 'spw3.gt200.ampscalar.txt', flagtable="flags_a3" )
+    # readspec( 'spw0.vec.gt100.txt', flagtable="flags_b0" )
+    # readspec( 'spw1.vec.gt100.txt', flagtable="flags_b1" )
+    # readspec( 'spw2.vec.gt100.txt', flagtable="flags_b2" )
+    # readspec( 'spw3.vec.gt100.txt', flagtable="flags_b3" )
     #readspec( 'BN.spw0.gt200.ampscalar.txt', flagtable='BNflags_b0' ) 
     #readspec( 'BN.spw1.gt200.ampscalar.txt', flagtable='BNflags_b1' )
     #readspec( 'BN.spw2.gt200.ampscalar.txt', flagtable='BNflags_b2' )
     #readspec( 'BN.spw3.gt200.ampscalar.txt', flagtable='BNflags_b3' )
+    readspec( 'spw0.ampscalar.txt', flagtable='flags_a0' )
 
