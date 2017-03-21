@@ -404,6 +404,12 @@ def expandTree( tcmRange, tcmListIn, nrListIn) :
     elif nlayers == 5 :
       a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4], \
             nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4] )
+    elif nlayers == 6 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],tcmListIn[5], \
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4],nrListIn[5] )
+    elif nlayers == 7 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],tcmListIn[5],tcmListIn[6], \
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4],nrListIn[5],nrListIn[6] )
     else :
       print "nlayers = %d not allowed by expandTree" % nlayers
       return
@@ -482,10 +488,9 @@ def nrefracFit2( infile ) :
     stdPhResid = 1.e6*numpy.ones( ilen )
     avgAmpResid = 1.e6*numpy.ones( ilen )
     stdAmpResid = 1.e6*numpy.ones( ilen )
+    Resid = 1.e6*numpy.ones( ilen )
+    secs0 = time.time()
     for i in range(0,ilen) :
-      if i%100 == 0 :
-        print ".. finished %d/%d trials" % (i,ilen)
-      #print "i, tcmList, nrList: %d" % i, tcmList[i], nrList[i]
       dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[i], nrList[i], tanDelta ) 
       dphi = unwrap( dphs_meas-dphs_est )
         # unwrap keeps phase in range -180 to 180 in all cases
@@ -493,6 +498,14 @@ def nrefracFit2( infile ) :
       stdPhResid[i] = numpy.std(dphi) / math.sqrt(len(fGHz)) 
       avgAmpResid[i] = numpy.average( trans - trans_est )
       stdAmpResid[i] = numpy.std( trans - trans_est )
+      Resid[i] = avgPhResid[i] + stdPhResid[i] + stdAmpResid[i]
+      if i > 0 and i%200 == 0 :
+        secselapsed = time.time() - secs0
+        secsremaining = (ilen-i)*(secselapsed/float(i))
+        if secsremaining/60. > 60. :
+          print "... %d/%d finished; %.2f hours remaining" % (i,ilen,secsremaining/3600.)
+        else :
+          print "... %d/%d finished; %.2f minutes remaining" % (i,ilen,secsremaining/60.)
       #print tcmList[i], nrList[i], ".. %7.3f, %7.3f" \
       #       % (avgPhResid[i], stdPhResid[i])
 
@@ -515,8 +528,11 @@ def nrefracFit2( infile ) :
 
     print "\n10 best fits minimizing std residual phases:"
     # fout.write("\n10 best fits minimizing std residual phases:\n")
-    nbest = printBest( stdPhResid, tcmList, nrList ) 
+    printBest( stdPhResid, tcmList, nrList ) 
     # fout.close()
+
+    print "\n10 best fits minimizing overall residuals:"
+    nbest = printBest( Resid, tcmList, nrList ) 
 
   # begin the plot
     pyplot.ioff()
@@ -1593,3 +1609,16 @@ def stripout( vec, ibest, jx, jy, jz ) :
         z.append(z1)
     return numpy.array(x),numpy.array(y),numpy.array(z)
 
+# quickly compute expected relationship between n, tcm, and angI
+def sim() :
+   n0 = 3.06
+   tcm0 = 1.009
+   lambda0 = 30./250.
+   angI = numpy.arange(40.,50.,1.) 
+   theta2 =  numpy.arcsin(numpy.sin( numpy.radians(angI) )/n0)  
+   print angI
+   print numpy.degrees(theta2)
+   dphi = n0 * tcm0 / (lambda0 * numpy.cos(theta2))
+   tcmBest = lambda0 * dphi[5] * numpy.cos(theta2) / n0
+   print tcmBest
+   
