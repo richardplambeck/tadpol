@@ -138,11 +138,15 @@ def parseclicks( p, infile, v ) :
           p.plot(x,y,color='black')
           x[0] = -1000.
 
-#imagefileList = ["SO_219.95.cm","SO2_216.64.cm","CH3OH_231.28.cm","H2S_216.71.cm","SiS_217.82.cm","HC3N_218.32.cm","CO_230.54.cm", "SiO_217.10.cm"] 
 #imagefileList = ["SO_219.95.cm","SO2_216.64.cm","SiO_217.10.cm"] 
 #imagefileList = ["CO_230.54.cm", "SiO_217.10.cm"] 
 #imagefileList = ["SiS_217.82.cm","SiO_217.10.cm"] 
-imagefileList = ["SiO_217.10.cm", "SO_219.95.cm", "HC3N_218.32.cm"]] 
+#imagefileList = ["SiO_217.10.cm", "SO_219.95.cm", "HC3N_218.32.cm"]
+#imagefileList = ["SO_219.95.cm","SO2_216.64.cm","CH3OH_231.28.cm","H2S_216.71.cm","SiS_217.82.cm","HC3N_218.32.cm"] 
+imagefileList = ["SO_219.95.avg.cm","SO2_216.64.avg.cm","CH3OH_231.28.avg.cm","H2S_216.71.avg.cm", \
+                  "SiS_217.82.avg.cm","HC3N_218.32.avg.cm","CO_230.54.avg.cm", "SiO_217.10.avg.cm"]
+#imagefileList = ["CO_230.54.avg.cm","SiO_217.10.avg.cm"]
+#imagefileList = ["SiO_217.10.avg.cm","SiS_217.82.avg.cm"]
 def mypca( imagefileList=imagefileList, n=20 ) :
     first = True
     nimages = 0
@@ -151,7 +155,7 @@ def mypca( imagefileList=imagefileList, n=20 ) :
       print imagefile
       #nchans, v1, dv = getvelocitydata( imagefile ) 
       #for n in range(0,nchans) 
-      x,y,z = readArray( imagefile, region='arcsec,box(10)', image=n+1 )
+      x,y,z = readArray( imagefile, image=n+1 )
       if first :
         d = z
         first = False
@@ -175,3 +179,24 @@ def mypca( imagefileList=imagefileList, n=20 ) :
     imgplot = p.imshow( numpy.reshape(z,(ny,nx)), origin='lower', \
       extent=[xu[0],xu[-1],yu[0],yu[-1]] )
     pyplot.show()
+
+def panels( imagefileList=imagefileList, region='arcsec,box(19,-30,-50,40)', image=0 ) :
+    fig = pyplot.figure()
+    np = 0
+    for imagefile in imagefileList :
+      np = np+1
+      p = pyplot.subplot( 2,4,np )
+      x,y,z = readArray( imagefile, region=region, image=image+1 )
+      xu = numpy.unique(x)    # sorted unique elements in x array
+      nx = len(xu)
+      yu = numpy.unique(y)    # sorted unique elements in y array
+      ny = len(yu)
+      print xu[0],xu[-1]
+      imgplot = p.imshow( numpy.reshape(z,(ny,nx)), origin='lower', \
+        extent=[xu[0],xu[-1],yu[0],yu[-1]] )
+      p.set_xlim( xu[0],xu[-1] )
+      p.set_ylim( yu[0],yu[-1] ) 
+      p.set_title( imagefile, fontsize=10 )
+      p.plot( 0., 0., "+", color="white", markersize=4., markeredgewidth=2. )
+    pyplot.show()
+  
