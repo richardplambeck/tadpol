@@ -3,6 +3,8 @@
 
 import math
 import time
+import datetime
+import dateutil.parser
 import cmath
 import numpy
 import sys
@@ -15,6 +17,7 @@ import matplotlib
 import os
 matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
+import matplotlib.colors as colors 
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
 from matplotlib.patches import Rectangle
@@ -31,9 +34,9 @@ ccgs = 2.99792e10   # speed of light in cm/sec
 plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
-               "ymin" : -.1,       # -.1 for band7, -.2 for band9
-               "ymax" : 1.,      # 1.95 for band7, 4.8 for band9
-               "linelistFile" : "/o/plambeck/OriALMA/Band6/Spectra/splat_ann.csv", 
+               "ymin" : -.2,       # -.1 for band7, -.2 for band9
+               "ymax" : 3.,      # 1.95 for band7, 4.8 for band9
+               "linelistFile" : "/o/plambeck/OriALMA/Band7B/Spectra/splat_ann.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
@@ -89,6 +92,15 @@ B6spw2 = {'file': "/big_scr6/plambeck/220GHz/miriad/spw2.ch100.txt",
            'flag': "/big_scr6/plambeck/220GHz/miriad/flags_a2"}
 B6spw3 = {'file': "/big_scr6/plambeck/220GHz/miriad/spw3.ch100.txt", 
            'flag': "/big_scr6/plambeck/220GHz/miriad/flags_a3"}
+
+B7Bspw0 = {'file': "/alma_scr/plambeck/340GHz/miriad/spw0.ch100.txt", 
+           'flag': "/alma_scr/plambeck/340GHz/miriad/flags_a0"}
+B7Bspw1 = {'file': "/alma_scr/plambeck/340GHz/miriad/spw1.ch100.txt", 
+           'flag': "/alma_scr/plambeck/340GHz/miriad/flags_a1"}
+B7Bspw2 = {'file': "/alma_scr/plambeck/340GHz/miriad/spw2.ch100.txt", 
+           'flag': "/alma_scr/plambeck/340GHz/miriad/flags_a2"}
+B7Bspw3 = {'file': "/alma_scr/plambeck/340GHz/miriad/spw3.ch100.txt", 
+           'flag': "/alma_scr/plambeck/340GHz/miriad/flags_a3"}
 
 specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
 
@@ -378,10 +390,12 @@ def processLineList( lineListFile, vsource=5. ) :
 # parse splatalogue output, remove unobserved frequencies, duplicates u
 
 #def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/plambeck/OriALMA/Spectra/extra.csv" ) :
-def pruneLineList( infile="/o/plambeck/OriALMA/Band6/Spectra/splatalogue.csv", outfile="/o/plambeck/OriALMA/Band6/Spectra/splat_ann.csv" ) :
+#def pruneLineList( infile="/o/plambeck/OriALMA/Band6/Spectra/splatalogue.csv", outfile="/o/plambeck/OriALMA/Band6/Spectra/splat_ann.csv" ) :
+def pruneLineList( infile="/o/plambeck/Downloads/splatalogue.csv", outfile="/o/plambeck/OriALMA/Band7B/Spectra/splat_ann.csv" ) :
     #freqRanges = [ [340.545, 344.310], [352.665, 356.430], [649.282, 651.177], [661.303, 665.067], [665.922, 667.817] ]
     #freqRanges = [ [462.5, 463.5], [463.6, 465.6], [473.9, 474.9], [475.7, 477.7] ]
-    freqRanges = [ [229.17, 231.05], [231.83, 233.71], [214.28, 216.16], [216.98, 218.86] ]
+    #freqRanges = [ [229.17, 231.05], [231.83, 233.71], [214.28, 216.16], [216.98, 218.86] ]
+    freqRanges = [ [344.05, 345.93], [346.05,347.93], [333.94,335.82], [332.05, 333.93] ]
     copy = []
     name = []
     QN = []
@@ -795,14 +809,18 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 #def pubFig( specList=[BN7spw0,BN7spw1,BN7spw2,BN7spw3], plotParams=plotParams, vsource=9. ) :
 #def pubFig( specList=[BN7spw0,BN7spw1], plotParams=plotParams, vsource=9. ) :
 #def pubFig( specList=[B8spw0,B8spw1,B8spw2,B8spw3], plotParams=plotParams, vsource=5. ) :
-def pubFig( specList=[B6spw0,B6spw1,B6spw2,B6spw3], plotParams=plotParams, vsource=5. ) :
+#def pubFig( specList=[B6spw0,B6spw1,B6spw2,B6spw3], plotParams=plotParams, vsource=5. ) :
+def pubFig( specList=[B7Bspw0,B7Bspw1,B7Bspw2,B7Bspw3], plotParams=plotParams, vsource=5. ) :
 
     pyplot.ioff()
     pp = PdfPages("spectrum.pdf")
     ymin = plotParams["ymin"]
     ymax = plotParams["ymax"]
-    npanels = 1
-    fig = pyplot.figure( figsize=(11,8) )
+    npanels = 4
+    fig = pyplot.figure( figsize=(8,11) )
+
+    # npanels = 1
+    # fig = pyplot.figure( figsize=(11,8) )
 
     npanel = 1
     for spectrum in specList: 
@@ -2274,39 +2292,184 @@ def check3( ) :
 # make list of cuts through SiS map - for velplot and for cgdisp olay
 # note: x coordinate into velplot has reversed sign (negative is to the left)
 #   relative to convention in cgdisp, for arcsec offsets
-def cuts() :
+def cuts( olayFile="cutsolay", velplotfile="pvcmds" ) :
   pacut = 140
-  pastep = 50
+  pastep = pacut - 90.
+  fout = open( olayFile, "w" )
   n = 0
+  #for dist in numpy.arange(-2.8,3.0,.4) :
   for dist in numpy.arange(-1.4,1.5,.2) :
     n = n+1
     dx = dist * math.sin( math.radians(pastep) )
     dy = dist * math.cos( math.radians(pastep) )
-    #print "vector arcsec arcsec %d yes %.3f %.3f 40 %d" % (n,dx,dy,pacut)
-    #print "vector arcsec arcsec %d no %.3f %.3f 40 %d 0" % (n,dx,dy,pacut-180.)
+    fout.write("vector arcsec arcsec %d yes %.3f %.3f 100 %d\n" % (n,dx,dy,pacut))
+    fout.write("vector arcsec arcsec %d no %.3f %.3f 100 %d 0\n" % (n,dx,dy,pacut-180.))
     print "%d, %.3f, %.3f, %d" % (n,-dx,dy,pacut)
+  fout.close()
 
-def plotcuts( ) :
+def plotcuts( smin=-.02, smax=.08, nx=2, ny=2, nslice1=1, nslice2=15 ) :
     pmin = -1.5
     pmax = 1.5
     npanel = 0 
-    maxPanelsPerPage = 16
     pyplot.ioff()
+    fig = pyplot.figure( figsize=(11,8) )
     pp = PdfPages("pvcuts.pdf")
-    for ncut in range(1,16,1) :
+    for nslice in range(nslice1,nslice2+1) :
       npanel = npanel + 1
-      p = pyplot.subplot(4,4,npanel)
-      [vel, pos, flx] = readpv( "pv%d.mp" % ncut, pmin=pmin, pmax=pmax )
+      if npanel > nx*ny :
+        pyplot.savefig( pp, format='pdf' )
+        pyplot.show()
+        pyplot.figure( figsize=(11,8) )
+        npanel = 1
+      print "npanel = %d" % npanel 
+      p = pyplot.subplot(nx,ny,npanel)
+      [vel, pos, flx] = readpv( "pv%d.mp" % nslice, pmin=pmin, pmax=pmax )
       nv = len( numpy.unique( vel ) )
       np = len( numpy.unique( pos ) )
       p.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
       p.tick_params( which='major', labelsize=6)
       p.tick_params( which='minor', labelsize=6)
       imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
-          extent=[vel[0],vel[-1],pos[-1],pos[0]], vmin=-.03, vmax=.08 )
+          extent=[vel[0],vel[-1],pos[-1],pos[0]], vmin=smin, vmax=smax) 
       p.grid( True, linewidth=0.1, color='0.1' )   # color=0.1 is a light gray
-      p.text(.04, .88,  "pos %d" % ncut, horizontalalignment='left', transform=p.transAxes, fontsize=8 )
+      p.text(.04, .88,  "slice %d" % nslice, horizontalalignment='left', transform=p.transAxes, fontsize=8, color='white' )
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
 
+def archiveSrch( infile ) :
+    fin = open(infile,"r")
+    projList = []
+    RACol = 0
+    DecCol = 0
+    ResolutionCol = 0
+    ArrayCol = 0
+    MosaicCol = 0
+    FreqSupportCol = 0
+    for line in fin:
+      if not line.startswith("#") :
+        a = line.split("\t")
+
+      # figure out which column is which based on 1st line
+        if "Project code" in a[0] :
+          CodeCol = 0
+          for n in range(1,len(a)) :
+            if "RA" in a[n] :
+              RACol = n
+            if "Dec" in a[n] :
+              DecCol = n
+            if "Release date" in a[n] :
+              ReleaseCol = n
+            if "Spatial resolution" in a[n] :
+              ResolutionCol = n
+            if "Array" in a[n] :
+              ArrayCol = n
+            if "Mosaic" in a[n] :
+              MosaicCol = n
+            if "Largest angular scale" in a[n] :
+              largestAngScaleCol = n
+            if "Frequency support" in a[n] :
+              FreqSupportCol = n
+            if "PI name" in a[n] :
+              PIcol = n
+      # create dictionary holding values; append to list of dictionaries
+        else :
+          if len( a[ReleaseCol] ) < 2 :     # in a few cases, field is blank
+            a[ReleaseCol] = "3000-01-01"
+          proj = { 'code' : a[CodeCol], 
+                   'spw'  : spw( a[FreqSupportCol] ),
+                   'res'  : float( a[ResolutionCol] ),
+                   'LAS'  : float( a[largestAngScaleCol] ),
+                   'release' : a[ReleaseCol],
+                   'PI'   : a[PIcol],
+                 }
+          projList.append( proj )
+            # proj('spw') = spw
+            # spw[y1][f1,f2,dv] = fstartGHz,fstopGHz,dvkms for spectral window y1
+    fin.close()
+    return projList
+          
+# spw decodes the Frequency support column
+# returns list of spectral windows; each one [f1GHz,f2GHz,dvkms]
+def spw( s ) :
+    a = s.split("[")
+    spw = []
+    nn = 0
+    for n in range(0,len(a)) :
+      if len(a[n]) > 0 :
+        b = a[n].split(",")
+        n1 = string.find( b[0], ".." )
+        n2 = string.find( b[0], "GHz" )
+        spwstart = float( b[0][0:n1] )
+        spwstop = float( b[0][n1+2:n2] )
+        n3 = string.find( b[1], "kHz" )
+        dfGHz = float( b[1][0:n3] )/1.e6   # convert channel width from kHz to GHz
+        dv = 2.998e5 * dfGHz/((spwstart+spwstop)/2.)
+        spw.append( [spwstart,spwstop,dv] )
+    return spw
+
+# convenience function to see if spectral window spw lies within frqBand
+def inrange( spw, frqBand ) :
+    if (spw[0] < frqBand[0]) and (spw[1] < frqBand[0]) :    # entire spw is below freq range
+      return False
+    elif (spw[0] > frqBand[1]) and (spw[1] > frqBand[1]) :    # entire spw is above freq range
+      return False
+    else :
+      return True	  # some piece of spw must lie inside frqBand
+    
+# generate plot of frequency coverage for data in ALMA archive
+# infile = tab separated output from search query
+# frqBand = [f1GHz,f2GHz] = freq range of interest (plot only datasets within this range)
+#
+def archivePlot( infile, frqBand, vmarker1=None ) :
+    projList = archiveSrch( infile ) 
+    today = datetime.datetime.today()
+    deltavert=.03
+    rheight = .02
+    #pyplot.ioff()
+    fig = pyplot.figure( figsize=(11,8) )
+    p = fig.add_axes( [.08,.08,.6,.9] ) 
+    pyplot.axis( [frqBand[0],frqBand[1],0.,1.] )
+    #pp = PdfPages("projects.pdf")
+    vert = 0.                # allowed range is 0-110
+    for proj in projList :
+      newproj = True
+      for spw in proj['spw'] :
+        if inrange( spw,frqBand ) :
+          if newproj:         # allow extra 1-unit gap between projects
+            vert = vert+deltavert
+            if vert > (1.-deltavert/2.) :
+	          print "WARNING: plot is full"
+            newproj = False 
+            codeColor = "black"
+            print  proj['release'] 
+            if dateutil.parser.parse( proj['release'] ) > today :
+              codeColor = "red"    # data not yet available
+            pyplot.text(1.01, vert+rheight/2., proj['code'], horizontalalignment='left', \
+              verticalalignment='center',transform=p.transAxes, color=codeColor )
+            pyplot.text(1.30, vert+rheight/2., "%5.2f" % proj['res'], horizontalalignment='right', \
+              verticalalignment='center',transform=p.transAxes)
+            pyplot.text(1.39, vert+rheight/2., "%5.1f" % proj['LAS'], horizontalalignment='right', \
+              verticalalignment='center',transform=p.transAxes)
+            pyplot.text(1.41, vert+rheight/2., proj['PI'], horizontalalignment='left', \
+              verticalalignment='center',transform=p.transAxes)
+          vcolor = "gray"
+          if spw[2] < 3. :
+            vcolor = "blue"
+          if spw[2] < 1. :
+            vcolor = "red"
+          rect = Rectangle( (spw[0],vert), (spw[1]-spw[0]), rheight, facecolor=vcolor, alpha=0.2,\
+            edgecolor=vcolor, linewidth=1 ) 
+          p.add_patch( rect ) 
+    if vmarker1 :
+      pyplot.axvline( x=vmarker1, color="red", linestyle="dashed")
+    p.grid(True)
+    pyplot.show()
+
+
+
+
+
+
+          
+        
