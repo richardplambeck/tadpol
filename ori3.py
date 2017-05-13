@@ -2426,11 +2426,11 @@ def archivePlot( infile, frqBand, vmarker1=None ) :
     today = datetime.datetime.today()
     deltavert=.03
     rheight = .02
-    #pyplot.ioff()
+    pyplot.ioff()
+    pp = PdfPages("projects.pdf")
     fig = pyplot.figure( figsize=(11,8) )
-    p = fig.add_axes( [.08,.08,.6,.9] ) 
+    p = fig.add_axes( [.05,.08,.6,.9] ) 
     pyplot.axis( [frqBand[0],frqBand[1],0.,1.] )
-    #pp = PdfPages("projects.pdf")
     vert = 0.                # allowed range is 0-110
     for proj in projList :
       newproj = True
@@ -2446,24 +2446,29 @@ def archivePlot( infile, frqBand, vmarker1=None ) :
             if dateutil.parser.parse( proj['release'] ) > today :
               codeColor = "red"    # data not yet available
             pyplot.text(1.01, vert+rheight/2., proj['code'], horizontalalignment='left', \
-              verticalalignment='center',transform=p.transAxes, color=codeColor )
-            pyplot.text(1.30, vert+rheight/2., "%5.2f" % proj['res'], horizontalalignment='right', \
-              verticalalignment='center',transform=p.transAxes)
-            pyplot.text(1.39, vert+rheight/2., "%5.1f" % proj['LAS'], horizontalalignment='right', \
-              verticalalignment='center',transform=p.transAxes)
-            pyplot.text(1.41, vert+rheight/2., proj['PI'], horizontalalignment='left', \
-              verticalalignment='center',transform=p.transAxes)
+              verticalalignment='center',transform=p.transAxes, color=codeColor, fontsize=10 )
+            pyplot.text(1.26, vert+rheight/2., "%5.2f" % proj['res'], horizontalalignment='right', \
+              verticalalignment='center',transform=p.transAxes, fontsize=10)
+            pyplot.text(1.34, vert+rheight/2., "%5.1f" % proj['LAS'], horizontalalignment='right', \
+              verticalalignment='center',transform=p.transAxes, fontsize=10)
+            ncomma = string.find( proj['PI'], "," )
+            pyplot.text(1.37, vert+rheight/2., proj['PI'][0:ncomma], horizontalalignment='left', \
+              verticalalignment='center',transform=p.transAxes, fontsize=10)
           vcolor = "gray"
           if spw[2] < 3. :
             vcolor = "blue"
           if spw[2] < 1. :
             vcolor = "red"
-          rect = Rectangle( (spw[0],vert), (spw[1]-spw[0]), rheight, facecolor=vcolor, alpha=0.2,\
+          rect = Rectangle( (spw[0],vert), (spw[1]-spw[0]), rheight, facecolor=vcolor, alpha=0.4,\
             edgecolor=vcolor, linewidth=1 ) 
+          pyplot.axhline( y=vert+rheight/2., color='gray', linestyle='dotted')
           p.add_patch( rect ) 
+    pyplot.yticks([])
     if vmarker1 :
       pyplot.axvline( x=vmarker1, color="red", linestyle="dashed")
     p.grid(True)
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
     pyplot.show()
 
 
