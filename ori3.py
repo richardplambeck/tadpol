@@ -2310,11 +2310,13 @@ def cuts( olayFile="cutsolay", velplotfile="pvcmds" ) :
 def plotcuts( smin=-.02, smax=.08, nx=2, ny=2, nslice1=1, nslice2=15 ) :
     pmin = -1.5
     pmax = 1.5
+    vmin = -20
+    vmax = 30 
     npanel = 0 
     pyplot.ioff()
     fig = pyplot.figure( figsize=(11,8) )
     pp = PdfPages("pvcuts.pdf")
-    for nslice in range(nslice1,nslice2+1) :
+    for nslice in range(nslice1,nslice2+2) :
       npanel = npanel + 1
       if npanel > nx*ny :
         pyplot.savefig( pp, format='pdf' )
@@ -2323,16 +2325,32 @@ def plotcuts( smin=-.02, smax=.08, nx=2, ny=2, nslice1=1, nslice2=15 ) :
         npanel = 1
       print "npanel = %d" % npanel 
       p = pyplot.subplot(nx,ny,npanel)
-      [vel, pos, flx] = readpv( "pv%d.mp" % nslice, pmin=pmin, pmax=pmax )
-      nv = len( numpy.unique( vel ) )
-      np = len( numpy.unique( pos ) )
-      p.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
-      p.tick_params( which='major', labelsize=6)
-      p.tick_params( which='minor', labelsize=6)
-      imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
-          extent=[vel[0],vel[-1],pos[-1],pos[0]], vmin=smin, vmax=smax) 
-      p.grid( True, linewidth=0.1, color='0.1' )   # color=0.1 is a light gray
-      p.text(.04, .88,  "slice %d" % nslice, horizontalalignment='left', transform=p.transAxes, fontsize=8, color='white' )
+      if npanel <= nslice2 :
+        [vel, pos, flx] = readpv( "pv%d.mp" % nslice, pmin=pmin, pmax=pmax, vmin=vmin, vmax=vmax )
+        nv = len( numpy.unique( vel ) )
+        np = len( numpy.unique( pos ) )
+        p.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
+        p.tick_params( which='major', labelsize=6)
+        p.tick_params( which='minor', labelsize=6)
+        imgplot = p.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
+            extent=[vel[0],vel[-1],pos[0],pos[-1]], vmin=smin, vmax=smax) 
+        p.grid( True, linewidth=0.1, color='0.1' )   # color=0.1 is a light gray
+        p.text(.04, .88,  "slice %d" % nslice, horizontalalignment='left', transform=p.transAxes, fontsize=8, color='white' )
+      else :
+        pyplot.axis('off')
+        cbar = pyplot.colorbar( imgplot )
+        cbar.ax.tick_params(labelsize=6)
+
+  # extract original file name from velplot history item
+    label = "no label"
+    pr = subprocess.Popen( ( shlex.split("head pv%d.mp/history" % nslice2 ) ), \
+      stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+    result = pr.communicate()[0]
+    n1 = str.find( result, "in=" )
+    n2 = str.find( result[n1:], "VELPLOT" )
+    if n1 >= 0 :
+      label = result[n1+3:n1+n2-1]
+    pyplot.suptitle( label )
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
