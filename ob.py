@@ -1622,3 +1622,99 @@ def sim() :
    tcmBest = lambda0 * dphi[5] * numpy.cos(theta2) / n0
    print tcmBest
    
+# compare amp and phase for different indices and thicknesses; can I measure the difference?
+def checkSensitivity() :
+    #fGHzArr = numpy.arange(75.,115.5,.1)
+    fGHzArr = numpy.arange(210.,230.5,0.1)
+    angIdeg = 8.
+    tcmArr1 = 2.54 * numpy.array( [.008,.009,.250,.009,.008] )
+    tcmArr2 = 2.54 * numpy.array( [.009,.008,.250,.008,.009] )
+    nrArr1 = numpy.array( [2.45, 2.92, 3.114, 2.92, 2.45] )
+    nrArr2 = nrArr1 
+    tanDeltaArr = numpy.array( [0.] ) 
+    phs1,trans1 = solveStack(fGHzArr, angIdeg, tcmArr1, nrArr1, tanDeltaArr ) 
+    phs2,trans2 = solveStack(fGHzArr, angIdeg, tcmArr2, nrArr2, tanDeltaArr ) 
+    print phs1
+    print phs2
+    print trans1
+    print trans2
+
+  # begin the plot
+    pyplot.ioff()
+    pp = PdfPages("testSens.pdf")
+    fig =  pyplot.figure( figsize=(11,8) )
+    #pyplot.suptitle( "%s (%s)" % (title,infile), fontsize=14 )
+    dphi = unwrap( phs1-phs2 )
+
+  # top left panel is phase vs freq, measured and fit
+    ax = fig.add_axes( [.1,.6,.38,.32] )
+    xmin,xmax = minmax( fGHzArr )
+    ymin,ymax = minmax( numpy.concatenate((phs1,phs2)))
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.tick_params( labelsize=10 )
+    ax.plot( fGHzArr, phs1, "b-" )
+    ax.plot( fGHzArr, phs2, "r-" )
+    ax.set_ylabel("phase (deg)", fontsize=10)
+    pyplot.grid(True)
+
+  # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
+    ax = fig.add_axes( [.1,.37,.38,.2])
+    ymin,ymax = minmax( dphi, margin=.2 )
+    #if abs(ymin) < abs(ymax) :
+    #  ymin = math.copysign(ymax,ymin)
+    #elif abs(ymax) < abs(ymin) :
+    #  ymax = math.copysign(ymin,ymax)
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHzArr, dphi, "b-" )
+    pyplot.grid(True)
+                                                       
+  # top right panel is transmission vs freq, measured and theoretical
+    ax = fig.add_axes( [.57,.6,.38,.32] )
+    ymin,ymax = minmax( numpy.concatenate((trans1,trans2)) )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHzArr, trans1, "-", color='blue' )
+    ax.plot( fGHzArr, trans2, "r-" )
+    ax.tick_params( labelsize=10 )
+    ax.set_ylabel("transmission", fontsize=10)
+    pyplot.grid(True)
+
+  # middle right panel is measured-theoretical trans
+    ax = fig.add_axes( [.57,.37,.38,.2])
+    ax.tick_params( labelsize=10 )
+    ymin,ymax = minmax( trans1-trans2, margin=0.2 )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHzArr, trans1-trans2, "-", color='blue' )
+    ax.set_xlabel("freq (GHz)", fontsize=10)
+    ax.set_ylabel("residual", fontsize=10)
+    pyplot.grid(True)
+
+  # fictitious lower right panel gives room for text
+  #  ax = fig.add_axes( [.57,.1,.38,.2])
+  #  ylab = 0.84
+  #  for nl in range(0,nlayers) :
+  #    ax.text( 0.03, ylab, "layer %d:  t = %.5f in  nr = %.3f" % \
+  #      ( nl+1, tcmList[nbest][nl]/2.54, nrList[nbest][nl]), \
+  #      transform=ax.transAxes, horizontalalignment='left', fontsize=14, \
+  #      color="black", rotation='horizontal' )
+  #    ylab = ylab - 0.14
+  #  #ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
+  #  #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+  #  #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
+  #  #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+  #  pyplot.axis('off')
+    pyplot.savefig( pp, format="pdf" )
+    pyplot.show()
+    pp.close()
+
+# figure out xband freqs, if any, that will allow me to phaselock one gunn osc
+#   at approx 105-115 GHz (for 2nd harmonic mixer), and the other at 70-77 GHz
+#   (for tripler used as transmitter); for 1mm optics bench measurements
+def quickFind() :
+    for xGHz in numpy.arange(8.0,12.5,.01) :
+      for n in range(0,20) :
+        for m in range(0,20) :
+          f1 = n*xGHz + .08
+          f2 = m*xGHz + .04
+          if (f1 > 100.) and (f1 < 115.) and (f2 > 67.) and (f2 < 77.) and \
+             ( abs(3.*f2 - 2.*f1) < 1.) :
+            print xGHz, n, f1, m, f2, 1000.*(2.*f1-3.*f2)
