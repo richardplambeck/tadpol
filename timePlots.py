@@ -17,6 +17,8 @@ import pickle
 import datetime
 import scipy.optimize
 import dateutil
+import matplotlib
+matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 import matplotlib.dates as mpdates
 from matplotlib.backends.backend_pdf import PdfPages
@@ -332,4 +334,64 @@ def plotSEFD( infile, label ) :
     pyplot.ylabel( "SEFD (Jy)" )
     pyplot.show()
    
- 
+# routines for BlackDewar 
+
+keyList = [ [1,"interhead","lime","-"],
+            [2,"ultrahead","blue","-"],
+            [5,"4He buffer","red","-"],
+            [6,"4He film burner","tomato","-"],
+            [3,"4He pump","red","--"],
+            [4,"4He pump switch","red",":"],
+            [7,"3He interpump","lime","--"],
+            [8,"3He interpump switch","lime",":"],
+            [10,"3He ultrapump switch","blue",":"] ]
+#            [11,"PT 4K head","peru"],
+#            [12,"tower 2K","maroon"] ]
+#            [9,"3He ultrapump","indigo"],
+
+def getBDdata(infile,keyList=keyList) :
+  t = []
+  s = []
+  fin = open(infile,"r")
+  for line in fin:
+    if not (line.startswith("#") or line.startswith("Time")) :
+      a = line.split()
+      t.append(datetime.datetime.strptime(a[0],"%Y%m%d%H%M%S"))
+      sList = []
+      for col in range(1,len(a)) :
+        for k,label,color,linetype in keyList :
+          if col == k :
+            sList.append(float(a[col]))
+      #print t,sList
+      s.append(sList)
+  fin.close()
+  return t,numpy.array(s)
+
+def plotBD( infile, keyList=keyList ) :
+    fin = open( infile, "r" ) 
+    pyplot.clf()
+    pyplot.ioff()
+    fig = pyplot.subplot(1,1,1)
+    t,s = getBDdata( infile, keyList=keyList )
+    print s.shape
+    nc = 0 
+    for [column,name,color,linetype] in keyList :
+      print column, name, color
+      fig.plot_date( t, s[:,nc], "-", color=color, linewidth=2, linestyle=linetype, label=name )
+      nc = nc + 1
+    #fig.xaxis.set_major_locator(mpdates.HourLocator())
+    #fig.xaxis.set_major_formatter(mpdates.DateFormatter( "%H" ) )
+    fig.set_yscale("log")
+    #tmin = mpdates.date2num( datetime.datetime.strptime( "00:00", "%H:%M") )
+    #tmax = mpdates.date2num( datetime.datetime.strptime( "19:00", "%H:%M") )
+    #fig.set_xlim( tmin-.02,tmax )
+    #fig.set_ylim( 1.e3,1.e6 )
+    #fig.text( .5, .94, label, verticalalignment="center", transform=fig.transAxes, \
+    #  horizontalalignment="center", fontsize=18 )
+    
+    fig.grid()
+    #pyplot.xlabel( "UT (hrs)" )
+    #pyplot.ylabel( "SEFD (Jy)" )
+    pyplot.legend( loc="best" )
+    pyplot.show()
+   
