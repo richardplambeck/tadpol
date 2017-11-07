@@ -9,10 +9,11 @@ import string
 import pickle
 import matplotlib
 import datetime
+#matplotlib.use('GTK')
 matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
-import pol
+#import pol
 import scipy
 from scipy.interpolate import splrep, splev
 #import hou
@@ -495,10 +496,12 @@ def nrefracFit2( infile ) :
       dphi = unwrap( dphs_meas-dphs_est )
         # unwrap keeps phase in range -180 to 180 in all cases
       avgPhResid[i] = numpy.average(dphi) 
-      stdPhResid[i] = numpy.std(dphi) / math.sqrt(len(fGHz)) 
+      stdPhResid[i] = numpy.std(dphi) 
       avgAmpResid[i] = numpy.average( trans - trans_est )
       stdAmpResid[i] = numpy.std( trans - trans_est )
-      Resid[i] = avgPhResid[i] + stdPhResid[i] + stdAmpResid[i]
+      # Resid[i] = avgPhResid[i] + stdPhResid[i] + stdAmpResid[i]
+    # phases assumed uncertain by 2 degree, amps by .02; so upweight amps by factor of 100
+      Resid[i] =  math.sqrt( pow(avgPhResid[i],2) + pow(stdPhResid[i],2) + 1.e4*pow(stdAmpResid[i],2) )
       if i > 0 and i%200 == 0 :
         secselapsed = time.time() - secs0
         secsremaining = (ilen-i)*(secselapsed/float(i))
@@ -512,8 +515,8 @@ def nrefracFit2( infile ) :
     #merit = stdPhResid + stdAmpResid
    
   # save the results for further analysis
-    fout = open( infile+"Fits.pickle", "ab" )
-    pickle.dump( [tcmList,nrList,avgPhResid,stdPhResid,avgAmpResid,stdAmpResid], fout ) 
+    fout = open( infile+"Fits.pickle", "wb" )     # write over previous file
+    pickle.dump( [tcmList,nrList,avgPhResid,stdPhResid,stdAmpResid,Resid], fout ) 
     fout.close 
 
   # save best fits in file
@@ -541,18 +544,18 @@ def nrefracFit2( infile ) :
     pyplot.suptitle( "%s (%s)" % (title,infile), fontsize=14 )
 
   # lower left plot will show mean phase resid vs refractive index
-  #  ax = fig.add_axes( [.1,.1,.38,.2] )
-  #  xmin,xmax = minmax( numpy.array(nr) )
-  #  ymin,ymax = minmax( numpy.array(avg) )
-  #  ax.axis( [xmin, xmax, ymin, ymax] )
-  #  ax.tick_params( labelsize=10 )
-  #  ax.errorbar( nr, avg, yerr=std, linewidth=2 )
-  #  ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
-  #  ax.set_xlabel("refractive index", fontsize=10)
-  #  ax.set_ylabel("mean phase residual (deg)", fontsize=10)
-  #  ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
-  #    horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
-  #  pyplot.grid(True)
+    #ax = fig.add_axes( [.1,.1,.38,.2] )
+    #xmin,xmax = minmax( numpy.array(nrList[0]) )
+    #ymin,ymax = minmax( numpy.array(stdPhResid) )
+    #ax.axis( [xmin, xmax, ymin, ymax] )
+    #ax.tick_params( labelsize=10 )
+    # ax.errorbar( nrList[0], stdPhResid, yerr=std, linewidth=2 )
+    # ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
+    #ax.set_xlabel("refractive index", fontsize=10)
+    #ax.set_ylabel("mean phase residual (deg)", fontsize=10)
+    #ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
+    #  horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
+    #pyplot.grid(True)
 
   # compute amp and phase residuals for best fit
     dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDelta ) 
@@ -609,8 +612,8 @@ def nrefracFit2( infile ) :
     ax = fig.add_axes( [.57,.1,.38,.2])
     ylab = 0.84
     for nl in range(0,nlayers) :
-      ax.text( 0.03, ylab, "layer %d:  t = %.5f in  nr = %.3f" % \
-        ( nl+1, tcmList[nbest][nl]/2.54, nrList[nbest][nl]), \
+      ax.text( 0.01, ylab, "layer %d:  t=%.4f\"  nr=%.3f  eps=%.3f" % \
+        ( nl+1, tcmList[nbest][nl]/2.54, nrList[nbest][nl], pow(nrList[nbest][nl],2) ),  \
         transform=ax.transAxes, horizontalalignment='left', fontsize=14, \
         color="black", rotation='horizontal' )
       ylab = ylab - 0.14
@@ -1586,21 +1589,21 @@ def covarPlot( infile='saphFit2.log', plot5=False, vmin=0., vmax=0. ) :
     pp.close()
     print "Covar.pdf written to disk"
 
-# strip out one plane of a multidimensional data cube, passing through point with lowest variance
-# 
+# strip out plane corresponding to variables jx,jy from a multidimensional data cube, passing through point with lowest variance
+# that is, identify rows in vec where all variables other than jx,jy are held at their optimum value
 def stripout( vec, ibest, jx, jy, jz ) :
-    print "\nplot plane passing through %.5f, %.5f (var = %.1f)" % (vec[jx][ibest],vec[jy][ibest],vec[jz][ibest])
+    print "\nplot plane passing through %.5f, %.5f (var = %.5f)" % (vec[jx][ibest],vec[jy][ibest],vec[jz][ibest])
     x = []
     y = []
     z = []
     for i in range(0,len(vec[0])) :  
       usePt = True         
-      for j in range(0,7) :
+      for j in range(0,4) :
       # all variables except jx and jy must be equal to best values
         if (j != jx) and (j != jy) and (vec[j][i] != vec[j][ibest] ) :
           usePt = False
       if usePt :
-        # print vec[0][i], vec[1][i], vec[2][i], vec[3][i], vec[4][i], vec[5][i], vec[6][i], vec[jz][i]
+        print vec[0][i], vec[1][i], vec[2][i], vec[3][i], vec[4][i], vec[5][i], vec[6][i], vec[jz][i]
         x1 = vec[jx][i]
         y1 = vec[jy][i]
         z1 = vec[jz][i]
@@ -1624,12 +1627,12 @@ def sim() :
    
 # compare amp and phase for different indices and thicknesses; can I measure the difference?
 def checkSensitivity() :
-    #fGHzArr = numpy.arange(75.,115.5,.1)
-    fGHzArr = numpy.arange(210.,230.5,0.1)
+    fGHzArr = numpy.arange(70.,230.5,.5)
+    #fGHzArr = numpy.arange(210.,230.5,0.1)
     angIdeg = 8.
     tcmArr1 = 2.54 * numpy.array( [.008,.009,.250,.009,.008] )
     tcmArr2 = 2.54 * numpy.array( [.009,.008,.250,.008,.009] )
-    nrArr1 = numpy.array( [2.45, 2.92, 3.114, 2.92, 2.45] )
+    nrArr1 = numpy.array( [1.45, 2.42, 3.114, 2.42, 1.45] )
     nrArr2 = nrArr1 
     tanDeltaArr = numpy.array( [0.] ) 
     phs1,trans1 = solveStack(fGHzArr, angIdeg, tcmArr1, nrArr1, tanDeltaArr ) 
@@ -1706,6 +1709,91 @@ def checkSensitivity() :
     pyplot.show()
     pp.close()
 
+def checkSensitivity2() :
+    # fGHzArr = numpy.append( numpy.arange(75.,115.5,.1), numpy.arange(210.,230.5,0.1) )
+    fGHzArr = numpy.arange(70.,115.5,.5)
+    fGHzArr = numpy.arange(220.,230.5,.2)
+    angIdeg = 8.
+    tcmArr1 = 2.54 * numpy.array( [.009,.2467] )
+    tcmArr2 = 2.54 * numpy.array( [.0088,.2467] )
+    nrArr1 = numpy.array( [2.49, 3.114] )
+    nrArr2 = numpy.array( [2.49, 3.114] )
+    tanDeltaArr = numpy.array( [0.,0.] ) 
+    phs1,trans1 = solveStack(fGHzArr, angIdeg, tcmArr1, nrArr1, tanDeltaArr ) 
+    phs2,trans2 = solveStack(fGHzArr, angIdeg, tcmArr2, nrArr2, tanDeltaArr ) 
+    print phs1
+    print phs2
+    print trans1
+    print trans2
+
+  # begin the plot
+    pyplot.ioff()
+    pp = PdfPages("testSens.pdf")
+    fig =  pyplot.figure( figsize=(11,8) )
+    #pyplot.suptitle( "%s (%s)" % (title,infile), fontsize=14 )
+    dphi = unwrap( phs1-phs2 )
+
+  # top left panel is phase vs freq, measured and fit
+    ax = fig.add_axes( [.1,.6,.38,.32] )
+    xmin,xmax = minmax( fGHzArr )
+    ymin,ymax = minmax( numpy.concatenate((phs1,phs2)))
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.tick_params( labelsize=10 )
+    ax.plot( fGHzArr, phs1, "b-" )
+    ax.plot( fGHzArr, phs2, "r-" )
+
+    ax.set_ylabel("phase (deg)", fontsize=10)
+    pyplot.grid(True)
+
+  # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
+    ax = fig.add_axes( [.1,.37,.38,.2])
+    ymin,ymax = minmax( dphi, margin=.2 )
+    #if abs(ymin) < abs(ymax) :
+    #  ymin = math.copysign(ymax,ymin)
+    #elif abs(ymax) < abs(ymin) :
+    #  ymax = math.copysign(ymin,ymax)
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHzArr, dphi, "b-" )
+    pyplot.grid(True)
+                                                       
+  # top right panel is transmission vs freq, measured and theoretical
+    ax = fig.add_axes( [.57,.6,.38,.32] )
+    ymin,ymax = minmax( numpy.concatenate((trans1,trans2)) )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHzArr, trans1, "-", color='blue' )
+    ax.plot( fGHzArr, trans2, "r-" )
+    ax.tick_params( labelsize=10 )
+    ax.set_ylabel("transmission", fontsize=10)
+    pyplot.grid(True)
+
+  # middle right panel is measured-theoretical trans
+    ax = fig.add_axes( [.57,.37,.38,.2])
+    ax.tick_params( labelsize=10 )
+    ymin,ymax = minmax( trans1-trans2, margin=0.2 )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHzArr, trans1-trans2, "-", color='blue' )
+    ax.set_xlabel("freq (GHz)", fontsize=10)
+    ax.set_ylabel("residual", fontsize=10)
+    pyplot.grid(True)
+
+  # fictitious lower right panel gives room for text
+  #  ax = fig.add_axes( [.57,.1,.38,.2])
+  #  ylab = 0.84
+  #  for nl in range(0,nlayers) :
+  #    ax.text( 0.03, ylab, "layer %d:  t = %.5f in  nr = %.3f" % \
+  #      ( nl+1, tcmList[nbest][nl]/2.54, nrList[nbest][nl]), \
+  #      transform=ax.transAxes, horizontalalignment='left', fontsize=14, \
+  #      color="black", rotation='horizontal' )
+  #    ylab = ylab - 0.14
+  #  #ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
+  #  #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+  #  #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
+  #  #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+  #  pyplot.axis('off')
+    pyplot.savefig( pp, format="pdf" )
+    pyplot.show()
+    pp.close()
+
 # figure out xband freqs, if any, that will allow me to phaselock one gunn osc
 #   at approx 105-115 GHz (for 2nd harmonic mixer), and the other at 70-77 GHz
 #   (for tripler used as transmitter); for 1mm optics bench measurements
@@ -1718,3 +1806,118 @@ def quickFind() :
           if (f1 > 100.) and (f1 < 115.) and (f2 > 67.) and (f2 < 77.) and \
              ( abs(3.*f2 - 2.*f1) < 1.) :
             print xGHz, n, f1, m, f2, 1000.*(2.*f1-3.*f2)
+
+# show correlations between params for refractive index fits - specialized to just 2 parameters
+def covarPlot2( infile, jopt=7 ) :
+    fin = open( infile, "r" )
+    [tcmList,nrList,avgPhResid,stdPhResid,stdAmpResid,Resid] = pickle.load( fin )
+
+  # create array of results with 7 columns (t1,t2,nr1,nr2,avgPh,stdPh,stdAmp,Resid)
+    vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
+      [avgPhResid], [stdPhResid], [stdAmpResid], [Resid] ), axis=0 )
+    label = ["t1", "t2", "nr1", "nr2"]
+  
+  # find index of point with minimum avg or variance (whatever we are using)
+    ibest = numpy.argmin( numpy.abs(vec[jopt]) )
+    print len(vec[0]), ibest, vec[:,ibest]
+
+    pyplot.ioff()
+    pp = PdfPages("Covar.pdf")
+    pyplot.figure( figsize=(11,8) )
+    nplot = 1
+    for jx in range(0,4) :
+      for jy in range( jx+1,4 ) :
+        x,y,z = stripout( vec, ibest, jx, jy, jopt )
+        print "\n"
+        jbest = numpy.argmin(z)
+        if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
+          fig = pyplot.subplot(2,3,nplot)
+          xmin,xmax = minmax(x,margin=0.01)
+          ymin,ymax = minmax(y,margin=0.01)
+          vmin,vmax = minmax(z,margin=0.0)
+        # section below copied from web example
+          xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
+          xi,yi = numpy.meshgrid(xi,yi)
+          zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
+          xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
+              # return position of interpolated minimum
+              # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
+          # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
+          fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
+              extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
+          fig.scatter(x,y,s=10, marker='x', c='black')
+          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='white')
+          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
+          fig.ticklabel_format(useOffset=False)
+          fig.set_xlabel( label[jx], fontsize=8 )
+          fig.set_ylabel( label[jy], fontsize=8 )
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
+          fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
+          pyplot.locator_params( axis='x', nbins=5)
+          pyplot.locator_params( axis='y', nbins=5)
+          fig.tick_params( axis='both', which='major', labelsize=8 )
+          pyplot.tight_layout( pad=3, h_pad=1)
+
+        # increment the subplot; begin new page if too many panels
+          nplot = nplot + 1
+          if nplot > 6 :
+            pyplot.savefig( pp, format="pdf" )
+            pyplot.show()
+            pyplot.figure( figsize=(11,8) )
+            nplot = 1
+    pyplot.savefig( pp, format="pdf" )
+    pyplot.show()
+    pp.close()
+
+def junk() :
+  # final panel gives point through which planes pass
+    fig = pyplot.subplot(4,3,nplot)
+    fig.text( 0.03, .92, "dataFileList: %s" % vec[10], \
+        transform=fig.transAxes, horizontalalignment='left', fontsize=8, \
+        color="black", rotation='horizontal' )
+    ylab = .82 
+    fig.text( 0.03, ylab, "planes pass through the following point: (record #%d)" % ibest, \
+      transform=fig.transAxes, horizontalalignment='left', fontsize=8, \
+      color="black", rotation='horizontal' )
+    for jx in range(0,8) :
+      ylab = ylab - .1
+      fig.text( 0.04, ylab, "%s = %.4f" % (label[jx],vec[jx][ibest]), \
+        transform=fig.transAxes, horizontalalignment='left', fontsize=8, \
+        color="black", rotation='horizontal' )
+      pyplot.axis('off')
+    if (nplot > 1) :
+      pyplot.savefig( pp, format="pdf" )
+      pyplot.show()
+    pp.close()
+    print "Covar.pdf written to disk"
+
+# generate an array of perfect fake data
+# will input this to nrefracFit2, use it to figure out how to weight amps and phases
+def fakeData( outFile ):
+    fout = open( outFile, "w" )
+    fGHzArr = numpy.arange(70.,115.1,.1)
+    angIdeg = 8.
+    tcmArr1 = 2.54 * numpy.array( [.008,.250] )
+    nrArr1 = numpy.array( [2.0, 3.114] )
+    tanDeltaArr = numpy.array( [0.,0.] ) 
+    fout.write("# file generated by ob.fakeData()\n")
+    fout.write("# -----------------------------\n")
+    fout.write("# title = %s\n" % outFile)
+    totin = (tcmArr1[0]+tcmArr1[1])/2.54
+    fout.write("# totin = %.4f,%.4f\n" % (totin-.001,totin+.001))
+    fout.write("# layer 1\n")
+    fout.write("## true tin = %.5f\n" % (tcmArr1[0]/2.54) )
+    fout.write("## true nr = %.3f\n" % nrArr1[0] )
+    fout.write("# tin = %.4f,%.4f,%.4f\n" % (tcmArr1[0]/2.54-.001, tcmArr1[0]/2.54+.001,.0005))
+    fout.write("# tanDelta = 0.\n")
+    fout.write("# layer 2\n")
+    fout.write("## true tin = %.5f\n" % (tcmArr1[1]/2.54) )
+    fout.write("## true nr = %.3f\n" % nrArr1[1] )
+    fout.write("# tin = %.4f,%.4f,%.4f\n" % (tcmArr1[1]/2.54-.001, tcmArr1[0]/2.54+.001,.0005))
+    fout.write("# tanDelta = 0.\n")
+    fout.write("# -----------------------------\n")
+    phs1,trans1 = solveStack(fGHzArr, angIdeg, tcmArr1, nrArr1, tanDeltaArr ) 
+    for n in range(0,len(fGHzArr)) :
+      fout.write("%8.2f  %8.6f  %8.3f  0.005\n" % ( fGHzArr[n], trans1[n], phs1[n] ) )
+    fout.close()
