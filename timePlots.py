@@ -22,6 +22,8 @@ matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 import matplotlib.dates as mpdates
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.ticker import FormatStrFormatter
+from matplotlib.ticker import LogFormatterExponent
 
      
 def getdata(infile,col) :
@@ -337,18 +339,45 @@ def plotSEFD( infile, label ) :
 # routines for BlackDewar 
 
 keyList = [ [1,"interhead","lime","-"],
-            [2,"ultrahead","blue","-"],
-            [5,"4He buffer","red","-"],
-            [6,"4He film burner","tomato","-"],
-            [3,"4He pump","red","--"],
-            [4,"4He pump switch","red",":"],
-            [7,"3He interpump","lime","--"],
-            [8,"3He interpump switch","lime",":"],
-            [10,"3He ultrapump switch","blue",":"] ]
-#            [11,"PT 4K head","peru"],
-#            [12,"tower 2K","maroon"] ]
-#            [9,"3He ultrapump","indigo"],
+            [2,"ultra 2 U04577","slateblue","--"],
+            [3,"ultra 3 31275","springgreen","--"],
+            [4,"ultrahead","blue","-"],
+            [7,"4He exchanger","red","-"],
+            [8,"4He film burner","gold","-"],
+            [9,"4K shield sensor 4","magenta","--"],
+            [13,"PT 4K head D07697","sienna","-"] ]
 
+#            [14,"PT 50K head","darkred","-"]]
+#            [5,"4He pump","red","--"],
+#            [6,"4He switch","red",":"],
+#            [10,"3He IC switch","lime",":"],
+#            [11,"3He UC pump","blue","--"],
+#            [12,"3He UC switch","blue",":"],
+#            [15,"sensor 3","fuchsia","-"], 
+#            [16,"sensor 2","indigo","-"] ]
+
+#keyList = [ [1,"interhead","lime","-"],
+#            [2,"TowerTop","slateblue","--"],
+#            [3,"TowerMid","springgreen","--"],
+#            [4,"ultrahead","blue","-"],
+#            [7,"4He exchanger","red","-"],
+#            [14,"TowerBase","magenta","-"] ]
+
+#keyList = [ [1,"interhead","lime","-"],
+#            [2,"ultrahead","blue","-"],
+#            [3,"4He pump","red","--"],
+#            [4,"4He pump switch","red",":"],
+#            [5,"4He exchanger","red","-"],
+#            [6,"4He film burner","tomato","-"],
+#            [8,"3He interpump switch","lime",":"],
+#            [9,"3He ultrapump","blue","--"],
+#            [10,"3He ultrapump switch","blue",":"],
+#            [11,"PT 4K head","peru","-"],
+#            [12,"tower 2K","maroon","-"] ]
+#            [7,"3He interpump","lime","--"],
+
+# reads cryoLog text file, returns array of datetimes and masked array of temperatures
+# only columns listed in keyList will be returned
 def getBDdata(infile,keyList=keyList) :
   t = []
   s = []
@@ -359,39 +388,71 @@ def getBDdata(infile,keyList=keyList) :
       t.append(datetime.datetime.strptime(a[0],"%Y%m%d%H%M%S"))
       sList = []
       for col in range(1,len(a)) :
-        for k,label,color,linetype in keyList :
-          if col == k :
-            sList.append(float(a[col]))
+        sList.append(float(a[col]))
       #print t,sList
       s.append(sList)
   fin.close()
-  return t,numpy.array(s)
+  return t,numpy.ma.masked_less_equal( numpy.array(s), 0. )
 
-def plotBD( infile, keyList=keyList ) :
-    fin = open( infile, "r" ) 
-    pyplot.clf()
+def copyValues( t, s, ncolumn, smin, smax ) :
+    tplot = []
+    splot = []
+    for i in range(0,len(t)) :
+      if (s[i,ncolumn-1] >= smin) and (s[i,ncolumn-1] <= smax) :
+        tplot.append( t[i] )
+        splot.append( s[i,ncolumn-1] )
+    return tplot,splot
+
+def plotBD( infile, keyList=keyList, plotTitle=None, time1=0., time2=0., temperature1=0.2, temperature2=300. ) :
     pyplot.ioff()
-    fig = pyplot.subplot(1,1,1)
+    pp = PdfPages( "cryoLog.pdf" )
+    fig, ax = pyplot.subplots( figsize=(11,8) )
     t,s = getBDdata( infile, keyList=keyList )
+    print s[:,0]
+    print s[:,1]
     print s.shape
     nc = 0 
     for [column,name,color,linetype] in keyList :
       print column, name, color
-      fig.plot_date( t, s[:,nc], "-", color=color, linewidth=2, linestyle=linetype, label=name )
+      tplot,splot = copyValues( t, s, column, 0., 300. )
+      ax.plot_date( tplot, splot, fmt='-', color=color, linewidth=2, linestyle=linetype, label=name )
       nc = nc + 1
-    #fig.xaxis.set_major_locator(mpdates.HourLocator())
-    #fig.xaxis.set_major_formatter(mpdates.DateFormatter( "%H" ) )
-    fig.set_yscale("log")
-    #tmin = mpdates.date2num( datetime.datetime.strptime( "00:00", "%H:%M") )
-    #tmax = mpdates.date2num( datetime.datetime.strptime( "19:00", "%H:%M") )
-    #fig.set_xlim( tmin-.02,tmax )
-    #fig.set_ylim( 1.e3,1.e6 )
-    #fig.text( .5, .94, label, verticalalignment="center", transform=fig.transAxes, \
-    #  horizontalalignment="center", fontsize=18 )
+    ax.xaxis.set_major_locator(mpdates.HourLocator())
+    ax.xaxis.set_major_formatter(mpdates.DateFormatter( "%H" ) )
+    ax.tick_params( axis='y', which='minor' )
+    #ax.yaxis.set_minor_formatter(FormatStrFormatter("%.1f"))
+    ax.set_yscale("log")
+    #ax.yaxis.set_minor_formatter( LogFormatterExponent )
+    if plotTitle:
+      fig.text( .5, .92, plotTitle, verticalalignment="center", transform=ax.transAxes, \
+        horizontalalignment="center", fontsize=14 )
     
-    fig.grid()
-    #pyplot.xlabel( "UT (hrs)" )
-    #pyplot.ylabel( "SEFD (Jy)" )
-    pyplot.legend( loc="best" )
+    datelabel = t[0].strftime("%Y %B %d %H:%M")
+    if time1 != 0. or time2 != 0. : 
+      time1 = datetime.datetime.strptime(time1,"%Y%m%d%H%M%S")
+      datelabel = time1.strftime("%Y %B %d %H:%M")
+      time2 = datetime.datetime.strptime(time2,"%Y%m%d%H%M%S")
+      ax.set_xlim( time1,time2 )
+    ax.set_ylim( temperature1,temperature2 )
+    ax.grid( which='both' )
+    pyplot.xlabel( "PDT beginning %s" % datelabel )
+    pyplot.ylabel( "temperature (K)" )
+    pyplot.legend( loc="best", prop={'size':10} )
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
     pyplot.show()
    
+# derive calibration curve for a sensor
+def calCurve( infile1, infile2, Tcol, Rcol ) :
+    fin1 = open( infile1, "r" )
+    fin2 = open( infile2, "r" )
+    fout = open( "junk", "w" )
+    nr1 = 5 + 10*Tcol 
+    ns1 = 5 + 10*Rcol
+    nl = 0
+    for line1,line2 in zip(fin1,fin2) :
+      if not line1.startswith("#") :
+        nl = nl + 1
+        print line1[0:14], line2[0:14], line1[nr1:nr1+10], line2[ns1:ns1+10] 
+        fout.write("%5d %s %s %s %s\n" % (nl,line1[0:14],line2[0:14],line1[nr1:nr1+10],line2[ns1:ns1+10]) )
+    
