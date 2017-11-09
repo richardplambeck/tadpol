@@ -472,7 +472,8 @@ def printBest( merit, tcmList, nrList, ndump=10 ) :
 
 def nrefracFit2( infile ) :
     print " "
-    fGHz,trans,dphs_meas,title,angIdeg,tcmRange,tcmListIn,nrListIn,tanDeltaList = readTransFile( infile )
+    fullName = infile + ".dat"
+    fGHz,trans,dphs_meas,title,angIdeg,tcmRange,tcmListIn,nrListIn,tanDeltaList = readTransFile( fullName )
     tcmList,nrList = expandTree( tcmRange, tcmListIn, nrListIn )
     print "\n%s" % title
     print "angIdeg = %.2f" % angIdeg
@@ -499,9 +500,16 @@ def nrefracFit2( infile ) :
       stdPhResid[i] = numpy.std(dphi) 
       avgAmpResid[i] = numpy.average( trans - trans_est )
       stdAmpResid[i] = numpy.std( trans - trans_est )
-      # Resid[i] = avgPhResid[i] + stdPhResid[i] + stdAmpResid[i]
     # phases assumed uncertain by 2 degree, amps by .02; so upweight amps by factor of 100
-      Resid[i] =  math.sqrt( pow(avgPhResid[i],2) + pow(stdPhResid[i],2) + 1.e4*pow(stdAmpResid[i],2) )
+      # Resid[i] =  math.sqrt( pow(avgPhResid[i],2) + pow(stdPhResid[i],2) + 1.e4*pow(stdAmpResid[i],2) )
+
+    # now attempt to make Resid ~ chisq/Npts; assume sigma = .02 for both real and imaginary differences
+      measReal = trans * numpy.cos(dphs_meas*math.pi/180.)
+      measImag = trans * numpy.sin(dphs_meas*math.pi/180.)
+      modelReal = trans_est * numpy.cos(dphs_est*math.pi/180.)
+      modelImag = trans_est * numpy.sin(dphs_est*math.pi/180.)
+      Resid[i] = numpy.average( pow(measReal-modelReal,2)/0.0006 + pow(measImag-modelImag,2)/.0006 )
+
       if i > 0 and i%200 == 0 :
         secselapsed = time.time() - secs0
         secsremaining = (ilen-i)*(secselapsed/float(i))
@@ -512,55 +520,61 @@ def nrefracFit2( infile ) :
       #print tcmList[i], nrList[i], ".. %7.3f, %7.3f" \
       #       % (avgPhResid[i], stdPhResid[i])
 
-    #merit = stdPhResid + stdAmpResid
-   
   # save the results for further analysis
-    fout = open( infile+"Fits.pickle", "wb" )     # write over previous file
+    fout = open( infile+"fit.pickle", "wb" )     # write over previous file
     pickle.dump( [tcmList,nrList,avgPhResid,stdPhResid,stdAmpResid,Resid], fout ) 
     fout.close 
 
-  # save best fits in file
-    # fout = open( infile+".fit" )
+  # print out the best fits
     print "\n10 best fits minimizing std residual amps:"
-    # fout.write("\n10 best fits minimizing std residual amps:\n")
     printBest( stdAmpResid, tcmList, nrList ) 
 
     print "\n10 best fits minimizing avg residual phases:"
-    # fout.write("\n10 best fits minimizing avg residual phases:\n")
     printBest( avgPhResid, tcmList, nrList ) 
 
     print "\n10 best fits minimizing std residual phases:"
-    # fout.write("\n10 best fits minimizing std residual phases:\n")
     printBest( stdPhResid, tcmList, nrList ) 
-    # fout.close()
 
     print "\n10 best fits minimizing overall residuals:"
     nbest = printBest( Resid, tcmList, nrList ) 
+
+  # figure out the uncertainty - find full range of each variable where fit is < 2*minResid
+  #  for n in range(0,len(Resid)) :
+  #    if Resid[n] < 2.*Resid[nbest]:
+  #       save.append(tcmList[n],
+    
 
   # begin the plot
     pyplot.ioff()
     pp = PdfPages("refrac.pdf")
     fig =  pyplot.figure( figsize=(11,8) )
-    pyplot.suptitle( "%s (%s)" % (title,infile), fontsize=14 )
+    pyplot.suptitle( "%s (%s)" % (title,fullName), fontsize=14 )
 
-  # lower left plot will show mean phase resid vs refractive index
-    #ax = fig.add_axes( [.1,.1,.38,.2] )
-    #xmin,xmax = minmax( numpy.array(nrList[0]) )
-    #ymin,ymax = minmax( numpy.array(stdPhResid) )
-    #ax.axis( [xmin, xmax, ymin, ymax] )
-    #ax.tick_params( labelsize=10 )
-    # ax.errorbar( nrList[0], stdPhResid, yerr=std, linewidth=2 )
-    # ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
-    #ax.set_xlabel("refractive index", fontsize=10)
-    #ax.set_ylabel("mean phase residual (deg)", fontsize=10)
-    #ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
-    #  horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
-    #pyplot.grid(True)
-
-  # compute amp and phase residuals for best fit
+  # recalculate the model amps and phases for the best fit parameters
     dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDelta ) 
     dphi = unwrap( dphs_meas-dphs_est )
- 
+
+  # compute the observed-model difference vectors
+    measReal = trans * numpy.cos(dphs_meas*math.pi/180.)
+    measImag = trans * numpy.sin(dphs_meas*math.pi/180.)
+    modelReal = trans_est * numpy.cos(dphs_est*math.pi/180.)
+    modelImag = trans_est * numpy.sin(dphs_est*math.pi/180.)
+    deltaReal = measReal-modelReal
+    deltaImag = measImag-modelImag
+    
+    ax = fig.add_axes( [.18,.1,.2,.2] )
+    ax.axis( [-.1,.1,-.1,.1] )
+    ax.set_aspect('equal') 
+    ax.tick_params( labelsize=10 )
+    ax.scatter(deltaReal,deltaImag,s=10, marker='x', c='black')
+    # ax.errorbar( nrList[0], stdPhResid, yerr=std, linewidth=2 )
+    # ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
+    ax.set_xlabel("real(obs-model)", fontsize=10)
+    ax.set_ylabel("imag(obs-model)", fontsize=10)
+    #ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
+    #  horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
+    pyplot.grid(True)
+
   # top left panel is phase vs freq, measured and fit
     ax = fig.add_axes( [.1,.6,.38,.32] )
     xmin,xmax = minmax( fGHz )
@@ -1603,7 +1617,7 @@ def stripout( vec, ibest, jx, jy, jz ) :
         if (j != jx) and (j != jy) and (vec[j][i] != vec[j][ibest] ) :
           usePt = False
       if usePt :
-        print vec[0][i], vec[1][i], vec[2][i], vec[3][i], vec[4][i], vec[5][i], vec[6][i], vec[jz][i]
+        #print vec[0][i], vec[1][i], vec[2][i], vec[3][i], vec[4][i], vec[5][i], vec[6][i], vec[jz][i]
         x1 = vec[jx][i]
         y1 = vec[jy][i]
         z1 = vec[jz][i]
@@ -1821,6 +1835,25 @@ def covarPlot2( infile, jopt=7 ) :
     ibest = numpy.argmin( numpy.abs(vec[jopt]) )
     print len(vec[0]), ibest, vec[:,ibest]
 
+  # create array of vectors for which vec[:,jopt] < 2.*vec[:,ibest]  
+  # in other words, within 2 sigma contour
+    print "all within 2 sigma"
+    save = []
+    for n in range(0,len(vec[0])) :
+      if vec[jopt,n] < 2.*vec[jopt,ibest] :
+        save.append( vec[:,n] )
+    print save 
+    print len(save)
+    for j in range(0,4) :
+      vmin = 100.
+      vmax = -100.
+      for n in range(0,len(save)) :
+        if save[n][j] < vmin :
+          vmin = save[n][j]
+        elif save[n][j] > vmax :
+          vmax = save[n][j]
+      print vmin,vmax
+
     pyplot.ioff()
     pp = PdfPages("Covar.pdf")
     pyplot.figure( figsize=(11,8) )
@@ -1840,17 +1873,22 @@ def covarPlot2( infile, jopt=7 ) :
           xi,yi = numpy.meshgrid(xi,yi)
           zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
           xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
+          zibest = numpy.nanmin(zi)
               # return position of interpolated minimum
               # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
           # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
-          fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
-              extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
+          # fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
+          #    extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
+          clevels = [ 0.999*zibest,2.*zibest,3.*zibest ]
+          colors = ["blue","green"]
+          contour = pyplot.contourf(xi,yi,zi,clevels,colors=colors)
+          #pyplot.colorbar(contour)
           fig.scatter(x,y,s=10, marker='x', c='black')
           fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='white')
           fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
           fig.ticklabel_format(useOffset=False)
-          fig.set_xlabel( label[jx], fontsize=8 )
-          fig.set_ylabel( label[jy], fontsize=8 )
+          fig.set_xlabel( label[jx], fontsize=12 )
+          fig.set_ylabel( label[jy], fontsize=12 )
           #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
           #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
           fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
@@ -1866,8 +1904,9 @@ def covarPlot2( infile, jopt=7 ) :
             pyplot.show()
             pyplot.figure( figsize=(11,8) )
             nplot = 1
-    pyplot.savefig( pp, format="pdf" )
-    pyplot.show()
+    if nplot > 1 :
+      pyplot.savefig( pp, format="pdf" )
+      pyplot.show()
     pp.close()
 
 def junk() :
