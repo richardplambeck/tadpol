@@ -16,7 +16,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 #import pol
 import scipy
 from scipy.interpolate import splrep, splev
-#import hou
+import scipy.fftpack
 
 # lambda is alternate way of defining simple function
 sin = lambda arg: numpy.sin(arg)
@@ -546,7 +546,7 @@ def nrefracFit2( infile ) :
 
   # begin the plot
     pyplot.ioff()
-    pp = PdfPages("refrac.pdf")
+    pp = PdfPages( infile + ".pdf")
     fig =  pyplot.figure( figsize=(11,8) )
     pyplot.suptitle( "%s (%s)" % (title,fullName), fontsize=14 )
 
@@ -562,18 +562,19 @@ def nrefracFit2( infile ) :
     deltaReal = measReal-modelReal
     deltaImag = measImag-modelImag
     
-    ax = fig.add_axes( [.18,.1,.2,.2] )
-    ax.axis( [-.1,.1,-.1,.1] )
-    ax.set_aspect('equal') 
-    ax.tick_params( labelsize=10 )
-    ax.scatter(deltaReal,deltaImag,s=10, marker='x', c='black')
-    # ax.errorbar( nrList[0], stdPhResid, yerr=std, linewidth=2 )
-    # ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
-    ax.set_xlabel("real(obs-model)", fontsize=10)
-    ax.set_ylabel("imag(obs-model)", fontsize=10)
-    #ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
-    #  horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
-    pyplot.grid(True)
+  # lower left panel did show vector differences - replaced by text
+  #  ax = fig.add_axes( [.18,.1,.2,.2] )
+  #  ax.axis( [-.1,.1,-.1,.1] )
+  #  ax.set_aspect('equal') 
+  #  ax.tick_params( labelsize=10 )
+  #  ax.scatter(deltaReal,deltaImag,s=10, marker='x', c='black')
+  #  # ax.errorbar( nrList[0], stdPhResid, yerr=std, linewidth=2 )
+  #  # ax.errorbar( nrfit, 0., xerr=fitunc, color='red', elinewidth=6 )
+  #  ax.set_xlabel("real(obs-model)", fontsize=10)
+  #  ax.set_ylabel("imag(obs-model)", fontsize=10)
+  #  #ax.text( 0.92, .82, "best fit = %.3f (+/- %.3f)" % (nrfit,fitunc), transform=ax.transAxes, \
+  #  #  horizontalalignment='right', fontsize=10, color="black", rotation='horizontal' )
+  #  pyplot.grid(True)
 
   # top left panel is phase vs freq, measured and fit
     ax = fig.add_axes( [.1,.6,.38,.32] )
@@ -624,10 +625,29 @@ def nrefracFit2( infile ) :
     pyplot.grid(True)
 
   # new: dump dphi and trans-trans_est to residual file
-    f2 = open( "resid.dat", "w" )
+    f2 = open( infile + "resid.dat", "w" )
     for n in range(0,len(fGHz)) :
       f2.write("%8.3f  %8.5f  %8.3f\n" % (fGHz[n],dtrans[n],dphi[n]) ) 
     f2.close()
+
+  # fictitious lower left panel gives room for search ranges
+    ax = fig.add_axes( [.1,.1,.38,.2])
+    ylab = 0.84
+    ax.text( 0.01, ylab, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=12, color="black", rotation='horizontal' )
+    ylab = ylab - 0.14
+    ax.text( 0.01, ylab, "trange = %s" % makeString( tcmRange/2.54), transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=12, color="black", rotation='horizontal' )
+    for nl in range(0,nlayers) : 
+      ylab = ylab - 0.14
+      tstring = makeString( tcmListIn[nl]/2.54 )
+      nstring = makeString( nrListIn[nl] )
+      ax.text( 0.01, ylab, "%d: [%s], [%s]" % (nl+1,tstring,nstring), \
+        transform=ax.transAxes, horizontalalignment='left', fontsize=12, \
+        color="black", rotation='horizontal' )
+    #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
+    #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    pyplot.axis('off')
 
   # fictitious lower right panel gives room for text
     ax = fig.add_axes( [.57,.1,.38,.2])
@@ -638,11 +658,25 @@ def nrefracFit2( infile ) :
         transform=ax.transAxes, horizontalalignment='left', fontsize=14, \
         color="black", rotation='horizontal' )
       ylab = ylab - 0.14
+    ax.text( 0.01, ylab, "chisq = %.3f " % Resid[nbest], transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
+    pyplot.axis('off')
+    #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
+
+  # fictitious lower right panel gives room for text
+  #  ax = fig.add_axes( [.57,.1,.38,.2])
+  #  ylab = 0.84
+  #  for nl in range(0,nlayers) :
+  #    ax.text( 0.01, ylab, "layer %d:  t=%.4f\"  nr=%.3f  eps=%.3f" % \
+  #      ( nl+1, tcmList[nbest][nl]/2.54, nrList[nbest][nl], pow(nrList[nbest][nl],2) ),  \
+  #      transform=ax.transAxes, horizontalalignment='left', fontsize=14, \
+  #      color="black", rotation='horizontal' )
+  #    ylab = ylab - 0.14
     #ax.text( 0.03, .56, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
     #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
     #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
     #  horizontalalignment='left', fontsize=14, color="black", rotation='horizontal' )
-    pyplot.axis('off')
+
     pyplot.savefig( pp, format="pdf" )
     pyplot.show()
     pp.close()
@@ -1982,21 +2016,44 @@ def fakeData( outName, sigma=0.025 ):
     fout.close()
 
 # produce Fourier transform of measurements; convert amp,phase to complex
-def FT( infile ) :
+# if FTS=False, 1st 3 columns of data file are interpreted as fGHz, trans_amp, trans_phase(deg)
+# if FTS=True, 1st 3 columns of data file are interpreted as fGHz, trans_pwr, uncertainty 
+# important note: fft returns zero freq term (sum of signal) as element 0, positive freq terms
+#   as elements 1-N/2, neg freq terms as N/2+1:
+#
+def FFT( infile, FTS=False ) :
     fullName = infile + ".dat"
     fGHz,trans,phs,title,angIdeg,tcmRange,tcmListIn,nrListIn,tanDeltaList = readTransFile( fullName )
-    measReal = trans * numpy.cos(phs*math.pi/180.)
-    measImag = trans * numpy.sin(phs*math.pi/180.)
-    #result = numpy.fft.fft( (measReal + 1j*measImag) )
-    result = numpy.fft.fft( trans )
-    print result
-    N = len(trans)
+    if FTS :
+      yf = numpy.fft.fft(trans) 
+    else :
+      measReal = trans * numpy.cos(phs*math.pi/180.)
+      measImag = trans * numpy.sin(phs*math.pi/180.)
+      yf = numpy.abs( numpy.fft.fft(measReal + 1j*measImag) )
+      yf2 = numpy.abs( numpy.fft.fft( trans*trans) )
     delta = fGHz[1]-fGHz[0]
-    print N, delta, 1./(2.*delta), 1./(N*delta)
-    tnsec = numpy.arange( -1./(2.*delta), 1./(2.*delta), 1./(N*delta) )
+    tnsec = numpy.linspace( 0., 1./(2.*delta), len(yf)//2 )
+    print "delta = ",delta
+    print "tnsec = ",tnsec
     fig = pyplot.subplot(1,1,1)
-    fig.plot( tnsec, numpy.abs(result), color="r", linewidth=0.5 )
-    fig.axis( [0.,25.,0,5] )
+    fig.plot( tnsec, yf[0:len(yf)//2], "-",color="r", linewidth=0.5 )
+    if not FTS :
+      fig.plot( tnsec, yf2[:len(yf)//2], "-",color="b", linewidth=0.5 )
+    else :
+      fig.plot( tnsec, numpy.abs(yf)[0:len(yf)//2], "-", color="b", linewidth=0.5)
+    pyplot.show()
+    
+
+def FT2() :
+    N=600
+    T=1.0/800.
+    x = numpy.linspace(0.,N*T,N)
+    print x
+    y = numpy.sin(50.*2.*numpy.pi*x)
+    yf = scipy.fftpack.fft(y)
+    xf = numpy.linspace(0.,1.0/(2.*T),N/2)
+    fig = pyplot.subplot(1,1,1)
+    fig.plot( xf, numpy.abs(yf[0:N//2]), color="r", linewidth=0.5 )
     pyplot.show()
     
 # find rms of transmission amplitudes and phases in cols 2 and 3 of input file; use to
