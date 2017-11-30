@@ -10,7 +10,7 @@ import math
 import sys
 import time
 import string
-import pickle
+import cPickle as pickle
 import matplotlib
 import datetime
 #matplotlib.use('GTK')
@@ -310,7 +310,7 @@ def nrefracFit2( infile ) :
     fout = open( infile+"fit.pickle", "wb" )     # write over previous file
     #pickle.dump( [fitConstraints,tcmList,nrList,avgPhResid,stdPhResid,stdAmpResid,Resid], fout ) 
     pickle.dump( [fitConstraints,tcmList,nrList,avgPhResid,stdPhResid,stdAmpResid,Resid], fout ) 
-    fout.close 
+    fout.close() 
 
   # print out the best fits
     print "\n10 best fits minimizing std residual amps:"
@@ -325,6 +325,9 @@ def nrefracFit2( infile ) :
     print "\n10 best fits minimizing overall residuals:"
     nbest = printBest( Resid, tcmList, nrList ) 
 
+  # plot the fit
+    time.sleep(1)
+    plotFit( infile )
 
 def minmax( varray, margin=.05 ) :
     '''find ymin and ymax for a plot'''
@@ -779,16 +782,25 @@ def rms( infile ) :
     
 
 # generate text string inidicating search range
-def makeString( oneList ) :
-    print oneList
-    if len(oneList) == 1 :
-      return "%.4f" % oneList[0]
-    elif len(oneList) == 2 :
-      return "%.4f, %.4f" % (oneList[0],oneList[1])
-    elif len(oneList) == 3 :
-      return "%.4f, %.4f, %.4f" % (oneList[0],oneList[1],oneList[2])
+def makeString( oneList, inches=False ) :
+    if inches:
+      if len(oneList) == 1 :
+        return "%.4f\"" % oneList[0]
+      elif len(oneList) == 2 :
+        return "%.4f, %.4f\"" % (oneList[0],oneList[1])
+      elif len(oneList) == 3 :
+        return "%.4f\", %.4f, %.4f\"" % (oneList[0],oneList[1],oneList[2])
+      else :
+        return "%.4f, %.4f,... %.4f\"" % (oneList[0],oneList[1],oneList[-1])
     else :
-      return "%.4f, %.4f,... %.4f" % (oneList[0],oneList[1],oneList[-1])
+      if len(oneList) == 1 :
+        return "%.3f" % oneList[0]
+      elif len(oneList) == 2 :
+        return "%.3f, %.3f" % (oneList[0],oneList[1])
+      elif len(oneList) == 3 :
+        return "%.3f, %.3f, %.3f" % (oneList[0],oneList[1],oneList[2])
+      else :
+        return "%.3f, %.3f,... %.3f" % (oneList[0],oneList[1],oneList[-1])
 
 # model Oliver's data
 def nrefracFit3( infile ) :
@@ -877,11 +889,11 @@ def nrefracFit3( infile ) :
     ax.text( 0.01, ylab, "angle = %.1f deg" % angIdeg, transform=ax.transAxes, \
       horizontalalignment='left', fontsize=12, color="black", rotation='horizontal' )
     ylab = ylab - 0.14
-    ax.text( 0.01, ylab, "trange = %s" % makeString( tcmRange/2.54), transform=ax.transAxes, \
+    ax.text( 0.01, ylab, "trange = %s" % makeString( tcmRange/2.54, inches=True), transform=ax.transAxes, \
       horizontalalignment='left', fontsize=12, color="black", rotation='horizontal' )
     for nl in range(0,nlayers) : 
       ylab = ylab - 0.14
-      tstring = makeString( tcmListIn[nl]/2.54 )
+      tstring = makeString( tcmListIn[nl]/2.54, inches=True )
       nstring = makeString( nrListIn[nl] )
       ax.text( 0.01, ylab, "%d: [%s], [%s]" % (nl+1,tstring,nstring), \
         transform=ax.transAxes, horizontalalignment='left', fontsize=12, \
@@ -1037,19 +1049,21 @@ def plotFit( infile, FTS=False ) :
     ylab = 0.84
     ax.text( 0.00, ylab, "fit constraints:")
     ylab = ylab - 0.14
-    ax.text( 0.02, ylab, "angle = %.1f deg" % fitConstraints["angIdeg"], transform=ax.transAxes, \
+    ax.text( 0.03, ylab, "angle = %.1f deg" % fitConstraints["angIdeg"], transform=ax.transAxes, \
       horizontalalignment='left', fontsize=12, color="black", rotation='horizontal' )
     ylab = ylab - 0.14
-    ax.text( 0.02, ylab, "trange = %s" % makeString( fitConstraints["tcmRange"]/2.54), transform=ax.transAxes, \
+    ax.text( 0.03, ylab, "allowed thickness = [%s]" % makeString( fitConstraints["tcmRange"]/2.54, inches=True), transform=ax.transAxes, \
       horizontalalignment='left', fontsize=12, color="black", rotation='horizontal' )
     tcmListIn = fitConstraints["tcmList"]
     nrListIn = fitConstraints["nrList"]
+    ylab = ylab - 0.14
+    ax.text( 0.00, ylab, "search ranges [t] [n]:")
     for nl in range(0,nlayers) : 
       ylab = ylab - 0.14
       print nl, tcmListIn[nl]
-      tstring = makeString( tcmListIn[nl]/2.54 )
+      tstring = makeString( tcmListIn[nl]/2.54, inches=True )
       nstring = makeString( nrListIn[nl] )
-      ax.text( 0.02, ylab, "%d: [%s], [%s]" % (nl+1,tstring,nstring), \
+      ax.text( 0.03, ylab, "%d: [%s]  [%s]" % (nl+1,tstring,nstring), \
         transform=ax.transAxes, horizontalalignment='left', fontsize=12, \
         color="black", rotation='horizontal' )
     #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
@@ -1061,23 +1075,23 @@ def plotFit( infile, FTS=False ) :
     ylab = 0.84
     ax.text( 0.00, ylab, "fit results:")
     ylab = ylab - 0.14
-    ax.text( 0.01, ylab, "chisq = %.3f " % Resid[nbest], transform=ax.transAxes, \
+    ax.text( 0.03, ylab, "chisq = %.3f " % Resid[nbest], transform=ax.transAxes, \
       horizontalalignment='left', fontsize=12, color="black", rotation='horizontal' )
     ylab = ylab - 0.14
     for nl in range(0,nlayers) :
       tmin,tmax = tLimits( savet, nl)
-      ax.text( 0.02, ylab, "layer %d:  t=%.5f  [%.5f, %.5f]\"" % \
+      ax.text( 0.03, ylab, "layer %d:  t=%.4f\"   [%.4f, %.4f\"]" % \
         ( nl+1, tcmList[nbest][nl]/2.54, tmin/2.54, tmax/2.54) ,  \
         transform=ax.transAxes, horizontalalignment='left', fontsize=12, \
         color="black", rotation='horizontal' )
       ylab = ylab - 0.14
       nrmin,nrmax = tLimits( savenr, nl )
-      ax.text( 0.02, ylab, "             nr=%.3f [%.3f, %.3f]" % \
+      ax.text( 0.03, ylab, "              n=%.3f  [%.3f, %.3f]" % \
         ( nrList[nbest][nl], nrmin, nrmax ), \
         transform=ax.transAxes, horizontalalignment='left', fontsize=12, \
         color="black", rotation='horizontal' )
       ylab = ylab - 0.14
-      ax.text( 0.02, ylab, "             eps=%.3f [%.3f, %.3f]" % \
+      ax.text( 0.03, ylab, "              e=%.3f  [%.3f, %.3f]" % \
         ( pow(nrList[nbest][nl],2), pow(nrmin,2), pow(nrmax,2) ),  \
         transform=ax.transAxes, horizontalalignment='left', fontsize=12, \
         color="black", rotation='horizontal' )
