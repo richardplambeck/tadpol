@@ -336,16 +336,23 @@ def plotSEFD( infile, label ) :
     pyplot.ylabel( "SEFD (Jy)" )
     pyplot.show()
    
-# routines for BlackDewar 
+# for PB2 optics tube
+keyList = [ [2,"50K coldhead","slateblue","-"],
+            [5,"50K link cold end","sienna","-"],
+            [7,"50K link hot end","red","-"],
+            [8,"50K link middle","gold","-"],
+           [1,"4K coldhead","lime","-"],
+           [3,"4K link","springgreen","--"],]
 
-keyList = [ [1,"interhead","lime","-"],
-            [2,"ultra 2 U04577","slateblue","--"],
-            [3,"ultra 3 31275","springgreen","--"],
-            [4,"ultrahead","blue","-"],
-            [7,"4He exchanger","red","-"],
-            [8,"4He film burner","gold","-"],
-            [9,"4K shield sensor 4","magenta","--"],
-            [13,"PT 4K head D07697","sienna","-"] ]
+# routines for BlackDewar 
+#keyList = [ [1,"interhead","lime","-"],
+#            [2,"ultra 2 U04577","slateblue","--"],
+#            [3,"ultra 3 31275","springgreen","--"],
+#            [4,"ultrahead","blue","-"],
+#            [7,"4He exchanger","red","-"],
+#            [8,"4He film burner","gold","-"],
+#            [9,"4K shield sensor 4","magenta","--"],
+#            [13,"PT 4K head D07697","sienna","-"] ]
 
 #            [14,"PT 50K head","darkred","-"]]
 #            [5,"4He pump","red","--"],
@@ -378,19 +385,35 @@ keyList = [ [1,"interhead","lime","-"],
 
 # reads cryoLog text file, returns array of datetimes and masked array of temperatures
 # only columns listed in keyList will be returned
-def getBDdata(infile,keyList=keyList) :
+# BD=True for BlackDewar format, False for PB2OT format
+def getBDdata( infile, keyList=keyList, BD=False ) :
   t = []
   s = []
+  First = True
+  t0 = 0.
   fin = open(infile,"r")
   for line in fin:
-    if not (line.startswith("#") or line.startswith("Time")) :
-      a = line.split()
-      t.append(datetime.datetime.strptime(a[0],"%Y%m%d%H%M%S"))
-      sList = []
-      for col in range(1,len(a)) :
-        sList.append(float(a[col]))
-      #print t,sList
-      s.append(sList)
+    if BD :
+      if not (line.startswith("#") or line.startswith("Time") ) :
+        a = line.split()
+        t.append(datetime.datetime.strptime(a[0],"%Y%m%d%H%M%S"))
+        sList = []
+        for col in range(1,len(a)) :
+          sList.append(float(a[col]))
+        #print t,sList
+        s.append(sList)
+    else :
+      if not (line.startswith("Date") or line.startswith("_") or line.startswith("Time") ) :
+        a = line.split(',')
+        if First :
+          t0 = float(a[0])
+          First = False
+        t.append( float(a[0]) - t0 )
+        sList = []
+        for col in range(1,len(a)) :
+          sList.append(float(a[col]))
+        #print t[-1],sList
+        s.append(sList)
   fin.close()
   return t,numpy.ma.masked_less_equal( numpy.array(s), 0. )
 
@@ -403,7 +426,7 @@ def copyValues( t, s, ncolumn, smin, smax ) :
         splot.append( s[i,ncolumn-1] )
     return tplot,splot
 
-def plotBD( infile, keyList=keyList, plotTitle=None, time1=0., time2=0., temperature1=0.2, temperature2=300. ) :
+def plotBD( infile, keyList=keyList, plotTitle=None, time1=0., time2=0., temperature1=0.2, temperature2=300., BD=False ) :
     pyplot.ioff()
     pp = PdfPages( "cryoLog.pdf" )
     fig, ax = pyplot.subplots( figsize=(11,8) )
@@ -415,27 +438,33 @@ def plotBD( infile, keyList=keyList, plotTitle=None, time1=0., time2=0., tempera
     for [column,name,color,linetype] in keyList :
       print column, name, color
       tplot,splot = copyValues( t, s, column, 0., 300. )
-      ax.plot_date( tplot, splot, fmt='-', color=color, linewidth=2, linestyle=linetype, label=name )
+      if BD :
+        ax.plot_date( tplot, splot, fmt='-', color=color, linewidth=2, linestyle=linetype, label=name )
+      else :
+        ax.plot( tplot, splot, '-', color=color, linewidth=2, linestyle=linetype, label=name )
       nc = nc + 1
-    ax.xaxis.set_major_locator(mpdates.HourLocator())
-    ax.xaxis.set_major_formatter(mpdates.DateFormatter( "%H" ) )
+    if BD :
+      ax.xaxis.set_major_locator(mpdates.HourLocator())
+      ax.xaxis.set_major_formatter(mpdates.DateFormatter( "%H" ) )
+      datelabel = t[0].strftime("%Y %B %d %H:%M")
+      if time1 != 0. or time2 != 0. : 
+        time1 = datetime.datetime.strptime(time1,"%Y%m%d%H%M%S")
+        datelabel = time1.strftime("%Y %B %d %H:%M")
+        time2 = datetime.datetime.strptime(time2,"%Y%m%d%H%M%S")
+        ax.set_xlim( time1,time2 )
+      pyplot.xlabel( "PDT beginning %s" % datelabel )
+    else :
+      pyplot.xlabel( "elapsed time (secs)" )
     ax.tick_params( axis='y', which='minor' )
     #ax.yaxis.set_minor_formatter(FormatStrFormatter("%.1f"))
-    ax.set_yscale("log")
+    #ax.set_yscale("log")
     #ax.yaxis.set_minor_formatter( LogFormatterExponent )
     if plotTitle:
       fig.text( .5, .92, plotTitle, verticalalignment="center", transform=ax.transAxes, \
         horizontalalignment="center", fontsize=14 )
     
-    datelabel = t[0].strftime("%Y %B %d %H:%M")
-    if time1 != 0. or time2 != 0. : 
-      time1 = datetime.datetime.strptime(time1,"%Y%m%d%H%M%S")
-      datelabel = time1.strftime("%Y %B %d %H:%M")
-      time2 = datetime.datetime.strptime(time2,"%Y%m%d%H%M%S")
-      ax.set_xlim( time1,time2 )
-    ax.set_ylim( temperature1,temperature2 )
+    #ax.set_ylim( temperature1,temperature2 )
     ax.grid( which='both' )
-    pyplot.xlabel( "PDT beginning %s" % datelabel )
     pyplot.ylabel( "temperature (K)" )
     pyplot.legend( loc="best", prop={'size':10} )
     pyplot.savefig( pp, format='pdf' )
@@ -455,4 +484,51 @@ def calCurve( infile1, infile2, Tcol, Rcol ) :
         nl = nl + 1
         print line1[0:14], line2[0:14], line1[nr1:nr1+10], line2[ns1:ns1+10] 
         fout.write("%5d %s %s %s %s\n" % (nl,line1[0:14],line2[0:14],line1[nr1:nr1+10],line2[ns1:ns1+10]) )
+
+# for PB2 optics tube
+keyList1 = [ [2,"50K coldhead","slateblue","-"],
+            [5,"50K link cold end","sienna","-"],
+            [7,"50K link hot end","red","-"],
+            [8,"50K link middle","gold","-"]]
+keyList2 = [ [1,"4K coldhead","blue","-"],
+           [3,"4K link","lime","-"],]
     
+def plotOT( infile, keyList1=keyList1, keyList2=keyList2, plotTitle=None, time1=0., time2=0., temperature1=0.2, temperature2=300., BD=False ) :
+    pyplot.ioff()
+    pp = PdfPages( "cryoLog.pdf" )
+    fig, (ax1,ax2) = pyplot.subplots( 2, 1, figsize=(11,8), sharex='all', squeeze=True )
+    t,s = getBDdata( infile, keyList=keyList1 )
+    print s[:,0]
+    print s[:,1]
+    print s.shape
+    nc = 0 
+    for [column,name,color,linetype] in keyList1 :
+      print column, name, color
+      tplot,splot = copyValues( t, s, column, 0., 300. )
+      ax1.plot( tplot, splot, '-', color=color, linewidth=2, linestyle=linetype, label=name )
+      nc = nc + 1
+    ax1.tick_params( axis='y', which='minor' )
+    if plotTitle:
+      fig.text( .5, .92, plotTitle, verticalalignment="center", transform=ax.transAxes, \
+        horizontalalignment="center", fontsize=14 )
+    ax1.grid( which='both' )
+    ax1.set_ylabel( "temperature (K)" )
+    ax1.legend( loc="best", prop={'size':10} )
+
+    nc = 0 
+    for [column,name,color,linetype] in keyList2 :
+      print column, name, color
+      tplot,splot = copyValues( t, s, column, 0., 300. )
+      ax2.plot( tplot, splot, '-', color=color, linewidth=1, linestyle=linetype, label=name )
+      nc = nc + 1
+      pyplot.xlabel( "elapsed time (secs)" )
+    ax2.tick_params( axis='y', which='minor' )
+    ax2.grid( which='both' )
+    pyplot.xlabel( "elapsed time (secs)" )
+
+    pyplot.ylabel( "temperature (K)" )
+    pyplot.legend( loc="best", prop={'size':10} )
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+   
