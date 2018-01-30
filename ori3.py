@@ -106,8 +106,8 @@ specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
 
 
 # run getspec, dump spectrum to a text file; adjust freq scale to be correct for source at LSR velocity vsource
-def dumpspec( infile, outfile, region='arcsec,box(.1)', vsource=0., hann=3 ):
-    [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource )
+def dumpspec( infile, outfile, region='arcsec,box(.1)', vsource=0., hann=1 ):
+    [chan, freq, flux ] = getspec( infile, region=region, vsource=vsource, hann=hann )
     fout = open( outfile, "w" )
     fout.write("# infile: %s\n" % infile)
     fout.write("# region: %s\n" % region)
@@ -142,7 +142,7 @@ def readspec( inspec, vsource=5. ) :
 #       - from this, one can compute the restfreq of that channel in the LSR=0 frame (the lab frame) 
 #       - getspec divides by doppler factor to compute restfreq in the source frame (lsr=vsource) 
 
-def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=3, tmpfile="junk" ):
+def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=1, tmpfile="junk" ):
     '''dump out spectrum of selected region with imspec, return [chan, freqLSR, flux] arrays'''
 
   # step 1: use imlist to retrieve velocity and freq information from the header
@@ -2308,8 +2308,8 @@ def cuts( olayFile="cutsolay", velplotfile="pvcmds" ) :
   fout.close()
 
 def plotcuts( smin=-.02, smax=.08, nx=2, ny=2, nslice1=1, nslice2=15 ) :
-    pmin = -1.5
-    pmax = 1.5
+    pmin = -2.
+    pmax = 2.
     vmin = -20
     vmax = 30 
     npanel = 0 
@@ -2325,7 +2325,7 @@ def plotcuts( smin=-.02, smax=.08, nx=2, ny=2, nslice1=1, nslice2=15 ) :
         npanel = 1
       print "npanel = %d" % npanel 
       p = pyplot.subplot(nx,ny,npanel)
-      if npanel <= nslice2 :
+      if nslice <= nslice2 :
         [vel, pos, flx] = readpv( "pv%d.mp" % nslice, pmin=pmin, pmax=pmax, vmin=vmin, vmax=vmax )
         nv = len( numpy.unique( vel ) )
         np = len( numpy.unique( pos ) )
@@ -2489,10 +2489,36 @@ def archivePlot( infile, frqBand, vmarker1=None ) :
     pp.close()
     pyplot.show()
 
+#clumpList = [ { "name": "SrcI", "box" : "(0.50,-0.50,-0.50,0.50)", "vlsr" : 5. }, \
+#              { "name": "HC1",  "box" : "(1.49,-0.73,0.49,0.27)",  "vlsr" : 5. }, \
+#              { "name": "HC2",  "box" : "(0.59,-2.22,-0.41,-1.22)", "vlsr" : 5. }, \
+#              { "name": "HC3",  "box" : "(-0.76,-4.93,-1.76,-3.93)", "vlsr" : 5. }, \
+#              { "name": "BN",   "box" : "(-5.57,7.35,-6.57,8.35)", "vlsr" : 21. }, \
+#              { "name": "IRc7", "box" : "(-3.34,-1.34,-4.34,-0.34)", "vlsr" : 10. }, \
+#              { "name": "W1",   "box" : "(-4.96,2.07,-5.96,3.07)", "vlsr" : 10. }, \
+#              { "name": "SW",   "box" : "(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. }, \
+#              { "name": "N",    "box" : "(6.29,12.57,5.29,13.57)", "vlsr" : 10. } ]
 
+# added 9 nov 2017; trying to find region with simpler spectrum for Suchi to fit
+clumpList = [ { "name": "N2",   "box" : "(1.7,.7,.7,1.7)", "vlsr" : 10. } ]
 
+def mosspectra( ) :
+    for clump in clumpList:
+      for spw in ["spw0", "spw1", "spw2", "spw3"] :
+        infile = "mos.%s.cm" % spw
+        # outfile = "/o/plambeck/OriALMA/220Spectra/%s.%s.txt" % (clump["name"],spw)
+        outfile = "/alma_scr/plambeck/XCLASS/%s.%s.txt" % (clump["name"],spw)
+        print infile
+        dumpspec( infile, outfile, region='arcsec,box%s' % clump["box"], \
+                vsource=clump["vlsr"], hann=1. )
 
-
-
-          
-        
+# short routine to read absolute positions from olay file, generate regions
+def clumpBoxes( infile="xx.olay", box=1. ) :
+    fin = open(infile, "r" )
+    for line in fin :
+      a = line.split()
+      raSec = float(a[7])
+      decSec = float(a[10])
+      draArcsec = 15.*(raSec - 14.514)          # RA offset from SrcI
+      ddecArcsec = 30.575 - decSec     # negative ddec for larger DEC because decs are negative
+      print "(%.2f,%.2f,%.2f,%.2f)" % (draArcsec+box/2.,ddecArcsec-box/2.,draArcsec-box/2.,ddecArcsec+box/2.)
