@@ -73,8 +73,9 @@ def makeList( inString ) :
 #   of the sample is constrained to lie in the range totcm[0]-totcm[1]
 # when computing transmission, skip all combinations which fail this test
 # 9jan2018 - modify so that this file will read rms uncertainty from averaged data files;
+#   use readUnc=True to do this; readUnc=False for older data files
 #
-def readTransFile( infile ) :
+def readTransFile( infile, readUnc=True ) :
   fin = open(infile, "r")
   fGHz = []
   trans = []
@@ -86,7 +87,6 @@ def readTransFile( infile ) :
   nrList = []
   title = ""
   angIdeg = 0.
-  readUnc = False
   for line in fin :
     if line.startswith( "##" ) :     # ignore lines beginning with double hash mark
       continue
@@ -824,7 +824,7 @@ def makeString( oneList, inches=False ) :
         return "%.3f, %.3f, %.3f" % (oneList[0],oneList[1],oneList[2])
       else :
         return "%.3f, %.3f,... %.3f" % (oneList[0],oneList[1],oneList[-1])
-
+1
 # model Oliver's data
 def nrefracFit3( infile ) :
     print " "
@@ -913,8 +913,9 @@ def differ( inFile, outFile ):
   
 # plot the fit on raw data, list parameters
 # read from pickleFile
+# if pdfOnly=True, do not plot to computer screen
 #
-def plotFit( infile, FTS=False ) :
+def plotFit( infile, FTS=False, pdfOnly=False ) :
 
   # retrieve the raw data; ignore constraints given in data file because they might have changed since fit was done
     fullName = infile + ".dat"
@@ -923,6 +924,7 @@ def plotFit( infile, FTS=False ) :
       fGHz,pwr,dummyphs,unc,dummyConstraints = readTransFile( fullName )
     else :
       fGHz,trans,dphs_meas,unc,dummyConstraints = readTransFile( fullName )
+      print unc
 
   # retrieve the fit results
     fin = open( infile+"fit.pickle", "rb" )
@@ -1019,7 +1021,7 @@ def plotFit( infile, FTS=False ) :
       if numpy.mean(unc) > .5 :
         ax.plot( fGHz, trans, "o", ms=2. )
       else :
-        ax.errorbar( fGHz, trans, yerr=unc, elinewidth=1, capsize=0 )
+        ax.errorbar( fGHz, trans, yerr=unc, elinewidth=0.5, capsize=0 )
       ax.plot( fGHz, trans_est, "r-" )
       ax.tick_params( labelsize=10 )
       ax.set_ylabel("transmission", fontsize=10)
@@ -1045,7 +1047,7 @@ def plotFit( infile, FTS=False ) :
     ylab = 1 - ystep
     ax.text( 0.00, ylab, "fit constraints:", fontsize=fontSize)
     ylab = ylab - ystep
-    ax.text( 0.03, ylab, "angle = %.1f deg" % fitConstraints["angIdeg"], transform=ax.transAxes, \
+    ax.text( 0.03, ylab, "angle = %.2f deg" % fitConstraints["angIdeg"], transform=ax.transAxes, \
       horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
     ylab = ylab - ystep 
     ax.text( 0.03, ylab, "allowed thickness = [%s]" % makeString( fitConstraints["tcmRange"]/2.54, inches=True), transform=ax.transAxes, \
@@ -1086,7 +1088,7 @@ def plotFit( infile, FTS=False ) :
           color="black", rotation='horizontal' )
         ylab = ylab - ystep
         nrmin,nrmax = tLimits( savenr, nl )
-        ax.text( 0.03, ylab, "              n=%.3f  [%.3f, %.3f]" % \
+        ax.text( 0.03, ylab, "              n=%.4f  [%.4f, %.4f]" % \
           ( nrList[nbest][nl], nrmin, nrmax ), \
           transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
           color="black", rotation='horizontal' )
@@ -1100,13 +1102,14 @@ def plotFit( infile, FTS=False ) :
     #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
 
     pyplot.savefig( pp, format="pdf" )
-    pyplot.show()
+    if not pdfOnly :
+      pyplot.show()
     pp.close()
 
 # 9jan2018 - new version of nrefracFit which treats data as vectors, and which computes reduced
 #   chisq from the measured uncertainties (these may be 1.0 if data were not averaged)
 
-def nrefracFit4( infile ) :
+def nrefracFit4( infile, pdfOnly=False ) :
     fullName = infile + ".dat"
     fGHz,trans,dphs_meas,unc,fitConstraints = readTransFile( fullName )
     vecmeas = trans * numpy.exp(1j*numpy.radians(dphs_meas))   
@@ -1148,5 +1151,5 @@ def nrefracFit4( infile ) :
 
   # plot the fit
     time.sleep(1)
-    plotFit( infile )
+    plotFit( infile, pdfOnly=pdfOnly )
 
