@@ -22,6 +22,7 @@ import scipy
 from scipy.interpolate import splrep, splev
 import scipy.fftpack
 import scipy.stats
+import os
 
 # scipy.stats.chi2.isf(.046,2.)    computes chisq for 2 degrees of freedom, .046 probability of exceeding
 
@@ -126,7 +127,6 @@ def readTransFile( infile, readUnc=True ) :
         title = title[2:-2]
       elif "readUnc" in line :
         readUnc = True
-  fin.close()
   # print "%d layers found\n" % len(nrList)
   # for i in range(0,len(nrList)) :
   #   print "  layer %d: tcmList = " % i, tcmList[i]
@@ -1152,4 +1152,119 @@ def nrefracFit4( infile, pdfOnly=False ) :
   # plot the fit
     time.sleep(1)
     plotFit( infile, pdfOnly=pdfOnly )
+
+# readFitFile is helper routine for nrefracFit5
+# it reads dictionary fitParams containing names of data files and parameter search ranges 
+#
+def readFitFile( infile ) :
+  datafileList = []
+  totcmRange = [0.,1000.]
+  tcmList = []
+  tanDeltaList = []
+  nrList = []
+  title = ""
+  fin = open( infile + ".fitFile", "r" )
+  for line in fin :
+    if (len(line) > 0) and (not line.startswith("#")) : 
+      if "data" in line :
+        datafileList.append( line[line.find("=")+1:].strip() )
+      if "totcm" in line :
+        totcmRange = makeList( line[line.find("=")+1:] )
+      elif "totin" in line :
+        totcmRange = 2.54*makeList( line[line.find("=")+1:] )
+      elif "angIdeg" in line :
+        angIdeg = float( line[line.find("=")+1:] )
+      elif "tcm" in line :
+        tcmList.append( makeList(line[line.find("=")+1:]) )
+      elif "tin" in line :
+        tcmList.append( makeList(line[line.find("=")+1:]) )
+        if tcmList[-1][-1] > 0. :
+          tcmList[-1] = 2.54*tcmList[-1]			# apply factor of 2.54 only for unmirrored layers!
+      elif "tanDelta" in line :
+        tanDeltaList.append( makeList(line[line.find("=")+1:]) )
+    # this is an alternative way of specifying mirrored layer
+      elif "mirror" in line :
+        tcmList.append( makeList(line[line.find("=")+1:]) )
+        nrList.append( makeList(line[line.find("=")+1:]) )
+        tanDeltaList.append( makeList(line[line.find("=")+1:]) )
+      elif "nr" in line :
+        nrList.append( makeList(line[line.find("=")+1:]) )
+      elif "title" in line :
+        title = line[line.find("=")+1:]
+        title = title[2:-2]
+  fin.close()
+  fitParams = { "datafileList": datafileList, \
+                "title" : title, \
+                "tcmRange" : totcmRange, \
+                "tcmList" : tcmList, \
+                "nrList" : nrList, \
+                "tanDeltaList" : tanDeltaList }
+  return fitParams
+
+# nrefracFit5 handles joint fits to mulitple data sets, each with its own angIdeg and freq coverage
+#   (but currently it will not handle both heterodyne and FTS data)
+# fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
+
+def nrefracFit5( fitFile, pdfOnly=False ) :
+    fitParams = readFitFile( fitFile )
+    print fitParams
+    fGHz = []
+    vecmeas = []
+    unc = []
+    angIdeg = []
+    for i, datafile in enumerate( fitParams["datafileList"] ) :
+      f,trans,dphs_meas,u,fitConstraints = readTransFile( datafile )
+      fGHz.append(f)
+      vecmeas.append( trans * numpy.exp(1j*numpy.radians(dphs_meas)) )  
+      unc.append(u)
+      angIdeg.append( fitConstraints["angIdeg"] )  # this is the only fitConstraint from the data file that we use
+    print fGHz
+    print vecmeas
+    print unc
+    print angIdeg
+    tcmList,nrList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"] )
+      #   tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
+      #   nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
+      #   thus: tcmlist[i] and nrList[i] specify one set of thicknesses and refractive indices to be modeled
+
+  # model all stacks in list, save avg and std phase and amp residuals
+    nlayers = len( tcmList[0] )
+    ntrials = len( tcmList )
+    print "modeling %d layers, %d trials" % (nlayers, ntrials)
+
+  # for now, I am modeling only 1 value of tanDelta
+    tanDelta = []
+    for n in range(0,nlayers) :
+      tanDelta.append( fitParams["tanDeltaList"][n][0] )
+
+  # produce vecmodel for each set of parameters, calc reduced chisq
+    chisq = 1.e6*numpy.ones( ntrials )
+    secs0 = time.time()
+    for i in range(0,ntrials) :
+      errs = []
+      for j in range(0,len( fitParams["datafileList"] )) :
+        phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDelta ) 
+        vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
+        errs.append( vecmeas[j]-vecmodel/unc[j] )
+      chisq[i] = numpy.var( numpy.concatenate(errs) )
+
+      if i > 0 and i%200 == 0 :
+        secselapsed = time.time() - secs0
+        secsremaining = (ntrials-i)*(secselapsed/float(i))
+        if secsremaining/60. > 60. :
+          print "... %d/%d finished; %.2f hours remaining" % (i,ntrials,secsremaining/3600.)
+        else :
+          print "... %d/%d finished; %.2f minutes remaining" % (i,ntrials,secsremaining/60.)
+
+  # save results for further analysis in a unique pickle file (don't overwrite old file)
+    n = 1
+    while os.path.isfile( fitFile + ".pickle;%d" % n) :
+      n = n+1
+    fout = open( fitFile + ".pickle;%d" % n, "wb" )     # create new file
+    pickle.dump( [fitParams,tcmList,nrList,chisq], fout ) 
+    fout.close() 
+
+  # plot the fit
+  #  time.sleep(1)
+  #  plotFit5( infileList, pdfOnly=pdfOnly )
 
