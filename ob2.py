@@ -1283,10 +1283,8 @@ def printElapsed( ntrials, i, secs0 ) :
 #
 def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     fitParams = readFitFile( fitFile )
-    print fitParams
 
-  # read the data file(s); store as LISTS of arrays; these are not all appended into one array
-  #   in case angIdeg differs for them
+  # read the data files; store as LISTS of arrays; do not append into one array in case angIdeg differs
     fGHz = []
     vecmeas = []
     unc = []
@@ -1294,7 +1292,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     for i, datafile in enumerate( fitParams["datafileList"] ) :
       f,trans,dphs_meas,u,fitConstraints = readTransFile( datafile )     # read single data file
 
-    # for pretest, create sparse data set for each full dataset, probing peaks and valleys
+    # create sparse data set for pretest, probing peaks and valleys
       pf, ptrans, pphs, punc =  pretest( f, trans, dphs_meas, u ) 
       fGHz.append( pf )
       vecmeas.append( ptrans * numpy.exp(1j*numpy.radians(pphs)) )
@@ -1310,7 +1308,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     print "read in %d data files" % len(fitParams["datafileList"])
     print "created %d datasets" % len(fGHz)
 
-  # now that the data are in hand, create tree of parameters to search
+  # now create tree of parameters to search
     tcmList,nrList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"] )
       #   tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
       #   nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
@@ -1364,14 +1362,173 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     nbest = printBest( chisq, tcmList, nrList ) 
           
   # save results for further analysis in a unique pickle file (don't overwrite old file)
-    n = 1
-    while os.path.isfile( fitFile + ".pickle;%d" % n) :
-      n = n+1
-    fout = open( fitFile + ".pickle;%d" % n, "wb" )     # create new file
+    nseq = 1
+    while os.path.isfile( fitFile + ".pickle;%d" % nseq) :
+      nseq = nseq + 1
+    pickleFile = fitFile + ".pickle;%d" % nseq
+    fout = open( pickleFile, "wb" )
     pickle.dump( [fitParams,tcmList,nrList,pchisq,chisq], fout ) 
     fout.close() 
 
   # plot the fit
-  #  time.sleep(1)
-  #  plotFit5( infileList, pdfOnly=pdfOnly )
+    time.sleep(1)
+    plotFit5( pickleFile, pdfOnly=pdfOnly )
+
+def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+    fin = open( pickleFile, "rb" )
+    [fitParams,tcmList,nrList,pResid,Resid] = pickle.load( fin )
+    fin.close() 
+    nlayers = len( tcmList[0] )
+
+    print "\n10 best fits minimizing overall residuals:"
+    nbest = printBest( Resid, tcmList, nrList ) 
+
+  # create savet and saven lists, containing all configurations with Resid < 2.* minResid
+    savet = []
+    savenr = []
+    for n in range(0,len(Resid)) :
+      if Resid[n] < 2.*Resid[nbest]:
+        savet.append( tcmList[n] )
+        savenr.append( nrList[n] )
+
+  # begin the plot
+    pyplot.ioff()
+    pyplot.clf()
+    pp = PdfPages( pickleFile + ".pdf")
+
+  # one page per dataset
+    for datafile in fitParams["datafileList"] :
+      fig =  pyplot.figure( figsize=(11,8) )
+      pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=14 )
+
+    # retrieve the raw data; use only angIdeg in fitConstraints
+      fGHz,trans,dphs_meas,unc,fitConstraints = readTransFile( datafile )
+
+    # recalculate the model amps and phases for the best fit parameters; tanDelta is not currently optimized, so use input array
+      tanDelta = []
+      for n in range(0,nlayers) :
+        tanDelta.append( fitParams["tanDeltaList"][n][0] )
+      print tanDelta
+      dphs_est,trans_est = solveStack( fGHz, fitConstraints["angIdeg"], tcmList[nbest], nrList[nbest], tanDelta ) 
+      dphi = unwrap( dphs_meas-dphs_est )
+
+    # top left panel is phase vs freq, measured and fit
+      ax = fig.add_axes( [.1,.6,.38,.32] )
+      xmin,xmax = minmax( fGHz )
+      ymin,ymax = minmax( numpy.concatenate((dphs_meas,dphs_est)))
+      ax.axis( [xmin, xmax, ymin, ymax] )
+      ax.tick_params( labelsize=10 )
+      ax.plot( fGHz, dphs_meas, "o", ms=2. )
+      ax.plot( fGHz, dphs_est, "r-" )
+      ax.set_ylabel("phase (deg)", fontsize=10)
+      ax.set_ylim( [-195.,195.] )
+      pyplot.grid(True)
+  
+    # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
+      ax = fig.add_axes( [.1,.37,.38,.2]) 
+      ymin,ymax = minmax( dphi, margin=.2 )
+      ax.axis( [xmin, xmax, ymin, ymax] )
+      ax.plot( fGHz, dphi, "o-", ms=1. )
+      ax.tick_params( labelsize=10 )
+      dphiavg = numpy.average(dphi)
+      ax.plot( [fGHz[0],fGHz[-1]],[dphiavg,dphiavg],"r--" )
+      ax.set_ylabel("residual (deg)", fontsize=10)
+      ax.set_xlabel("freq (GHz)", fontsize=10)
+      ax.set_ylim( [-9.,9.] )
+      pyplot.grid(True)
+
+    # top right panel is transmission vs freq, measured and theoretical
+      ax = fig.add_axes( [.57,.6,.38,.32] )
+      ymin,ymax = minmax( numpy.concatenate((trans,trans_est)) )
+      ax.axis( [xmin, xmax, ymin, ymax] )
+      if numpy.mean(unc) > .5 :
+        ax.plot( fGHz, trans, "o", ms=2. )
+      else :
+        ax.errorbar( fGHz, trans, yerr=unc, elinewidth=0.5, capsize=0 )
+      ax.plot( fGHz, trans_est, "r-" )
+      ax.tick_params( labelsize=10 )
+      ax.set_ylabel("transmission", fontsize=10)
+      ax.set_ylim( [.5,1.05] )
+      pyplot.grid(True)
+
+    # middle right panel is measured-theoretical trans
+      ax = fig.add_axes( [.57,.37,.38,.2])
+      ax.tick_params( labelsize=10 )
+      dtrans = trans-trans_est
+      ymin,ymax = minmax( dtrans, margin=0.2 )
+      ax.axis( [xmin, xmax, ymin, ymax] )
+      ax.plot( fGHz, dtrans, "o-", ms=1. )
+      ax.set_xlabel("freq (GHz)", fontsize=10)
+      ax.set_ylabel("residual", fontsize=10)
+      ax.set_ylim( [-.09,.09] )
+      pyplot.grid(True)
+
+    # fictitious lower left panel gives room for fit ranges
+      fontSize = 10
+      ystep = .12
+      ax = fig.add_axes( [.1,.1,.38,.2])
+      ylab = 1 - ystep
+      ax.text( 0.00, ylab, "fit constraints:", fontsize=fontSize)
+      ylab = ylab - ystep
+      ax.text( 0.03, ylab, "angle = %.2f deg" % fitConstraints["angIdeg"], transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
+      ylab = ylab - ystep 
+      ax.text( 0.03, ylab, "allowed thickness = [%s]" % makeString( fitConstraints["tcmRange"]/2.54, inches=True), transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
+      tcmListIn = fitConstraints["tcmList"]
+      nrListIn = fitConstraints["nrList"]
+      ylab = ylab - ystep 
+      ax.text( 0.00, ylab, "search ranges [t] [n] [tanDelta]:", fontsize=fontSize)
+      for nl in range(0,nlayers) : 
+        ylab = ylab - ystep 
+        if nrListIn[nl][0] < 0. :
+          ax.text( 0.03, ylab, "%d: mirror layer %d" % (nl+1, -1*nrListIn[nl][0]), \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+        else :
+          tstring = makeString( tcmListIn[nl]/2.54, inches=True )
+          nstring = makeString( nrListIn[nl] )
+          tanDstring = "%.4f" % tanDelta[nl]
+          ax.text( 0.03, ylab, "%d: [%s]  [%s]  [%s]" % (nl+1,tstring,nstring,tanDstring), \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+      pyplot.axis('off')
+
+    # fictitious lower right panel gives room for text
+      ax = fig.add_axes( [.57,.1,.38,.2])
+      ylab = 1.-ystep
+      ax.text( 0.00, ylab, "fit results:", fontsize=fontSize)
+      ylab = ylab - ystep
+      ax.text( 0.03, ylab, "reduced chisq = %.3f " % Resid[nbest], transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
+      ylab = ylab - ystep 
+      for nl in range(0,nlayers) :
+        if nrListIn[nl][0] > 0. :
+          tmin,tmax = tLimits( savet, nl)
+          ax.text( 0.03, ylab, "layer %d:  t=%.4f\"   [%.4f, %.4f\"]" % \
+            ( nl+1, tcmList[nbest][nl]/2.54, tmin/2.54, tmax/2.54) ,  \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+          ylab = ylab - ystep
+          nrmin,nrmax = tLimits( savenr, nl )
+          ax.text( 0.03, ylab, "              n=%.4f  [%.4f, %.4f]" % \
+            ( nrList[nbest][nl], nrmin, nrmax ), \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+          ylab = ylab - ystep 
+          ax.text( 0.03, ylab, "              e=%.3f  [%.3f, %.3f]" % \
+            ( pow(nrList[nbest][nl],2), pow(nrmin,2), pow(nrmax,2) ),  \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+          ylab = ylab - ystep
+      pyplot.axis('off')
+      #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
+
+      pyplot.savefig( pp, format="pdf" )
+      pyplot.show()
+      pyplot.clf()
+    pp.close()
 
