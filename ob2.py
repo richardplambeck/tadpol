@@ -76,18 +76,13 @@ def makeList( inString ) :
 # when computing transmission, skip all combinations which fail this test
 # 9jan2018 - modify so that this file will read rms uncertainty from averaged data files;
 #   use readUnc=True to do this; readUnc=False for older data files
-#
+# 14feb2018 - return only angIdeg, not full list of fitConstraints - these now are read from fitFile
 def readTransFile( infile, readUnc=True ) :
   fin = open(infile, "r")
   fGHz = []
   trans = []
   dphi = []
   unc = []
-  totcmRange = [0.,1000.]
-  tcmList = []
-  tanDeltaList = []
-  nrList = []
-  title = ""
   angIdeg = 0.
   for line in fin :
     if line.startswith( "##" ) :     # ignore lines beginning with double hash mark
@@ -102,45 +97,11 @@ def readTransFile( infile, readUnc=True ) :
       else :                          # otherwise set all uncertainties to 1.
         unc.append( 1. )              
     else :                               # lines with single hash marks are search parameters
-      if "totcm" in line :
-        totcmRange = makeList( line[line.find("=")+1:] )
-      elif "totin" in line :
-        totcmRange = 2.54*makeList( line[line.find("=")+1:] )
-      elif "angIdeg" in line :
+      if "angIdeg" in line :
         angIdeg = float( line[line.find("=")+1:] )
-      elif "tcm" in line :
-        tcmList.append( makeList(line[line.find("=")+1:]) )
-      elif "tin" in line :
-        tcmList.append( makeList(line[line.find("=")+1:]) )
-        if tcmList[-1][-1] > 0. :
-          tcmList[-1] = 2.54*tcmList[-1]			# apply factor of 2.54 only for unmirrored layers!
-      elif "tanDelta" in line :
-        tanDeltaList.append( makeList(line[line.find("=")+1:]) )
-    # this is an alternative way of specifying mirrored layer
-      elif "mirror" in line :
-        tcmList.append( makeList(line[line.find("=")+1:]) )
-        nrList.append( makeList(line[line.find("=")+1:]) )
-        tanDeltaList.append( makeList(line[line.find("=")+1:]) )
-      elif "nr" in line :
-        nrList.append( makeList(line[line.find("=")+1:]) )
-      elif "title" in line :
-        title = line[line.find("=")+1:]
-        title = title[2:-2]
       elif "readUnc" in line :
         readUnc = True
-  # print "%d layers found\n" % len(nrList)
-  # for i in range(0,len(nrList)) :
-  #   print "  layer %d: tcmList = " % i, tcmList[i]
-  #   print "            nrList = ", nrList[i]
-  #   print "          tanDList = ", tanDeltaList[i]
-  #   print " "
-  fitConstraints = { "title" : title, \
-                     "angIdeg" : angIdeg, \
-                     "tcmRange" : totcmRange, \
-                     "tcmList" : tcmList, \
-                     "nrList" : nrList, \
-                     "tanDeltaList" : tanDeltaList }
-  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), numpy.array(unc), fitConstraints
+  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), numpy.array(unc), angIdeg
 
 
 # use Born and Wolf [13.4] eqn (7) and (4) to compute n2*cos(theta2) for lossy dielectic
@@ -178,7 +139,7 @@ def unwrap( phi ) :
 #   for each possible set of refractive indices; same for refractive indices
 # total thickness of tcmListOut is guaranteed to be in the range [tcmMin,tcmMax]
 # 
-def expandTree( tcmRange, tcmListIn, nrListIn) :
+def expandTree( tcmRange, tcmListIn, nrListIn ) :
     nlayers = len(tcmListIn)
     #print "tcmListIn = ",tcmListIn
     #print "nlayers = ", nlayers
@@ -251,6 +212,90 @@ def expandTree( tcmRange, tcmListIn, nrListIn) :
   # return separate tcm and nr arrays
     return numpy.hsplit( numpy.array(d),2)
 
+# same as expandTree, except includes tanDelta
+# the deficiency of this approach is that maybe only a small set of thicknesses is possible; it's
+#   dumb to create full very large expanded tree, then prune out all layers with unacceptable thicknesses
+def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
+    nlayers = len(tcmListIn)
+
+  # meshgrid arrays of thicknesses, refractive indices, and tanDs
+  # this is lame, but I can't figure out how to do this elegantly, without if structure
+    if nlayers == 1 :
+      a = numpy.meshgrid( tcmListIn[0], nrListIn[0], tanDListIn[0] )
+    elif nlayers == 2 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],nrListIn[0],nrListIn[1],tanDListIn[0],tanDListIn[1] ) 
+    elif nlayers == 3 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2], \
+            nrListIn[0],nrListIn[1],nrListIn[2], \
+            tanDListIn[0],tanDListIn[1],tanDListIn[2] )
+    elif nlayers == 4 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],\
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3], \
+            tanDListIn[0],tanDListIn[1],tanDListIn[2],tanDListIn[3] )
+    elif nlayers == 5 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4], \
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4], \
+            tanDListIn[0],tanDListIn[1],tanDListIn[2],tanDListIn[3],tanDListIn[4] )
+    elif nlayers == 6 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],tcmListIn[5], \
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4],nrListIn[5], \
+            tanDListIn[0],tanDListIn[1],tanDListIn[2],tanDListIn[3],tanDListIn[4],tanDListIn[5] )
+    elif nlayers == 7 :
+      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],tcmListIn[5],tcmListIn[6], \
+            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4],nrListIn[5],nrListIn[6], \
+            tanDListIn[0],tanDListIn[1],tanDListIn[2],tanDListIn[3],tanDListIn[4],tanDListIn[5],tanDListIn[6] )
+    else :
+      print "nlayers = %d not allowed by expandTree" % nlayers
+      return
+
+  # flatten each array contained in a; this should create an array with length 3*nlayers 
+    b = []
+    for i in range(0,len(a)) :
+      b.append( a[i].flatten() )
+
+  # constrained layers are indicated by -L, where L is the corresponding layer
+    for n in range(0,nlayers) :
+      if b[n][0] < 0. :
+        m = int( abs(b[n][0]) + 0.5 )
+        try :
+          b[n] = b[m-1]
+          print "mirrored thicknesses for layer %d into layer row %d" % (m,n+1)
+        except :
+          print "mirroring failed; tried to copy row %d into row %d" % (m-1,n)
+          return
+      if b[n+nlayers][0] < 0. :
+        m = int( abs(b[n+nlayers][0]) + 0.5 )    # e.g., -1 -> 1
+        try :
+          b[n+nlayers] = b[m+nlayers-1]
+          print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
+        except :
+          print "mirroring failed; tried to copy row %d into row %d" % (m+nlayers-1,n+nlayers)
+          return
+      if b[n+2*nlayers][0] < 0. :
+        m = int( abs(b[n+2*nlayers][0]) + 0.5 )    # e.g., -1 -> 1
+        try :
+          b[n+2*nlayers] = b[m+2*nlayers-1]
+          print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
+        except :
+          print "mirroring failed; tried to copy row %d into row %d" % (m+2*nlayers-1,n+2*nlayers)
+          return
+
+  # compute total thickness for each possible stack
+    totcm = numpy.zeros( len(b[0]) )
+    for i in range(0,nlayers) :
+      totcm = totcm + b[i]
+  
+  # now form transpose, retain only rows where thickness is within allowed range
+    c = numpy.transpose(b)
+    d = []
+    for n in range(0,len(c)) :
+      if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
+        d.append( c[n] )
+
+  # return separate tcm, nr, and tanD arrays
+    return numpy.hsplit( numpy.array(d),3)
+
+
 # prints parameters for ndump stacks with smallest absolute deviations
 def printBest( merit, tcmList, nrList, ndump=10 ) :
     ntrials = len( tcmList )
@@ -277,78 +322,6 @@ def tLimits( save, jlayer ) :
         vmax = save[n][jlayer]
     return [vmin,vmax]
     
-def nrefracFit2( infile ) :
-
-    fullName = infile + ".dat"
-    fGHz,trans,dphs_meas,unc,fitConstraints = readTransFile( fullName )
-    tcmList,nrList = expandTree( fitConstraints["tcmRange"], fitConstraints["tcmList"], fitConstraints["nrList"] )
-      #   tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
-      #   nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
-      #   thus: tcmlist[i] and nrList[i] specify one set of thicknesses and refractive indices to be modeled
-
-  # model all stacks in list, save avg and std phase and amp residuals
-    nlayers = len( tcmList[0] )
-    ntrials = len( tcmList )
-    print "modeling %d layers, %d trials" % (nlayers, ntrials)
-
-    tanDelta = []
-    for n in range(0,nlayers) :
-      tanDelta.append( fitConstraints["tanDeltaList"][n][0] )
-    avgPhResid = 1.e6*numpy.ones( ntrials )
-    stdPhResid = 1.e6*numpy.ones( ntrials )
-    avgAmpResid = 1.e6*numpy.ones( ntrials )
-    stdAmpResid = 1.e6*numpy.ones( ntrials )
-    Resid = 1.e6*numpy.ones( ntrials )
-    secs0 = time.time()
-    for i in range(0,ntrials) :
-      dphs_est,trans_est = solveStack( fGHz, fitConstraints["angIdeg"], tcmList[i], nrList[i], tanDelta ) 
-      dphi = unwrap( dphs_meas-dphs_est )
-        # unwrap keeps phase in range -180 to 180 in all cases
-      avgPhResid[i] = numpy.average(dphi) 
-      stdPhResid[i] = numpy.std(dphi) 
-      avgAmpResid[i] = numpy.average( trans - trans_est )
-      stdAmpResid[i] = numpy.std( trans - trans_est )
-
-    # now attempt to make Resid ~ chisq/Npts; assume sigma = .02 for both real and imaginary differences
-      measReal = trans * numpy.cos(dphs_meas*math.pi/180.)
-      measImag = trans * numpy.sin(dphs_meas*math.pi/180.)
-      modelReal = trans_est * numpy.cos(dphs_est*math.pi/180.)
-      modelImag = trans_est * numpy.sin(dphs_est*math.pi/180.)
-      Resid[i] = numpy.average( pow(measReal-modelReal,2)/0.0006 + pow(measImag-modelImag,2)/.0006 )
-
-      if i > 0 and i%200 == 0 :
-        secselapsed = time.time() - secs0
-        secsremaining = (ntrials-i)*(secselapsed/float(i))
-        if secsremaining/60. > 60. :
-          print "... %d/%d finished; %.2f hours remaining" % (i,ntrials,secsremaining/3600.)
-        else :
-          print "... %d/%d finished; %.2f minutes remaining" % (i,ntrials,secsremaining/60.)
-
-  # save the results for further analysis
-    fout = open( infile+"fit.pickle", "wb" )     # write over previous file
-    pickle.dump( [fitConstraints,tcmList,nrList,avgPhResid,stdPhResid,stdAmpResid,Resid], fout ) 
-    fout.close() 
-
-  # print out the best fits
-    print "\n10 best fits minimizing avg residual amps:"
-    printBest( avgAmpResid, tcmList, nrList ) 
-
-    print "\n10 best fits minimizing std residual amps:"
-    printBest( stdAmpResid, tcmList, nrList ) 
-
-    print "\n10 best fits minimizing avg residual phases:"
-    printBest( avgPhResid, tcmList, nrList ) 
-
-    print "\n10 best fits minimizing std residual phases:"
-    printBest( stdPhResid, tcmList, nrList ) 
-
-    print "\n10 best fits minimizing overall residuals:"
-    nbest = printBest( Resid, tcmList, nrList ) 
-
-  # plot the fit
-    time.sleep(1)
-    plotFit( infile )
-
 def minmax( varray, margin=.05 ) :
     '''find ymin and ymax for a plot'''
     vmin = varray.min()
@@ -806,16 +779,16 @@ def rms( infile ) :
     
 
 # generate text string inidicating search range
-def makeString( oneList, inches=False ) :
-    if inches:
+def makeString( oneList, fmt=4 ) :
+    if fmt==4 :
       if len(oneList) == 1 :
-        return "%.4f\"" % oneList[0]
+        return "%.4f" % oneList[0]
       elif len(oneList) == 2 :
-        return "%.4f, %.4f\"" % (oneList[0],oneList[1])
+        return "%.4f, %.4f" % (oneList[0],oneList[1])
       elif len(oneList) == 3 :
-        return "%.4f\", %.4f, %.4f\"" % (oneList[0],oneList[1],oneList[2])
+        return "%.4f\", %.4f, %.4f" % (oneList[0],oneList[1],oneList[2])
       else :
-        return "%.4f, %.4f,... %.4f\"" % (oneList[0],oneList[1],oneList[-1])
+        return "%.4f, %.4f,... %.4f" % (oneList[0],oneList[1],oneList[-1])
     else :
       if len(oneList) == 1 :
         return "%.3f" % oneList[0]
@@ -825,12 +798,13 @@ def makeString( oneList, inches=False ) :
         return "%.3f, %.3f, %.3f" % (oneList[0],oneList[1],oneList[2])
       else :
         return "%.3f, %.3f,... %.3f" % (oneList[0],oneList[1],oneList[-1])
-1
+
 # model Oliver's data
+# this routine won't work anymore without changing it to use fitFile
 def nrefracFit3( infile ) :
     print " "
     fullName = infile + ".dat"
-    fGHz,pwr,dummyphs,unc,fitConstraints = readTransFile( fullName )
+    fGHz,pwr,dummyphs,unc,angIdeg = readTransFile( fullName )
     tcmList,nrList = expandTree( fitConstraints["tcmRange"], fitConstraints["tcmList"], fitConstraints["nrList"] )
     angIdeg = 0.
     print "\n%s" % fitConstraints["title"]
@@ -943,10 +917,12 @@ def plotFit( infile, FTS=False, pdfOnly=False ) :
   # create savet and saven lists, containing all configurations with Resid < 2.* minResid
     savet = []
     savenr = []
+    savetanD = []
     for n in range(0,len(Resid)) :
       if Resid[n] < 2.*Resid[nbest]:
         savet.append( tcmList[n] )
         savenr.append( nrList[n] )
+        savetanD.append( nrList[n] )
 
   # begin the plot
     pyplot.ioff()
@@ -1056,7 +1032,7 @@ def plotFit( infile, FTS=False, pdfOnly=False ) :
     tcmListIn = fitConstraints["tcmList"]
     nrListIn = fitConstraints["nrList"]
     ylab = ylab - ystep 
-    ax.text( 0.00, ylab, "search ranges [t] [n] [tanDelta]:", fontsize=fontSize)
+    ax.text( 0.00, ylab, "search ranges [tinches] [n] [tanDelta]:", fontsize=fontSize)
     for nl in range(0,nlayers) : 
       ylab = ylab - ystep 
       if nrListIn[nl][0] < 0. :
@@ -1083,24 +1059,29 @@ def plotFit( infile, FTS=False, pdfOnly=False ) :
     for nl in range(0,nlayers) :
       if nrListIn[nl][0] > 0. :
         tmin,tmax = tLimits( savet, nl)
-        ax.text( 0.03, ylab, "layer %d:  t=%.4f\"   [%.4f, %.4f\"]" % \
+        ax.text( 0.03, ylab, "layer %d:  t = %.4f\"   [%.4f, %.4f\"]" % \
           ( nl+1, tcmList[nbest][nl]/2.54, tmin/2.54, tmax/2.54) ,  \
           transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
           color="black", rotation='horizontal' )
         ylab = ylab - ystep
         nrmin,nrmax = tLimits( savenr, nl )
-        ax.text( 0.03, ylab, "              n=%.4f  [%.4f, %.4f]" % \
+        ax.text( 0.03, ylab, "              n = %.4f  [%.4f, %.4f]" % \
           ( nrList[nbest][nl], nrmin, nrmax ), \
           transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
           color="black", rotation='horizontal' )
         ylab = ylab - ystep 
-        ax.text( 0.03, ylab, "              e=%.3f  [%.3f, %.3f]" % \
+        ax.text( 0.03, ylab, "              e = %.3f  [%.3f, %.3f]" % \
           ( pow(nrList[nbest][nl],2), pow(nrmin,2), pow(nrmax,2) ),  \
           transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
           color="black", rotation='horizontal' )
         ylab = ylab - ystep
+        tanDmin,tanDmax = tLimits( savetanD, nl )
+        ax.text( 0.03, ylab, "              tanD = %.4f  [%.4f, %.4f]" % \
+          ( nrList[nbest][nl], nrmin, nrmax ), \
+          transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+          color="black", rotation='horizontal' )
+        ylab = ylab - ystep
     pyplot.axis('off')
-    #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
 
     pyplot.savefig( pp, format="pdf" )
     if not pdfOnly :
@@ -1212,7 +1193,7 @@ def readFitFile( sampleName ) :
                 "tanDeltaList" : tanDeltaList }
   return fitParams
 
-# selects data points for pretest; these are points near the min and max transmission
+# selects data points for prefit; these are points near the min and max transmission
 # input: full data set
 # output: sparse data set
 # ideally, one would find period of the transmission curve using Fourier transform,
@@ -1221,7 +1202,7 @@ def readFitFile( sampleName ) :
 #   estimated period surrounding that peak; after all points are masked, I find
 #   typical spacing between peaks, take midpoints to identify minima
 #
-def pretest( fGHz, trans, phase, unc ) :
+def selectPrefitData( fGHz, trans, phase, unc ) :
     period = 7.5					    # estimated period of transmission data, GHz
     tma = numpy.ma.asarray( trans )     # create masked array of transmission data
 
@@ -1276,7 +1257,7 @@ def printElapsed( ntrials, i, secs0 ) :
 
 # nrefracFit5 handles joint fits to multiple data sets, each with its own angIdeg and freq coverage
 #   (but currently it will not handle both heterodyne and FTS data)
-# it uses a pretest: calculates "pchisq" for a very sparse dataset that samples just max and min values;
+# it uses a prefit: calculates "pchisq" for a very sparse dataset that samples just max and min values;
 #   then does the calculation for the full dataset only for those parameters where 
 #   pchisq < pCutoff * pchisqBest
 # fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
@@ -1290,37 +1271,32 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     unc = []
     angIdeg = []
     for i, datafile in enumerate( fitParams["datafileList"] ) :
-      f,trans,dphs_meas,u,fitConstraints = readTransFile( datafile )     # read single data file
+      f,trans,dphs_meas,u,angId = readTransFile( datafile )     # read single data file
 
-    # create sparse data set for pretest, probing peaks and valleys
-      pf, ptrans, pphs, punc =  pretest( f, trans, dphs_meas, u ) 
+    # create sparse data set for prefit, probing peaks and valleys; this will be an odd-numbered data set
+      pf, ptrans, pphs, punc =  selectPrefitData( f, trans, dphs_meas, u ) 
       fGHz.append( pf )
       vecmeas.append( ptrans * numpy.exp(1j*numpy.radians(pphs)) )
       unc.append( punc )
-      angIdeg.append( fitConstraints["angIdeg"] )  # this is the only fitConstraint from the data file that we use
+      angIdeg.append( angId )  
 
-    # now append full data set to lists
+    # now append full data set to lists; these will be even-numbered
       fGHz.append(f)
       vecmeas.append( trans * numpy.exp(1j*numpy.radians(dphs_meas)) )  
       unc.append(u)
-      angIdeg.append( fitConstraints["angIdeg"] )  # this is the only fitConstraint from the data file that we use
+      angIdeg.append( angId )  
 
     print "read in %d data files" % len(fitParams["datafileList"])
     print "created %d datasets" % len(fGHz)
 
   # now create tree of parameters to search
-    tcmList,nrList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"] )
+    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
       #   tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
       #   nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
       #   thus: tcmlist[i] and nrList[i] specify one set of thicknesses and refractive indices to be modeled
     nlayers = len( tcmList[0] )
     ntrials = len( tcmList )
     print "modeling %d layers, %d trials" % (nlayers, ntrials)
-
-  # for now, I am allowing only 1 value of tanDelta per layer
-    tanDelta = []
-    for n in range(0,nlayers) :
-      tanDelta.append( fitParams["tanDeltaList"][n][0] )
 
   # for Pretest, model odd-numbered layers only, calculate reduced chisq for every possible trial
     pchisqCutoff = 1.e6
@@ -1330,7 +1306,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     for i in range(0,ntrials) :
       errs = []
       for j in range(0,len(fGHz),2) :
-        phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDelta ) 
+        phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
         vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
         errs.append( (vecmeas[j]-vecmodel)/unc[j] )
       pchisq[i] = numpy.var( numpy.concatenate(errs) )
@@ -1355,7 +1331,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
         imodel = imodel+1
         errs = []
         for j in range(1, len(fGHz), 2) :
-          phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDelta ) 
+          phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
           vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
           errs.append( (vecmeas[j]-vecmodel)/unc[j] )
       chisq[i] = numpy.var( numpy.concatenate(errs) )
@@ -1363,11 +1339,11 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
           
   # save results for further analysis in a unique pickle file (don't overwrite old file)
     nseq = 1
-    while os.path.isfile( fitFile + ".pickle;%d" % nseq) :
+    while os.path.isfile( fitFile + ".pickle.%d" % nseq) :
       nseq = nseq + 1
-    pickleFile = fitFile + ".pickle;%d" % nseq
+    pickleFile = fitFile + ".pickle.%d" % nseq
     fout = open( pickleFile, "wb" )
-    pickle.dump( [fitParams,tcmList,nrList,pchisq,chisq], fout ) 
+    pickle.dump( [fitParams,tcmList,nrList,tanDeltaList,pchisq,chisq], fout ) 
     fout.close() 
 
   # plot the fit
@@ -1379,20 +1355,22 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
     fin = open( pickleFile, "rb" )
-    [fitParams,tcmList,nrList,pResid,Resid] = pickle.load( fin )
+    [fitParams,tcmList,nrList,tanDeltaList,pResid,Resid] = pickle.load( fin )
     fin.close() 
     nlayers = len( tcmList[0] )
 
     print "\n10 best fits minimizing overall residuals:"
     nbest = printBest( Resid, tcmList, nrList ) 
 
-  # create savet and saven lists, containing all configurations with Resid < 2.* minResid
+  # create savet,saven,savetanD lists, containing all configurations with Resid < 2.* minResid
     savet = []
     savenr = []
+    savetanD = []
     for n in range(0,len(Resid)) :
       if Resid[n] < 2.*Resid[nbest]:
         savet.append( tcmList[n] )
         savenr.append( nrList[n] )
+        savetanD.append( tanDeltaList[n] )
 
   # begin the plot
     pyplot.ioff()
@@ -1405,14 +1383,10 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=14 )
 
     # retrieve the raw data; use only angIdeg in fitConstraints
-      fGHz,trans,dphs_meas,unc,fitConstraints = readTransFile( datafile )
+      fGHz,trans,dphs_meas,unc,angIdeg = readTransFile( datafile )
 
     # recalculate the model amps and phases for the best fit parameters; tanDelta is not currently optimized, so use input array
-      tanDelta = []
-      for n in range(0,nlayers) :
-        tanDelta.append( fitParams["tanDeltaList"][n][0] )
-      print tanDelta
-      dphs_est,trans_est = solveStack( fGHz, fitConstraints["angIdeg"], tcmList[nbest], nrList[nbest], tanDelta ) 
+      dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
       dphi = unwrap( dphs_meas-dphs_est )
 
     # top left panel is phase vs freq, measured and fit
@@ -1473,15 +1447,16 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       ylab = 1 - ystep
       ax.text( 0.00, ylab, "fit constraints:", fontsize=fontSize)
       ylab = ylab - ystep
-      ax.text( 0.03, ylab, "angle = %.2f deg" % fitConstraints["angIdeg"], transform=ax.transAxes, \
+      ax.text( 0.03, ylab, "angle = %.2f deg" % angIdeg, transform=ax.transAxes, \
         horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
       ylab = ylab - ystep 
-      ax.text( 0.03, ylab, "allowed thickness = [%s]" % makeString( fitConstraints["tcmRange"]/2.54, inches=True), transform=ax.transAxes, \
+      ax.text( 0.03, ylab, "allowed thickness = [%s]" % makeString( fitParams["tcmRange"]/2.54 ), transform=ax.transAxes, \
         horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
-      tcmListIn = fitConstraints["tcmList"]
-      nrListIn = fitConstraints["nrList"]
+      tcmListIn = fitParams["tcmList"]
+      nrListIn = fitParams["nrList"]
+      tanDeltaListIn = fitParams["tanDeltaList"]
       ylab = ylab - ystep 
-      ax.text( 0.00, ylab, "search ranges [t] [n] [tanDelta]:", fontsize=fontSize)
+      ax.text( 0.00, ylab, "search ranges [tinches] [n] [tanDelta]:", fontsize=fontSize)
       for nl in range(0,nlayers) : 
         ylab = ylab - ystep 
         if nrListIn[nl][0] < 0. :
@@ -1489,9 +1464,9 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
             transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
             color="black", rotation='horizontal' )
         else :
-          tstring = makeString( tcmListIn[nl]/2.54, inches=True )
-          nstring = makeString( nrListIn[nl] )
-          tanDstring = "%.4f" % tanDelta[nl]
+          tstring = makeString( tcmListIn[nl]/2.54 )
+          nstring = makeString( nrListIn[nl], fmt=3 )
+          tanDstring = makeString( tanDeltaListIn[nl] )
           ax.text( 0.03, ylab, "%d: [%s]  [%s]  [%s]" % (nl+1,tstring,nstring,tanDstring), \
             transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
             color="black", rotation='horizontal' )
@@ -1508,24 +1483,29 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       for nl in range(0,nlayers) :
         if nrListIn[nl][0] > 0. :
           tmin,tmax = tLimits( savet, nl)
-          ax.text( 0.03, ylab, "layer %d:  t=%.4f\"   [%.4f, %.4f\"]" % \
+          ax.text( 0.03, ylab, "layer %d:  t = %.4f\"   [%.4f, %.4f\"]" % \
             ( nl+1, tcmList[nbest][nl]/2.54, tmin/2.54, tmax/2.54) ,  \
             transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
             color="black", rotation='horizontal' )
           ylab = ylab - ystep
           nrmin,nrmax = tLimits( savenr, nl )
-          ax.text( 0.03, ylab, "              n=%.4f  [%.4f, %.4f]" % \
+          ax.text( 0.03, ylab, "              n = %.4f  [%.4f, %.4f]" % \
             ( nrList[nbest][nl], nrmin, nrmax ), \
             transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
             color="black", rotation='horizontal' )
           ylab = ylab - ystep 
-          ax.text( 0.03, ylab, "              e=%.3f  [%.3f, %.3f]" % \
+          ax.text( 0.03, ylab, "              e = %.3f  [%.3f, %.3f]" % \
             ( pow(nrList[nbest][nl],2), pow(nrmin,2), pow(nrmax,2) ),  \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+          ylab = ylab - ystep 
+          tanDmin,tanDmax = tLimits( savetanD, nl )
+          ax.text( 0.03, ylab, "              tanD = %.4f  [%.4f, %.4f]" % \
+            ( tanDeltaList[nbest][nl], tanDmin, tanDmax ), \
             transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
             color="black", rotation='horizontal' )
           ylab = ylab - ystep
       pyplot.axis('off')
-      #ax.text( 0.03, .42, "tanDelta = %.1e" % tanDelta[0], transform=ax.transAxes, \
 
       pyplot.savefig( pp, format="pdf" )
       pyplot.show()
