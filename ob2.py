@@ -296,8 +296,8 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
     return numpy.hsplit( numpy.array(d),3)
 
 
-# prints parameters for ndump stacks with smallest absolute deviations
-def printBest( merit, tcmList, nrList, ndump=10 ) :
+# prints parameters for ndump stacks with smallest absolute deviations; returns index of best fit
+def printBest( merit, tcmList, nrList, tanDeltaList, ndump=10 ) :
     ntrials = len( tcmList )
     nlayers = len( tcmList[0] )
     if ndump > ntrials :
@@ -306,7 +306,7 @@ def printBest( merit, tcmList, nrList, ndump=10 ) :
     nbest = merit2.argsort()[:ndump]    # finds indexes of ndump smallest values
     print nbest
     for nb in nbest:
-      print tcmList[nb]/2.54, nrList[nb], merit[nb]
+      print tcmList[nb]/2.54, nrList[nb], tanDeltaList[nb], merit[nb]
     return nbest[0]
 
 # returns min and max in save array
@@ -1088,54 +1088,6 @@ def plotFit( infile, FTS=False, pdfOnly=False ) :
       pyplot.show()
     pp.close()
 
-# 9jan2018 - new version of nrefracFit which treats data as vectors, and which computes reduced
-#   chisq from the measured uncertainties (these may be 1.0 if data were not averaged)
-
-def nrefracFit4( infile, pdfOnly=False ) :
-    fullName = infile + ".dat"
-    fGHz,trans,dphs_meas,unc,fitConstraints = readTransFile( fullName )
-    vecmeas = trans * numpy.exp(1j*numpy.radians(dphs_meas))   
-    tcmList,nrList = expandTree( fitConstraints["tcmRange"], fitConstraints["tcmList"], fitConstraints["nrList"] )
-      #   tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
-      #   nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
-      #   thus: tcmlist[i] and nrList[i] specify one set of thicknesses and refractive indices to be modeled
-
-  # model all stacks in list, save avg and std phase and amp residuals
-    nlayers = len( tcmList[0] )
-    ntrials = len( tcmList )
-    print "modeling %d layers, %d trials" % (nlayers, ntrials)
-
-  # for now, I am modeling only 1 value of tanDelta
-    tanDelta = []
-    for n in range(0,nlayers) :
-      tanDelta.append( fitConstraints["tanDeltaList"][n][0] )
-
-  # produce vecmodel for each set of parameters, calc reduced chisq
-    chisq = 1.e6*numpy.ones( ntrials )
-    secs0 = time.time()
-    for i in range(0,ntrials) :
-      phs,amp = solveStack( fGHz, fitConstraints["angIdeg"], tcmList[i], nrList[i], tanDelta ) 
-      vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
-      chisq[i] = numpy.var( (vecmeas-vecmodel)/unc )
-      print i, chisq[i]
-
-      if i > 0 and i%200 == 0 :
-        secselapsed = time.time() - secs0
-        secsremaining = (ntrials-i)*(secselapsed/float(i))
-        if secsremaining/60. > 60. :
-          print "... %d/%d finished; %.2f hours remaining" % (i,ntrials,secsremaining/3600.)
-        else :
-          print "... %d/%d finished; %.2f minutes remaining" % (i,ntrials,secsremaining/60.)
-
-  # save the results for further analysis
-    fout = open( infile+"fit.pickle", "wb" )     # write over previous file
-    pickle.dump( [fitConstraints,tcmList,nrList,chisq,chisq,chisq,chisq], fout ) 
-    fout.close() 
-
-  # plot the fit
-    time.sleep(1)
-    plotFit( infile, pdfOnly=pdfOnly )
-
 # readFitFile is helper routine for nrefracFit5
 # it reads file "sample.fitFile", where "sample" is the name of the sample
 # this file should contain the following information: 
@@ -1197,10 +1149,10 @@ def readFitFile( sampleName ) :
 # input: full data set
 # output: sparse data set
 # ideally, one would find period of the transmission curve using Fourier transform,
-#   then fit to maxima and minima with polynomial fits to produce sparse data
+#   then perhaps use polynomial fits to produce sparse data
 # for now, I am identifying peaks by finding maxima, then masking out 0.8 of the
 #   estimated period surrounding that peak; after all points are masked, I find
-#   typical spacing between peaks, take midpoints to identify minima
+#   typical spacing between peaks, take midpoints as minima
 #
 def selectPrefitData( fGHz, trans, phase, unc ) :
     period = 7.5					    # estimated period of transmission data, GHz
@@ -1210,20 +1162,19 @@ def selectPrefitData( fGHz, trans, phase, unc ) :
     nlist = []
     while ( tma.count() > 0) :	        # loop until all elements are masked
       nmax = numpy.ma.argmax(tma)       # maximum remaining element
-      print "max at n = %d" % nmax
       nlist.append( nmax )              
       for i in range(0, len(tma) ) :
         if abs(fGHz[i] - fGHz[nmax]) < 0.75 * period :
           tma[i] = numpy.ma.masked
     nmaxlist = numpy.sort(nlist) 
-    print "nmaxlist =",nmaxlist
+    print "selectPrefitData: nmaxlist =",nmaxlist
 
   # assume midpoints between maxima are close to minima
     if nmaxlist[-1] == len(trans) - 1 :
       deltan = int( (nmaxlist[-2]-nmaxlist[-3])/2. + 0.5)
     else :
       deltan = int( (nmaxlist[-1]-nmaxlist[-2])/2. + 0.5)
-    print "avg delta = %d" % deltan
+    print "selectPrefitData: avg delta = %d" % deltan
     if (nmaxlist[0]-deltan) > 0 :
       nlist.append( nmaxlist[0] - deltan )
     for n in range(0,len(nmaxlist)-1) :
@@ -1233,7 +1184,7 @@ def selectPrefitData( fGHz, trans, phase, unc ) :
     
   # return sparse arrays
     nsorted = numpy.sort(nlist)
-    print "nsorted =",nsorted
+    print "selectPrefitData: nsorted =",nsorted
     fsparse = []
     tsparse = []
     psparse = []
@@ -1263,6 +1214,8 @@ def printElapsed( ntrials, i, secs0 ) :
 # fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
 #
 def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
+
+  # fitParams dictionary contains list of data files, parameter ranges to search, etc
     fitParams = readFitFile( fitFile )
 
   # read the data files; store as LISTS of arrays; do not append into one array in case angIdeg differs
@@ -1270,59 +1223,60 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     vecmeas = []
     unc = []
     angIdeg = []
-    for i, datafile in enumerate( fitParams["datafileList"] ) :
-      f,trans,dphs_meas,u,angId = readTransFile( datafile )     # read single data file
+    for datafile in fitParams["datafileList"] :
+      print "\nreading data file %s" % datafile
+      f,amp,phs,u,angI = readTransFile( datafile )     # read single data file
 
-    # create sparse data set for prefit, probing peaks and valleys; this will be an odd-numbered data set
-      pf, ptrans, pphs, punc =  selectPrefitData( f, trans, dphs_meas, u ) 
+    # create sparse data set for prefit, probing peaks and valleys; save as an odd-numbered data set
+      pf, pamp, pphs, pu =  selectPrefitData( f, amp, phs, u ) 
       fGHz.append( pf )
-      vecmeas.append( ptrans * numpy.exp(1j*numpy.radians(pphs)) )
-      unc.append( punc )
-      angIdeg.append( angId )  
+      vecmeas.append( pamp * numpy.exp(1j*numpy.radians(pphs)) )
+      unc.append( pu )
+      angIdeg.append( angI )  
 
     # now append full data set to lists; these will be even-numbered
       fGHz.append(f)
-      vecmeas.append( trans * numpy.exp(1j*numpy.radians(dphs_meas)) )  
+      vecmeas.append( amp * numpy.exp(1j*numpy.radians(phs)) )  
       unc.append(u)
-      angIdeg.append( angId )  
+      angIdeg.append( angI )  
 
-    print "read in %d data files" % len(fitParams["datafileList"])
-    print "created %d datasets" % len(fGHz)
+    nDataSets = len(fGHz)     # should be 2 x number of data files
 
   # now create tree of parameters to search
     tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
-      #   tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
-      #   nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
-      #   thus: tcmlist[i] and nrList[i] specify one set of thicknesses and refractive indices to be modeled
-    nlayers = len( tcmList[0] )
+      # tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
+      # nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
+      # thus: { tcmlist[i], nrList[i], tanDeltaList[i] } specify one set of thicknesses, refractive indices, tanDs to be modeled
     ntrials = len( tcmList )
-    print "modeling %d layers, %d trials" % (nlayers, ntrials)
+    nlayers = len( tcmList[0] )
 
-  # for Pretest, model odd-numbered layers only, calculate reduced chisq for every possible trial
+  # for prefit, model odd-numbered data sets only, calculate reduced chisq for every possible trial
     pchisqCutoff = 1.e6
     secs0 = time.time()       
     pchisq = 1.e6*numpy.ones( ntrials )
-    print "\nbeginning Pretest"
+    print "\nbeginning prefit"
+    print "modeling %d layers, %d trials" % (nlayers, ntrials)
     for i in range(0,ntrials) :
+      printElapsed( ntrials, i, secs0 )
       errs = []
-      for j in range(0,len(fGHz),2) :
+      for j in range(0,nDataSets,2) :
         phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
         vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
         errs.append( (vecmeas[j]-vecmodel)/unc[j] )
       pchisq[i] = numpy.var( numpy.concatenate(errs) )
-      printElapsed( ntrials, i, secs0 )
-    nbest = printBest( pchisq, tcmList, nrList ) 
+    nbest = printBest( pchisq, tcmList, nrList, tanDeltaList )      # nbest is INDEX of parameters with smallest chisq
     pchisqCutoff = pCutoff*pchisq[nbest]
 
   # figure out how many trials will be needed for full test
     ntrials2 = bisect.bisect_left( numpy.sort(pchisq), pchisqCutoff )
-    print "full data set will be modeled for %d out of %d trials" % (ntrials2,ntrials)
         
-  # now model full dataset, only for trials where pchisq < pchisqCutoff
+  # now model full datasets, only for trials where pchisq < pchisqCutoff
     secs0 = time.time()       
     chisq = 1.e6*numpy.ones( ntrials )
+    chisqSet = 1.e6*numpy.ones( (nDataSets/2, ntrials) )
     imodel = 0
     print "\nbeginning full test"
+    print "full data set will be modeled for %d out of %d trials" % (ntrials2,ntrials)
     for i in range(0,ntrials) :
       printElapsed( ntrials2, imodel, secs0 )
       if pchisq[i] > pchisqCutoff :
@@ -1334,16 +1288,19 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
           phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
           vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
           errs.append( (vecmeas[j]-vecmodel)/unc[j] )
-      chisq[i] = numpy.var( numpy.concatenate(errs) )
-    nbest = printBest( chisq, tcmList, nrList ) 
-          
+          chisqSet[(j-1)/2, i] = numpy.var(errs[-1])      # this is variance for fit to single data set only!
+          print "chisq[%d, %d] = %.3f" % (j, i,numpy.var(errs[-1]))
+      chisq[i] = numpy.var( numpy.concatenate(errs) )   # this is variance for joint fit to all data
+    nbest = printBest( chisq, tcmList, nrList, tanDeltaList ) 
+        
   # save results for further analysis in a unique pickle file (don't overwrite old file)
     nseq = 1
     while os.path.isfile( fitFile + ".pickle.%d" % nseq) :
       nseq = nseq + 1
     pickleFile = fitFile + ".pickle.%d" % nseq
     fout = open( pickleFile, "wb" )
-    pickle.dump( [fitParams,tcmList,nrList,tanDeltaList,pchisq,chisq], fout ) 
+    pickle.dump( [fitParams,tcmList,nrList,tanDeltaList,pchisq,chisq,chisqSet], fout ) 
+      # note: angIdeg was used in fit, but it is stored in each data file
     fout.close() 
 
   # plot the fit
@@ -1355,19 +1312,19 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
     fin = open( pickleFile, "rb" )
-    [fitParams,tcmList,nrList,tanDeltaList,pResid,Resid] = pickle.load( fin )
+    [fitParams,tcmList,nrList,tanDeltaList,pchisq,chisq,chisqSet] = pickle.load( fin )
     fin.close() 
     nlayers = len( tcmList[0] )
 
     print "\n10 best fits minimizing overall residuals:"
-    nbest = printBest( Resid, tcmList, nrList ) 
+    nbest = printBest( chisq, tcmList, nrList, tanDeltaList ) 
 
-  # create savet,saven,savetanD lists, containing all configurations with Resid < 2.* minResid
+  # create savet,saven,savetanD lists, containing all configurations with chisq< 2.* minchisq
     savet = []
     savenr = []
     savetanD = []
-    for n in range(0,len(Resid)) :
-      if Resid[n] < 2.*Resid[nbest]:
+    for n in range(0,len(chisq)) :
+      if chisq[n] < 2.*chisq[nbest]:
         savet.append( tcmList[n] )
         savenr.append( nrList[n] )
         savetanD.append( tanDeltaList[n] )
@@ -1382,10 +1339,10 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       fig =  pyplot.figure( figsize=(11,8) )
       pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=14 )
 
-    # retrieve the raw data; use only angIdeg in fitConstraints
+    # retrieve the raw data
       fGHz,trans,dphs_meas,unc,angIdeg = readTransFile( datafile )
 
-    # recalculate the model amps and phases for the best fit parameters; tanDelta is not currently optimized, so use input array
+    # recalculate the model amps and phases for the best fit parameters
       dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
       dphi = unwrap( dphs_meas-dphs_est )
 
@@ -1477,7 +1434,7 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       ylab = 1.-ystep
       ax.text( 0.00, ylab, "fit results:", fontsize=fontSize)
       ylab = ylab - ystep
-      ax.text( 0.03, ylab, "reduced chisq = %.3f " % Resid[nbest], transform=ax.transAxes, \
+      ax.text( 0.03, ylab, "reduced chisq = %.3f " % chisq[nbest], transform=ax.transAxes, \
         horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
       ylab = ylab - ystep 
       for nl in range(0,nlayers) :
@@ -1512,3 +1469,40 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       pyplot.clf()
     pp.close()
 
+# append data to spreadsheet
+def tabulateResults( pickleFile, outFile ) :
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+    fin = open( pickleFile, "rb" )
+    [fitParams,tcmList,nrList,tanDeltaList,pchisq,chisq,chisqSet] = pickle.load( fin )
+    fin.close() 
+    nlayers = len( tcmList[0] )
+ 
+    print "\n10 best fits minimizing overall residuals:"
+    nbest = printBest( chisq, tcmList, nrList, tanDeltaList ) 
+
+    print "chisq for dataset1: ", chisqSet[0,nbest]
+    print "chisq for dataset2: ", chisqSet[1,nbest]
+
+  # print results separately for each data file
+    for j,datafile in enumerate( fitParams["datafileList"]) :
+      tmp = chisqSet[j]
+      print "\n====="
+      print len(tmp),tmp
+      print tmp[831]
+      print "\n10 best fits to file %s" % datafile
+      nbest = printBest( tmp, tcmList, nrList, tanDeltaList ) 
+
+      savet = []
+      savenr = []
+      savetanD = []
+      for n in range(0,len(chisq)) :
+        if tmp[n] < 2.*tmp[nbest]:
+          savet.append( tcmList[n] )
+          savenr.append( nrList[n] )
+          savetanD.append( tanDeltaList[n] )
+      for nl in range(0,nlayers) :
+        tmin,tmax = tLimits( savet, nl)
+        nrmin,nrmax = tLimits( savenr, nl )
+        tanDmin,tanDmax = tLimits( savetanD, nl )
