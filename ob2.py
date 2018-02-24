@@ -77,13 +77,14 @@ def makeList( inString ) :
 # 9jan2018 - modify so that this file will read rms uncertainty from averaged data files;
 #   use readUnc=True to do this; readUnc=False for older data files
 # 14feb2018 - return only angIdeg, not full list of fitConstraints - these now are read from fitFile
-def readTransFile( infile, readUnc=True ) :
-  fin = open(infile, "r")
+#
+def readTransFile( infile, readUnc=True, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+  fin = open(path+infile, "r")
   fGHz = []
   trans = []
   dphi = []
   unc = []
-  angIdeg = 0.
+  angIdeg = -1000.
   for line in fin :
     if line.startswith( "##" ) :     # ignore lines beginning with double hash mark
       continue
@@ -101,7 +102,10 @@ def readTransFile( infile, readUnc=True ) :
         angIdeg = float( line[line.find("=")+1:] )
       elif "readUnc" in line :
         readUnc = True
-  return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), numpy.array(unc), angIdeg
+  if angIdeg == -1000. :
+    print "FATAL ERROR: angIdeg is not given in data file %s" % (path+infile)
+  else :
+    return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), numpy.array(unc), angIdeg
 
 
 # use Born and Wolf [13.4] eqn (7) and (4) to compute n2*cos(theta2) for lossy dielectic
@@ -322,6 +326,49 @@ def tLimits( save, jlayer ) :
         vmax = save[n][jlayer]
     return [vmin,vmax]
     
+# return best fit and uncertainties for each parameter
+# returns tcmFit = [ [layer1_min,layer1_best,layer1_max], [layer2_min,layer2_best,layer2_max] ...], etc
+def summarize( merit, tcmList, nrList, tanDeltaList, cutoff=2. ) :
+    nlayers = len(tcmList[0])
+
+  # fill out fit arrays with -1., just to spot trouble in case it occurs
+    tcmFit = -1.*numpy.ones( (nlayers,3) )
+    nrFit = -1.*numpy.ones( (nlayers,3) )
+    tanDFit = -1.*numpy.ones( (nlayers,3) )
+
+  # sort indexes in order of merit; best fit parameters have index nsorted[0]
+    nsorted = merit.argsort()   
+    tcmsave = []
+    nrsave = []
+    tanDsave = []
+
+  # save parameter arrays for which  merit <= cutoff * merit_min 
+    tcmsave = []
+    nrsave = []
+    tanDsave = []
+    for n in range(0,len(nsorted)) :
+      if merit[n] <= cutoff*merit[nsorted[0]] :
+        tcmsave.append( tcmList[n] )
+        nrsave.append( nrList[n] )
+        tanDsave.append( tanDeltaList[n] )
+    
+  # for each layer, find min and max for each parameter
+  # must convert lists to numpy arrays order to index them as [:,nl]
+    for nl in range(0, nlayers ) :
+      tcmFit[nl,0] = numpy.array(tcmsave)[:,nl].min()  
+      tcmFit[nl,1] = tcmList[nsorted[0],nl]
+      tcmFit[nl,2] = numpy.array(tcmsave)[:,nl].max()  
+      nrFit[nl,0] = numpy.array(nrsave)[:,nl].min()  
+      nrFit[nl,1] = nrList[nsorted[0],nl]
+      nrFit[nl,2] = numpy.array(nrsave)[:,nl].max()  
+      tanDFit[nl,0] = numpy.array(tanDsave)[:,nl].min()  
+      tanDFit[nl,1] = tanDeltaList[nsorted[0],nl]
+      tanDFit[nl,2] = numpy.array(tanDsave)[:,nl].max()  
+
+    #for nb in nbest:
+    #  print tcmList[nb]/2.54, nrList[nb], tanDeltaList[nb], merit[nb]
+    return merit[nsorted[0]], tcmFit, nrFit, tanDFit
+
 def minmax( varray, margin=.05 ) :
     '''find ymin and ymax for a plot'''
     vmin = varray.min()
@@ -1167,14 +1214,14 @@ def selectPrefitData( fGHz, trans, phase, unc ) :
         if abs(fGHz[i] - fGHz[nmax]) < 0.75 * period :
           tma[i] = numpy.ma.masked
     nmaxlist = numpy.sort(nlist) 
-    print "selectPrefitData: nmaxlist =",nmaxlist
+    # print "selectPrefitData: nmaxlist =",nmaxlist
 
   # assume midpoints between maxima are close to minima
     if nmaxlist[-1] == len(trans) - 1 :
       deltan = int( (nmaxlist[-2]-nmaxlist[-3])/2. + 0.5)
     else :
       deltan = int( (nmaxlist[-1]-nmaxlist[-2])/2. + 0.5)
-    print "selectPrefitData: avg delta = %d" % deltan
+    # print "selectPrefitData: avg delta = %d" % deltan
     if (nmaxlist[0]-deltan) > 0 :
       nlist.append( nmaxlist[0] - deltan )
     for n in range(0,len(nmaxlist)-1) :
@@ -1194,11 +1241,11 @@ def selectPrefitData( fGHz, trans, phase, unc ) :
       tsparse.append( trans[nsorted[n]] )
       psparse.append( phase[nsorted[n]] )
       usparse.append( unc[nsorted[n]] )
-      print fsparse[-1],tsparse[-1],psparse[-1],usparse[-1]
+      # print fsparse[-1],tsparse[-1],psparse[-1],usparse[-1]
     return numpy.array(fsparse), numpy.array(tsparse), numpy.array(psparse), numpy.array(usparse)      
     
-def printElapsed( ntrials, i, secs0 ) :
-    if i > 0 and i%200 == 0 :
+def printElapsed( ntrials, i, nblock, secs0 ) :
+    if i > 0 and i%nblock == 0 :
       secselapsed = time.time() - secs0
       secsremaining = (ntrials-i)*(secselapsed/float(i))
       if secsremaining/60. > 60. :
@@ -1257,7 +1304,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     print "\nbeginning prefit"
     print "modeling %d layers, %d trials" % (nlayers, ntrials)
     for i in range(0,ntrials) :
-      printElapsed( ntrials, i, secs0 )
+      printElapsed( ntrials, i, 1000, secs0 )
       errs = []
       for j in range(0,2*nDataSets,2) :
         phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
@@ -1276,7 +1323,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     print "\nbeginning full test"
     print "full data set will be modeled for %d out of %d trials" % (ntrials2,ntrials)
     for i in range(0,ntrials) :
-      printElapsed( ntrials2, imodel, secs0 )
+      printElapsed( ntrials2, imodel, 200, secs0 )
       if chisq[0,i] > pchisqCutoff :
         continue
       else :
@@ -1287,7 +1334,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
           vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
           errs.append( (vecmeas[j]-vecmodel)/unc[j] )
           chisq[(j+1)/2, i] = numpy.var(errs[-1])      # this is variance for fit to single data set only!
-          print "chisq[%d, %d] = %.3f" % ( (j+1)/2, i, numpy.var(errs[-1]))
+          # print "chisq[%d, %d] = %.3f" % ( (j+1)/2, i, numpy.var(errs[-1]))
       chisq[-1,i] = numpy.var( numpy.concatenate(errs) )   # this is variance for joint fit to all data
     nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
         
@@ -1337,8 +1384,9 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       fig =  pyplot.figure( figsize=(11,8) )
       pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=14 )
 
-    # retrieve the raw data
+    # retrieve the raw data; also, identify points used for prefit
       fGHz,trans,dphs_meas,unc,angIdeg = readTransFile( datafile )
+      pf, pamp, pphs, pu =  selectPrefitData( fGHz, trans, dphs_meas, unc ) 
 
     # recalculate the model amps and phases for the best fit parameters
       dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
@@ -1350,7 +1398,8 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       ymin,ymax = minmax( numpy.concatenate((dphs_meas,dphs_est)))
       ax.axis( [xmin, xmax, ymin, ymax] )
       ax.tick_params( labelsize=10 )
-      ax.plot( fGHz, dphs_meas, "o", ms=2. )
+      ax.plot( fGHz, dphs_meas, "bo", ms=2. )
+      ax.plot( pf, pphs, "kx", ms=5. )
       ax.plot( fGHz, dphs_est, "r-" )
       ax.set_ylabel("phase (deg)", fontsize=10)
       ax.set_ylim( [-195.,195.] )
@@ -1377,6 +1426,7 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
         ax.plot( fGHz, trans, "o", ms=2. )
       else :
         ax.errorbar( fGHz, trans, yerr=unc, elinewidth=0.5, capsize=0 )
+      ax.plot( pf, pamp, "kx", ms=5. )
       ax.plot( fGHz, trans_est, "r-" )
       ax.tick_params( labelsize=10 )
       ax.set_ylabel("transmission", fontsize=10)
@@ -1422,7 +1472,15 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
           tstring = makeString( tcmListIn[nl]/2.54 )
           nstring = makeString( nrListIn[nl], fmt=3 )
           tanDstring = makeString( tanDeltaListIn[nl] )
-          ax.text( 0.03, ylab, "%d: [%s]  [%s]  [%s]" % (nl+1,tstring,nstring,tanDstring), \
+          ax.text( 0.03, ylab, "%d: [%s]" % (nl+1,tstring), \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+          ylab = ylab - ystep 
+          ax.text( 0.03, ylab, "    [%s]" % (nstring), \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+          ylab = ylab - ystep 
+          ax.text( 0.03, ylab, "    [%s]" % (tanDstring), \
             transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
             color="black", rotation='horizontal' )
       pyplot.axis('off')
@@ -1463,12 +1521,12 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       pyplot.axis('off')
 
       pyplot.savefig( pp, format="pdf" )
-      pyplot.show()
-      #pyplot.clf()
+      if not pdfOnly :
+        pyplot.show()
     pp.close()
 
 # append data to spreadsheet
-def tabulateResults( pickleFile, outFile ) :
+def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
 
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
@@ -1477,8 +1535,8 @@ def tabulateResults( pickleFile, outFile ) :
     fin.close() 
     nlayers = len( tcmList[0] )
  
-  # dump all the residuals for 
-    fout = open( outFile, "w" )
+  # dump chisq for pretest, all datasets, and joint fit 
+    fout = open( chisqFile, "w" )
     for i in range(0,len(chisq[0])) :
       fout.write("%6d" % i)
       for j in range(0,len(chisq)) :
@@ -1486,22 +1544,33 @@ def tabulateResults( pickleFile, outFile ) :
       fout.write("\n")
     fout.close()
 
-  # print results separately for each data file
-    for j,datafile in enumerate( fitParams["datafileList"]) :
-      tmp = chisq[j+1]
-      print "\n====="
-      print "\n10 best fits to file %s" % datafile
-      nbest = printBest( tmp, tcmList, nrList, tanDeltaList ) 
+  # print fit results and uncertainty for each dataset individually 
+    fout = open( outFile, "a" )
+    for j in range(1,len(chisq)):
+      name = "joint fit"
+      if j < len(chisq)-1 :
+        name = fitParams["datafileList"][j-1]
 
-      savet = []
-      savenr = []
-      savetanD = []
-      for n in range(0,len(tmp)) :
-        if tmp[n] < 2.*tmp[nbest]:
-          savet.append( tcmList[n] )
-          savenr.append( nrList[n] )
-          savetanD.append( tanDeltaList[n] )
+      print "\n====="
+      print "\n10 best fits for %s" % name
+      nbest = printBest( chisq[j], tcmList, nrList, tanDeltaList ) 
+
+      best,tcmFit,nrFit,tanDfit = summarize( chisq[j], tcmList, nrList, tanDeltaList )
+      fout.write("\n%s,%s,%.3f," % (fitParams["title"], name, best ) )   # col 1 is puck name, col 2 is dataFile name
+      print best
+      print tcmFit/2.54
+      print nrFit
+      print tanDfit
       for nl in range(0,nlayers) :
-        tmin,tmax = tLimits( savet, nl)
-        nrmin,nrmax = tLimits( savenr, nl )
-        tanDmin,tanDmax = tLimits( savetanD, nl )
+        print fitParams["nrList"][nl][0]
+        print nrFit[nl,0],nrFit[nl,1],nrFit[nl,2]
+        print fitParams["nrList"][0][-1]
+        fout.write("  %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["tcmList"][nl][0]/2.54, tcmFit[nl,0]/2.54, \
+          tcmFit[nl,1]/2.54, tcmFit[nl,2]/2.54, fitParams["tcmList"][nl][-1]/2.54 ) )
+        fout.write("  %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["nrList"][nl][0], nrFit[nl,0], \
+          nrFit[nl,1], nrFit[nl,2], fitParams["nrList"][nl][-1]) )
+        fout.write(" %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["tanDeltaList"][nl][0], tanDfit[nl,0], \
+          tanDfit[nl,1], tanDfit[nl,2], fitParams["tanDeltaList"][nl][-1]) )
+    fout.write("\n")
+    fout.close()
+
