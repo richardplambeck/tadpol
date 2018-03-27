@@ -1574,3 +1574,111 @@ def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
     fout.write("\n")
     fout.close()
 
+# vary thickness of each layer over a range, predict transmission curve
+# fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
+# fuzzy1 does (weighted) vector average of ALL allowed thicknesses to get final transmission amp and phase;
+def fuzzy1( fitFile, outFile ) :
+    #fGHz = numpy.concatenate( (numpy.arange(76.,115.,.2),numpy.arange(205.,230.,.2)) )
+    fGHz = numpy.arange(212.,219.6,.1)
+    angIdeg = 5.16
+    fitParams = readFitFile( fitFile )
+    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    ntrials = len(tcmList)
+    print "averaging results of %d trials" % ntrials
+    vecmodel = numpy.zeros( len(fGHz), dtype=complex )
+    for n in range(0,ntrials) :
+      phs,amp = solveStack( fGHz, angIdeg, tcmList[n], nrList[n], tanDeltaList[n] ) 
+      vecmodel = vecmodel + amp * numpy.exp(1j*numpy.radians(phs))
+    vecmodel = vecmodel/float(ntrials)
+    amplitude = numpy.absolute( vecmodel )
+    phase = numpy.angle( vecmodel, deg=True )
+    pwr = numpy.power( amplitude, 2 )
+    fout = open( outFile, "w" )
+    for i in range(0,len(fGHz)) :
+      fout.write("%8.2f  %8.6f  %8.3f  %8.3f\n" % (fGHz[i], amplitude[i], phase[i], pwr[i] ) )
+    fout.close()
+  # compute power transmission averaged over band
+    print "average power transmission = %.3f" % (numpy.average(pwr))
+
+# fuzzy2 creates smooth transitions (in steps of .0001" thickness) from one layer to the next
+# input fitFile is the same as fuzzy1, except that now the total thickness of the stack is
+#   kept exactly constant
+# since expandTree will handle at most 7 layers, it is simpler to revise solveStack to handle
+#   this case
+def fuzzy2( fitFile, outFile, deltaTcmList ) :
+    #fGHz = numpy.concatenate( (numpy.arange(76.,115.,.2),numpy.arange(205.,230.,.2)) )
+    fGHz = numpy.arange(212.,219.6,.1)
+    angIdeg = 5.16
+    fitParams = readFitFile( fitFile )
+    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    ntrials = len(tcmList)
+    print "averaging results of %d trials" % ntrials
+    vecmodel = numpy.zeros( len(fGHz), dtype=complex )
+    for n in range(0,ntrials) :
+      [tcmListSm, nrListSm, tanDeltaListSm ] = smoothTransitions( tcmList[n],nrList[n],tanDeltaList[n],deltaTcmList)
+      phs,amp = solveStack( fGHz, angIdeg, tcmListSm, nrListSm, tanDeltaListSm ) 
+      vecmodel = vecmodel + amp * numpy.exp(1j*numpy.radians(phs))
+    vecmodel = vecmodel/float(ntrials)
+    amplitude = numpy.absolute( vecmodel )
+    phase = numpy.angle( vecmodel, deg=True )
+    pwr = numpy.power( amplitude, 2 )
+    fout = open( outFile, "w" )
+    for i in range(0,len(fGHz)) :
+      fout.write("%8.2f  %8.6f  %8.3f  %8.3f\n" % (fGHz[i], amplitude[i], phase[i], pwr[i] ) )
+    fout.close()
+  # compute power transmission averaged over band
+    print "average power transmission = %.3f" % (numpy.average(pwr))
+
+# smoothTransitions expands the number of layers in each stack to take into account 
+#  thickness variations; it interpolates refractive index of each of these transitions layers
+# deltaTransArr is the variation in thickness between layers - so its length is len(tcmList) + 1;
+#  that is, it gives variation in thickness entering layer 1, between layer 1 and layer 2, between
+#  layer2 and layer3, ... , leaving layerN
+def smoothTransitions( tcmList, nrList, tanDeltaList, deltaTcmList ) :
+    nsteps=10
+    tcmListSm = []
+    nrListSm = []
+    tanDeltaListSm = []
+    nrLast = 1.
+    tdLast = 0.
+    xcm = -deltaTcmList[0]/2.
+    fout = open("profile","w")
+    fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrLast,0.))
+    for n in range(0,len(tcmList)) :
+      deltastep = deltaTcmList[n]/nsteps
+      nrstep = (nrList[n]-nrLast)/nsteps 
+      tdstep = (tanDeltaList[n] - tdLast)/nsteps
+      for ns in range(1, nsteps) :
+        tcmListSm.append( deltastep )
+        nrListSm.append( nrLast + ns*nrstep )
+        tanDeltaListSm.append( tdLast + ns*tdstep )
+        fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+        xcm = xcm + tcmListSm[-1]
+        fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+    # if this is the last layer, it needs to be thinner 
+      if n == len(tcmList)-1 :
+        deltastepfinal = deltaTcmList[-1]/nsteps
+        tcmListSm.append( tcmList[n] - nsteps*(deltastep+deltastepfinal)/2.)
+      else :
+        tcmListSm.append( tcmList[n] - nsteps*deltastep/2. )   # remaining thickness of layer  
+      nrListSm.append( nrList[n] )
+      tanDeltaListSm.append( tanDeltaList[n] )
+      fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+      xcm = xcm + tcmListSm[-1]
+      fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+      nrLast = nrList[n]
+      tdLast = tanDeltaList[n]
+
+  # final transition back to nr=1
+    deltastep = deltaTcmList[-1]/nsteps
+    nrstep = (1.-nrLast)/nsteps 
+    for ns in range(1, nsteps) :
+      tcmListSm.append( deltastep )
+      nrListSm.append( nrLast + ns*nrstep )
+      tanDeltaListSm.append( 0. )
+      fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+      xcm = xcm + tcmListSm[-1]
+      fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+    fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,1.,0.))
+    fout.close()
+    return [tcmListSm, nrListSm, tanDeltaListSm ]
