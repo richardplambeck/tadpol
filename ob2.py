@@ -17,7 +17,7 @@ import datetime
 matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
-#import pol
+from mpl_toolkits.mplot3d import Axes3D
 import scipy
 from scipy.interpolate import splrep, splev
 import scipy.fftpack
@@ -222,6 +222,15 @@ def expandTree( tcmRange, tcmListIn, nrListIn ) :
 def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
     nlayers = len(tcmListIn)
 
+  # before calling meshgrid, calculate size of final arrays
+    ntrials = 1
+    for n in range(0,nlayers) :
+      ntrials = ntrials * len(tcmListIn[n]) * len(nrListIn[n]) * len(tanDListIn)
+    print "initial ntrials = %d" % ntrials
+    if ntrials > 1.e12 :
+      print "exiting! too many possible trials!"
+      return
+
   # meshgrid arrays of thicknesses, refractive indices, and tanDs
   # this is lame, but I can't figure out how to do this elegantly, without if structure
     if nlayers == 1 :
@@ -297,6 +306,7 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
         d.append( c[n] )
 
   # return separate tcm, nr, and tanD arrays
+    print "final ntrials = %d" % len(numpy.hsplit(numpy.array(d),3)[0])
     return numpy.hsplit( numpy.array(d),3)
 
 
@@ -1267,7 +1277,7 @@ def printElapsed( ntrials, i, nblock, secs0 ) :
 #   chisq[0] < pCutoff * pchisqBest
 # fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
 #
-def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
+def nrefracFit5( fitFile, pCutoff=10., pdfOnly=True, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
   # fitParams dictionary contains list of data files, parameter ranges to search, etc
     fitParams = readFitFile( fitFile )
@@ -1280,7 +1290,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
     angIdeg = []
     for datafile in fitParams["datafileList"] :
       print "\nreading data file %s" % datafile
-      f,amp,phs,u,angI = readTransFile( datafile )     # read single data file
+      f,amp,phs,u,angI = readTransFile( datafile, path=path )     # read single data file
 
     # create sparse data set for prefit, probing peaks and valleys; save as an odd-numbered data set
       pf, pamp, pphs, pu =  selectPrefitData( f, amp, phs, u ) 
@@ -1327,10 +1337,13 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
   # now model full datasets, only for trials where pchisq < pchisqCutoff
     secs0 = time.time()       
     imodel = 0
+    imodelLast = 0
     print "\nbeginning full test"
     print "full data set will be modeled for %d out of %d trials" % (ntrials2,ntrials)
     for i in range(0,ntrials) :
-      printElapsed( ntrials2, imodel, 200, secs0 )
+      if imodel > imodelLast :
+        printElapsed( ntrials2, imodel, 200, secs0 )
+        imodelLast = imodel
       if chisq[0,i] > pchisqCutoff :
         continue
       else :
@@ -1357,9 +1370,9 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=False ) :
 
   # plot the fit
     time.sleep(1)
-    plotFit5( pickleFile, pdfOnly=pdfOnly )
+    plotFit5( pickleFile, pdfOnly=pdfOnly, path=path )
 
-def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
+def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
@@ -1392,7 +1405,7 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=14 )
 
     # retrieve the raw data; also, identify points used for prefit
-      fGHz,trans,dphs_meas,unc,angIdeg = readTransFile( datafile )
+      fGHz,trans,dphs_meas,unc,angIdeg = readTransFile( datafile, path=path )
       pf, pamp, pphs, pu =  selectPrefitData( fGHz, trans, dphs_meas, unc ) 
 
     # recalculate the model amps and phases for the best fit parameters
@@ -1530,6 +1543,8 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False ) :
       pyplot.savefig( pp, format="pdf" )
       if not pdfOnly :
         pyplot.show()
+      else :
+        print "plot saved to file %s" % (pickleFile + ".pdf")
     pp.close()
 
 # append data to spreadsheet
@@ -1584,9 +1599,9 @@ def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
 # vary thickness of each layer over a range, predict transmission curve
 # fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
 # fuzzy1 does (weighted) vector average of ALL allowed thicknesses to get final transmission amp and phase;
-def fuzzy1( fitFile ) :
+def fuzzy1( fitFile, fGHz=numpy.arange(70.,230.1,.1) ) :
     #fGHz = numpy.concatenate( (numpy.arange(76.,115.,.2),numpy.arange(205.,230.,.2)) )
-    fGHz = numpy.arange(70.,230.,.1)
+    #fGHz = numpy.arange(70.,230.,.1)
     angIdeg = 5.16
     fitParams = readFitFile( fitFile )
     tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
@@ -1608,14 +1623,15 @@ def fuzzy1( fitFile ) :
     fout.write("# %s.model\n" % fitFile)
     fout.write("# ---------------------------------------------------- \n")
     for line in fin:
-      fout.write("# %s\n" % line)
+      fout.write("# %s" % line)
     fout.write("# ---------------------------------------------------- \n")
     fout.write("# averaged results of %d trials\n" % ntrials)
     fout.write("# average power transmission = %.3f\n#\n" % (numpy.average(pwr)) )
 
-  # now write out the model data
+  # now write out the model data, in format compatible with readTransData
+    unc = .02
     for i in range(0,len(fGHz)) :
-      fout.write("%8.2f  %8.6f  %8.3f  %8.3f\n" % (fGHz[i], amplitude[i], phase[i], pwr[i] ) )
+      fout.write("%8.2f  %8.6f  %8.3f  %6.4f   1  %7.3f\n" % (fGHz[i], amplitude[i], phase[i], unc, pwr[i] ) )
     fout.close()
 
 # fuzzy2 creates model transmission data for the case where the surfaces are rough on
@@ -1664,7 +1680,7 @@ def fuzzy2( fitFile ) :
     fout.write("# %s.model\n" % fitFile)
     fout.write("# ---------------------------------------------------- \n")
     for line in fin:
-      fout.write("# %s\n" % line)
+      fout.write("# %s" % line)
     fout.write("# ---------------------------------------------------- \n")
     fout.write("# average power transmission = %.3f\n#\n" % (numpy.average(pwr)) )
     for i in range(0,len(fGHz)) :
@@ -1734,3 +1750,132 @@ def smoothTransitions( tcmList, nrList, tanDeltaList, deltaTcmList, fitFile, ste
     fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,1.,0.))
     fout.close()
     return [tcmListSm, nrListSm, tanDeltaListSm ]
+
+# for 2 layers only; make 3Dplot of chisq for nr1,nr2 above the (tin1,tin2) plane
+def my3Dplot( pickleFile ) :
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+    fin = open( pickleFile, "rb" )
+    [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+    fin.close() 
+    ntrials = len( tcmList )
+    nlayers = len( tcmList[0] )
+
+  # this routine is specialized to just 2 layers
+    if nlayers != 2 :
+      print "nlayers = %d; this routine is specialized to exactly 2 layers; exiting" % nlayers
+      return
+
+    print "\n10 best fits minimizing overall residuals:"
+    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+
+    xplot = []
+    yplot = []
+    zplot = []
+    c = []
+    for n in range(0,ntrials) :
+      if chisq[1][n] < 10.*chisq[0][nbest] :
+        xplot.append( tcmList[n][0]/2.54 )
+        yplot.append( tcmList[n][1]/2.54 )
+        zplot.append( nrList[n][0] )
+        c.append( chisq[1][n] )
+    fig = pyplot.figure()
+    ax = Axes3D(fig)
+    ax.scatter3D( xplot, yplot, zplot, c=c, marker="o", alpha=0.6, edgecolors="none")
+    for n in range(0,ntrials) :
+      if chisq[1][n] < 10.*chisq[0][nbest] :
+        xplot.append( tcmList[n][0]/2.54 )
+        yplot.append( tcmList[n][1]/2.54 )
+        zplot.append( nrList[n][1] )
+        c.append( chisq[1][n] )
+    ax.scatter3D( xplot, yplot, zplot, c=c, marker="o", alpha=0.6, edgecolors="none")
+    # ax.plot_trisurf( xplot, yplot, zplot )
+    ax.view_init(elev=15,azim=160)
+    pyplot.show()
+'''
+  ax.set_aspect('equal')
+  ax.set_axis_off()
+  makeequator( ax )
+  makeaxes( ax )
+  addcurve( ax, p1, e1, 'red' )
+  addcurve( ax, p2, e2, 'green' )
+  addcurve( ax, p3, e3, 'blue' )
+
+  # create array of vectors for which vec[:,jopt] < 2.*vec[:,ibest]  
+  # in other words, within 2 sigma contour
+    print "all within 2 sigma"
+    save = []
+    for n in range(0,len(vec[0])) :
+      if vec[jopt,n] < 2.*vec[jopt,ibest] :
+        save.append( vec[:,n] )
+    print save 
+    print len(save)
+    for j in range(0,4) :
+      vmin = 100.
+      vmax = -100.
+      for n in range(0,len(save)) :
+        if save[n][j] < vmin :
+          vmin = save[n][j]
+        elif save[n][j] > vmax :
+          vmax = save[n][j]
+      if j < 2 :
+        print vmin,vmax
+      else :
+        print vmin, vmax, vmin*vmin, vmax*vmax
+
+    pyplot.ioff()
+    pp = PdfPages("Covar.pdf")
+    pyplot.figure( figsize=(11,8) )
+    nplot = 1
+    for jx in range(0,4) :
+      for jy in range( jx+1,4 ) :
+        x,y,z = stripout( vec, ibest, jx, jy, jopt )
+        print "\n"
+        jbest = numpy.argmin(z)
+        if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
+          fig = pyplot.subplot(2,3,nplot)
+          xmin,xmax = minmax(x,margin=0.01)
+          ymin,ymax = minmax(y,margin=0.01)
+          vmin,vmax = minmax(z,margin=0.0)
+        # section below copied from web example
+          xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
+          xi,yi = numpy.meshgrid(xi,yi)
+          zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
+          xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
+          zibest = numpy.nanmin(zi)
+              # return position of interpolated minimum
+              # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
+          # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
+          # fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
+          #    extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
+          clevels = [ 0.999*zibest,2.*zibest,3.*zibest ]
+          colors = ["blue","green"]
+          contour = pyplot.contourf(xi,yi,zi,clevels,colors=colors)
+          #pyplot.colorbar(contour)
+          fig.scatter(x,y,s=10, marker='x', c='black')
+          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='white')
+          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
+          fig.ticklabel_format(useOffset=False)
+          fig.set_xlabel( label[jx], fontsize=12 )
+          fig.set_ylabel( label[jy], fontsize=12 )
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
+          fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
+          pyplot.locator_params( axis='x', nbins=5)
+          pyplot.locator_params( axis='y', nbins=5)
+          fig.tick_params( axis='both', which='major', labelsize=8 )
+          pyplot.tight_layout( pad=3, h_pad=1)
+
+        # increment the subplot; begin new page if too many panels
+          nplot = nplot + 1
+          if nplot > 6 :
+            pyplot.savefig( pp, format="pdf" )
+            pyplot.show()
+            pyplot.figure( figsize=(11,8) )
+            nplot = 1
+    if nplot > 1 :
+      pyplot.savefig( pp, format="pdf" )
+      pyplot.show()
+    pp.close()
+'''
