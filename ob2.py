@@ -632,34 +632,34 @@ def quickFind2( fGHz ):
        print "no solution"
          
 
-# show correlations between params for refractive index fits - specialized to just 2 parameters
-def covarPlot2( infile, jopt=7, FTS=False ) :
+# show correlations between params for refractive index fits - specialized to just 2 layers
+def covarPlot2( infile, FTS=False ) :
     fin = open( infile, "r" )
+
     if FTS :
       [tcmList,nrList,Resid] = pickle.load( fin )
     # create array of results with 5 columns (t1,t2,nr1,nr2,Resid)
       vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
         [Resid] ), axis=0 )
-      jopt = 4
+
     else :
-      [fitConstraints,tcmList,nrList,avgPhResid,stdPhResid,stdAmpResid,Resid] = pickle.load( fin )
-      print fitConstraints
-    # create array of results with 7 columns (t1,t2,nr1,nr2,avgPh,stdPh,stdAmp,Resid)
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+    # create array of results with 5 columns (t1,t2,nr1,nr2,chisq)
       vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
-        [avgPhResid], [stdPhResid], [stdAmpResid], [Resid] ), axis=0 )
+        [chisq[-1]]), axis=0 )
 
     label = ["t1", "t2", "nr1", "nr2"]
   
   # find index of point with minimum avg or variance (whatever we are using)
-    ibest = numpy.argmin( numpy.abs(vec[jopt]) )
+    ibest = numpy.argmin( numpy.abs(vec[4]) )
     print len(vec[0]), ibest, vec[:,ibest]
 
-  # create array of vectors for which vec[:,jopt] < 2.*vec[:,ibest]  
+  # create array of vectors for which vec[:,4] < 2.*vec[:,ibest]  
   # in other words, within 2 sigma contour
     print "all within 2 sigma"
     save = []
     for n in range(0,len(vec[0])) :
-      if vec[jopt,n] < 2.*vec[jopt,ibest] :
+      if vec[4,n] < 2.*vec[4,ibest] :
         save.append( vec[:,n] )
     print save 
     print len(save)
@@ -682,7 +682,7 @@ def covarPlot2( infile, jopt=7, FTS=False ) :
     nplot = 1
     for jx in range(0,4) :
       for jy in range( jx+1,4 ) :
-        x,y,z = stripout( vec, ibest, jx, jy, jopt )
+        x,y,z = stripout( vec, ibest, jx, jy, 4 )
         print "\n"
         jbest = numpy.argmin(z)
         if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
@@ -1260,6 +1260,38 @@ def selectPrefitData( fGHz, trans, phase, unc ) :
       usparse.append( unc[nsorted[n]] )
       # print fsparse[-1],tsparse[-1],psparse[-1],usparse[-1]
     return numpy.array(fsparse), numpy.array(tsparse), numpy.array(psparse), numpy.array(usparse)      
+
+# used to create finer grid around the points with lowest chisq
+# tcmRange is the [min,max] allowed thickness in cm
+# tcmList is the list of layer thicknesses [ tcm1, tcm2, ...] for the point in question
+# tcmstep is the new step size in thickness for each layer
+# nrList is the list of refractive indices [ nr1, nr2, ...] for the point in question
+# nrstep is the new step size in refractive index for each layer
+def expandPoint( fitParams, index, tcmList, nrList, tanDList ) :
+    nlayers = len(tcmList[index])
+    tcmListNew = []
+    nrListNew = []
+    tanDListNew = []
+    for nl in range(0,nlayers) :
+
+      if len(fitParams["tcmList"][nl]) > 1 :
+        step = fitParams["tcmList"][nl][1] - fitParams["tcmList"][nl][0]
+        tcmListNew.append( numpy.arange( tcmList[index][nl] - 0.5*step, tcmList[index][nl] + 0.6*step, 0.1*step) )
+      else :
+        tcmListNew.append( tcmList[index][nl] )
+
+      if len(fitParams["nrList"][nl]) > 1 :
+        step = fitParams["nrList"][nl][1] - fitParams["nrList"][nl][0]
+        nrListNew.append( numpy.arange( nrList[index][nl] - 0.5*step, nrList[index][nl] + 0.6*step, 0.1*step) )
+      else :
+        nrListNew.append( nrList[index][nl] )
+
+      if len(fitParams["tanDeltaList"][nl]) > 1 :
+        step = fitParams["tanDeltaList"][nl][1] - fitParams["tanDeltaList"][nl][0]
+        tanDListNew.append( numpy.arange( tanDList[index][nl] - 0.5*step, tanDList[index][nl] + 0.6*step, 0.1*step) )
+      else :
+        tanDListNew.append( tanDList[index][nl] )
+    return tcmListNew, nrListNew, tanDListNew 
     
 def printElapsed( ntrials, i, nblock, secs0 ) :
     if i > 0 and i%nblock == 0 :
@@ -1277,7 +1309,7 @@ def printElapsed( ntrials, i, nblock, secs0 ) :
 #   chisq[0] < pCutoff * pchisqBest
 # fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
 #
-def nrefracFit5( fitFile, pCutoff=10., pdfOnly=True, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+def nrefracFit5( fitFile, pCutoff=10., pdfOnly=True, Iterate=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
   # fitParams dictionary contains list of data files, parameter ranges to search, etc
     fitParams = readFitFile( fitFile )
@@ -1331,18 +1363,48 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=True, path="/o/plambeck/PolarBear
     nbest = printBest( chisq[0], tcmList, nrList, tanDeltaList )      # nbest is INDEX of parameters with smallest chisq
     pchisqCutoff = pCutoff*chisq[0,nbest]
 
+  # if we are iterating, define new trials around each trial with chisq < pCutoff
+    if (Iterate) :
+      for i in range(0,ntrials) :
+        if chisq[0,i] < pchisqCutoff :
+          tx,nx,tDx = expandPoint( fitParams, i, tcmList, nrList, tanDeltaList ) 
+          tcmExtra,nrExtra,tanDextra = expandTree2( fitParams["tcmRange"], tx, nx, tDx )
+        # append to existing list of trials (should check for duplicates here!)
+          tcmList = numpy.concatenate( (tcmList, tcmExtra) )
+          nrList = numpy.concatenate( (nrList, nrExtra) )
+          tanDeltaList = numpy.concatenate( (tanDeltaList, tanDextra) )
+
+    # compute number of new tests  
+      ntrials2 = len(tcmList) - ntrials 
+      print "\nfitting %d additional trials" % ntrials2
+      chisqExtra = 1.e6*numpy.ones( (nDataSets+2, ntrials2) )
+      chisq = numpy.concatenate( (chisq, chisqExtra), axis=1 )
+      for i in range(ntrials+1, len(tcmList) ) :
+        printElapsed( ntrials2, i, 1000, secs0 )
+        errs = []
+        for j in range(0,2*nDataSets,2) :
+          phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
+          vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
+          errs.append( (vecmeas[j]-vecmodel)/unc[j] )
+        chisq[0,i] = numpy.var( numpy.concatenate(errs) )
+
+    # find new best fits
+      nbest = printBest( chisq[0], tcmList, nrList, tanDeltaList )      # nbest is INDEX of parameters with smallest chisq
+      pchisqCutoff = pCutoff*chisq[0,nbest]
+
   # figure out how many trials will be needed for full test
-    ntrials2 = bisect.bisect_left( numpy.sort(chisq[0]), pchisqCutoff )
+    ntrials3 = bisect.bisect_left( numpy.sort(chisq[0]), pchisqCutoff )
         
   # now model full datasets, only for trials where pchisq < pchisqCutoff
+    ntrials = len( tcmList )
     secs0 = time.time()       
     imodel = 0
     imodelLast = 0
     print "\nbeginning full test"
-    print "full data set will be modeled for %d out of %d trials" % (ntrials2,ntrials)
+    print "full data set will be modeled for %d out of %d trials" % (ntrials3,ntrials)
     for i in range(0,ntrials) :
       if imodel > imodelLast :
-        printElapsed( ntrials2, imodel, 200, secs0 )
+        printElapsed( ntrials3, imodel, 200, secs0 )
         imodelLast = imodel
       if chisq[0,i] > pchisqCutoff :
         continue
@@ -1793,89 +1855,10 @@ def my3Dplot( pickleFile ) :
     # ax.plot_trisurf( xplot, yplot, zplot )
     ax.view_init(elev=15,azim=160)
     pyplot.show()
-'''
-  ax.set_aspect('equal')
-  ax.set_axis_off()
-  makeequator( ax )
-  makeaxes( ax )
-  addcurve( ax, p1, e1, 'red' )
-  addcurve( ax, p2, e2, 'green' )
-  addcurve( ax, p3, e3, 'blue' )
 
-  # create array of vectors for which vec[:,jopt] < 2.*vec[:,ibest]  
-  # in other words, within 2 sigma contour
-    print "all within 2 sigma"
-    save = []
-    for n in range(0,len(vec[0])) :
-      if vec[jopt,n] < 2.*vec[jopt,ibest] :
-        save.append( vec[:,n] )
-    print save 
-    print len(save)
-    for j in range(0,4) :
-      vmin = 100.
-      vmax = -100.
-      for n in range(0,len(save)) :
-        if save[n][j] < vmin :
-          vmin = save[n][j]
-        elif save[n][j] > vmax :
-          vmax = save[n][j]
-      if j < 2 :
-        print vmin,vmax
-      else :
-        print vmin, vmax, vmin*vmin, vmax*vmax
-
-    pyplot.ioff()
-    pp = PdfPages("Covar.pdf")
-    pyplot.figure( figsize=(11,8) )
-    nplot = 1
-    for jx in range(0,4) :
-      for jy in range( jx+1,4 ) :
-        x,y,z = stripout( vec, ibest, jx, jy, jopt )
-        print "\n"
-        jbest = numpy.argmin(z)
-        if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
-          fig = pyplot.subplot(2,3,nplot)
-          xmin,xmax = minmax(x,margin=0.01)
-          ymin,ymax = minmax(y,margin=0.01)
-          vmin,vmax = minmax(z,margin=0.0)
-        # section below copied from web example
-          xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
-          xi,yi = numpy.meshgrid(xi,yi)
-          zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
-          xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
-          zibest = numpy.nanmin(zi)
-              # return position of interpolated minimum
-              # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
-          # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
-          # fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
-          #    extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
-          clevels = [ 0.999*zibest,2.*zibest,3.*zibest ]
-          colors = ["blue","green"]
-          contour = pyplot.contourf(xi,yi,zi,clevels,colors=colors)
-          #pyplot.colorbar(contour)
-          fig.scatter(x,y,s=10, marker='x', c='black')
-          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='white')
-          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
-          fig.ticklabel_format(useOffset=False)
-          fig.set_xlabel( label[jx], fontsize=12 )
-          fig.set_ylabel( label[jy], fontsize=12 )
-          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
-          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
-          fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
-          pyplot.locator_params( axis='x', nbins=5)
-          pyplot.locator_params( axis='y', nbins=5)
-          fig.tick_params( axis='both', which='major', labelsize=8 )
-          pyplot.tight_layout( pad=3, h_pad=1)
-
-        # increment the subplot; begin new page if too many panels
-          nplot = nplot + 1
-          if nplot > 6 :
-            pyplot.savefig( pp, format="pdf" )
-            pyplot.show()
-            pyplot.figure( figsize=(11,8) )
-            nplot = 1
-    if nplot > 1 :
-      pyplot.savefig( pp, format="pdf" )
-      pyplot.show()
-    pp.close()
-'''
+def testExpand( fitFile, index) :
+    fitParams = readFitFile( fitFile )
+    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    print "\nstart with:", tcmList[index], nrList[index], tanDeltaList[index]
+    print "\nexpand to:"
+    expandPoint( fitParams, index, tcmList, nrList, tanDeltaList ) 
