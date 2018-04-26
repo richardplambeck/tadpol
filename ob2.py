@@ -424,7 +424,6 @@ def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
 def tanD (fGHz, alpha) :
   print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
 
-
 # strip out plane corresponding to variables jx,jy from a multidimensional data cube, passing through point with lowest variance
 # that is, identify rows in vec where all variables other than jx,jy are held at their optimum value
 def stripout( vec, ibest, jx, jy, jz ) :
@@ -439,13 +438,10 @@ def stripout( vec, ibest, jx, jy, jz ) :
         if (j != jx) and (j != jy) and (vec[j][i] != vec[j][ibest] ) :
           usePt = False
       if usePt :
-        #print vec[0][i], vec[1][i], vec[2][i], vec[3][i], vec[4][i], vec[5][i], vec[6][i], vec[jz][i]
-        x1 = vec[jx][i]
-        y1 = vec[jy][i]
-        z1 = vec[jz][i]
-        x.append(x1)
-        y.append(y1)
-        z.append(z1)
+        # print vec[0][i], vec[1][i], vec[2][i], vec[3][i], vec[4][i]
+        x.append( vec[jx][i] )
+        y.append( vec[jy][i] )
+        z.append( vec[jz][i] )
     return numpy.array(x),numpy.array(y),numpy.array(z)
 
 # compare amp and phase for different indices and thicknesses; can I measure the difference?
@@ -650,19 +646,23 @@ def covarPlot2( infile, FTS=False ) :
 
     label = ["t1", "t2", "nr1", "nr2"]
   
-  # find index of point with minimum avg or variance (whatever we are using)
-    ibest = numpy.argmin( numpy.abs(vec[4]) )
-    print len(vec[0]), ibest, vec[:,ibest]
+  # find index of point with minimum chisq
+    ibest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+    print "ibest =", ibest
 
-  # create array of vectors for which vec[:,4] < 2.*vec[:,ibest]  
-  # in other words, within 2 sigma contour
-    print "all within 2 sigma"
+    #ibest = numpy.argmin( numpy.abs(vec[4]) )
+    #print len(vec[0]), ibest, vec[:,ibest]
+
+  # create array of vectors for which chisq < 3.* chisq_best 
+    print "all within 3 sigma"
     save = []
     for n in range(0,len(vec[0])) :
-      if vec[4,n] < 2.*vec[4,ibest] :
+      if vec[4][n] < 3.*vec[4][ibest] :
+        print vec[4][n], vec[4][ibest]
         save.append( vec[:,n] )
-    print save 
-    print len(save)
+    print "%d points meet save criterion" % len(save) 
+
+  # figure out total range for each parameter in save array
     for j in range(0,4) :
       vmin = 100.
       vmax = -100.
@@ -671,10 +671,7 @@ def covarPlot2( infile, FTS=False ) :
           vmin = save[n][j]
         elif save[n][j] > vmax :
           vmax = save[n][j]
-      if j < 2 :
-        print vmin,vmax
-      else :
-        print vmin, vmax, vmin*vmin, vmax*vmax
+      print vmin,vmax  
 
     pyplot.ioff()
     pp = PdfPages("Covar.pdf")
@@ -1276,19 +1273,19 @@ def expandPoint( fitParams, index, tcmList, nrList, tanDList ) :
 
       if len(fitParams["tcmList"][nl]) > 1 :
         step = fitParams["tcmList"][nl][1] - fitParams["tcmList"][nl][0]
-        tcmListNew.append( numpy.arange( tcmList[index][nl] - 0.5*step, tcmList[index][nl] + 0.6*step, 0.1*step) )
+        tcmListNew.append( numpy.arange( tcmList[index][nl] - 0.5*step, tcmList[index][nl] + 0.6*step, 0.2*step) )
       else :
         tcmListNew.append( tcmList[index][nl] )
 
       if len(fitParams["nrList"][nl]) > 1 :
         step = fitParams["nrList"][nl][1] - fitParams["nrList"][nl][0]
-        nrListNew.append( numpy.arange( nrList[index][nl] - 0.5*step, nrList[index][nl] + 0.6*step, 0.1*step) )
+        nrListNew.append( numpy.arange( nrList[index][nl] - 0.5*step, nrList[index][nl] + 0.6*step, 0.2*step) )
       else :
         nrListNew.append( nrList[index][nl] )
 
       if len(fitParams["tanDeltaList"][nl]) > 1 :
         step = fitParams["tanDeltaList"][nl][1] - fitParams["tanDeltaList"][nl][0]
-        tanDListNew.append( numpy.arange( tanDList[index][nl] - 0.5*step, tanDList[index][nl] + 0.6*step, 0.1*step) )
+        tanDListNew.append( numpy.arange( tanDList[index][nl] - 0.5*step, tanDList[index][nl] + 0.6*step, 0.2*step) )
       else :
         tanDListNew.append( tanDList[index][nl] )
     return tcmListNew, nrListNew, tanDListNew 
@@ -1853,6 +1850,66 @@ def my3Dplot( pickleFile ) :
         c.append( chisq[1][n] )
     ax.scatter3D( xplot, yplot, zplot, c=c, marker="o", alpha=0.6, edgecolors="none")
     # ax.plot_trisurf( xplot, yplot, zplot )
+    ax.view_init(elev=15,azim=160)
+    pyplot.show()
+
+# for 2 layers only; make 3Dplot of for nr1,nr2 above the (tin1,tin2) plane, for the smallest chisq for each tin1,tin2
+def my3Dplot2( pickleFile, chisqIndex=-1, worstRatio=10. ) :
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+    fin = open( pickleFile, "rb" )
+    [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+    fin.close() 
+    ntrials = len( tcmList )
+    nlayers = len( tcmList[0] )
+
+  # this routine is specialized to just 2 layers
+    if nlayers != 2 :
+      print "nlayers = %d; this routine is specialized to exactly 2 layers; exiting" % nlayers
+      return
+  
+  # sort by chisq
+    isort = numpy.argsort( chisq[chisqIndex] )
+    print isort[0:10]
+    chisqMin = chisq[chisqIndex][isort[0]]
+    nbest = printBest( chisq[chisqIndex], tcmList, nrList, tanDeltaList ) 
+    print "chisqMin = %.3f" % chisqMin
+
+    tcm0 = []
+    tcm1 = []
+    nr0 = []
+    nr1 = []
+    chisqNorm = []
+    npts = 0
+    for i in isort :
+      npts = npts + 1
+      if chisq[chisqIndex][i] > worstRatio * chisqMin :
+        print "%d / %d points meet chisq criterion" % (npts, len(isort) )
+        break
+      else :
+        newPoint = True
+        for j in range(0,len(tcm0)) :
+          if ( tcmList[i][0] == tcm0[j] ) and ( tcmList[i][1] == tcm1[j] ) :
+            newPoint = False
+        if newPoint :
+          tcm0.append( tcmList[i][0] ) 
+          tcm1.append( tcmList[i][1] ) 
+          nr0.append( nrList[i][0] )
+          nr1.append( nrList[i][1] )
+          #chisqNorm.append( chisq[chisqIndex][i]/ chisqMin )
+          chisqNorm.append( chisq[chisqIndex][i])
+          print i, tcm0[-1]/2.54, tcm1[-1]/2.54, chisqNorm[-1]
+
+    print "will be plotting %d points" % ( len(tcm0) )
+    
+    tin0 = numpy.array(tcm0)/2.54
+    tin1 = numpy.array(tcm1)/2.54
+
+    fig = pyplot.figure()
+    ax = Axes3D(fig)
+    ax.scatter3D( tin0, tin1, nr0, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
+    #ax.scatter3D( tin0, tin1, nr1, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
     ax.view_init(elev=15,azim=160)
     pyplot.show()
 
