@@ -629,60 +629,51 @@ def quickFind2( fGHz ):
          
 
 # show correlations between params for refractive index fits - specialized to just 2 layers
-def covarPlot2( infile, FTS=False ) :
-    fin = open( infile, "r" )
+def covarPlot2( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
+    fin = open( pickleFile, "r" )
 
+  # create array of results with 5 columns (t1,t2,nr1,nr2,chisq)
     if FTS :
       [tcmList,nrList,Resid] = pickle.load( fin )
-    # create array of results with 5 columns (t1,t2,nr1,nr2,Resid)
       vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
         [Resid] ), axis=0 )
-
     else :
       [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
-    # create array of results with 5 columns (t1,t2,nr1,nr2,chisq)
       vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
-        [chisq[-1]]), axis=0 )
+        [chisq[chisqIndex]]), axis=0 )
 
+  # this routine is specialized to just 2 layers
+    nlayers = len( tcmList[0] )
+    if nlayers != 2 :
+      print "nlayers = %d; this routine is specialized to exactly 2 layers; exiting" % nlayers
+      return
+  
     label = ["t1", "t2", "nr1", "nr2"]
   
   # find index of point with minimum chisq
-    ibest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
-    print "ibest =", ibest
-
-    #ibest = numpy.argmin( numpy.abs(vec[4]) )
-    #print len(vec[0]), ibest, vec[:,ibest]
-
-  # create array of vectors for which chisq < 3.* chisq_best 
-    print "all within 3 sigma"
-    save = []
-    for n in range(0,len(vec[0])) :
-      if vec[4][n] < 3.*vec[4][ibest] :
-        print vec[4][n], vec[4][ibest]
-        save.append( vec[:,n] )
-    print "%d points meet save criterion" % len(save) 
-
-  # figure out total range for each parameter in save array
-    for j in range(0,4) :
-      vmin = 100.
-      vmax = -100.
-      for n in range(0,len(save)) :
-        if save[n][j] < vmin :
-          vmin = save[n][j]
-        elif save[n][j] > vmax :
-          vmax = save[n][j]
-      print vmin,vmax  
+    ibest = printBest( chisq[chisqIndex], tcmList, nrList, tanDeltaList ) 
+    chisqMin = chisq[chisqIndex][ibest]
 
     pyplot.ioff()
     pp = PdfPages("Covar.pdf")
     pyplot.figure( figsize=(11,8) )
-    nplot = 1
+    nplot = 0
     for jx in range(0,4) :
       for jy in range( jx+1,4 ) :
         x,y,z = stripout( vec, ibest, jx, jy, 4 )
         print "\n"
         jbest = numpy.argmin(z)
+        zbest = numpy.nanmin(z)
+        print "zbest = ",zbest
+
         if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
+          nplot = nplot + 1
+          print "nplot = ",nplot
+          if nplot > 6 :
+            pyplot.savefig( pp, format="pdf" )
+            pyplot.show()
+            pyplot.figure( figsize=(11,8) )
+            nplot = 1
           fig = pyplot.subplot(2,3,nplot)
           xmin,xmax = minmax(x,margin=0.01)
           ymin,ymax = minmax(y,margin=0.01)
@@ -693,6 +684,7 @@ def covarPlot2( infile, FTS=False ) :
           zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
           xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
           zibest = numpy.nanmin(zi)
+          print "zibest = ",zibest
               # return position of interpolated minimum
               # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
           # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
@@ -703,12 +695,12 @@ def covarPlot2( infile, FTS=False ) :
           contour = pyplot.contourf(xi,yi,zi,clevels,colors=colors)
           #pyplot.colorbar(contour)
           fig.scatter(x,y,s=10, marker='x', c='black')
-          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='white')
+          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='red')
           fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
           fig.ticklabel_format(useOffset=False)
           fig.set_xlabel( label[jx], fontsize=12 )
           fig.set_ylabel( label[jy], fontsize=12 )
-          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
+          fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
           #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
           fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
           pyplot.locator_params( axis='x', nbins=5)
@@ -716,17 +708,133 @@ def covarPlot2( infile, FTS=False ) :
           fig.tick_params( axis='both', which='major', labelsize=8 )
           pyplot.tight_layout( pad=3, h_pad=1)
 
-        # increment the subplot; begin new page if too many panels
+    if nplot > 1 :
+      pyplot.savefig( pp, format="pdf" )
+      pyplot.show()
+    pp.close()
+
+'''
+# plot lowest chisq for each combination of variables, marginalized over all the others
+def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
+    fin = open( pickleFile, "r" )
+
+  # create array of results with 5 columns (t1,t2,nr1,nr2,chisq)
+    if FTS :
+      [tcmList,nrList,Resid] = pickle.load( fin )
+      vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
+        [Resid] ), axis=0 )
+    else :
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
+        [chisq[chisqIndex]]), axis=0 )
+
+    label = ["t1", "t2", "nr1", "nr2"]
+  
+  # sort by chisq
+    isort = numpy.argsort( chisq[chisqIndex] )
+    print isort[0:10]
+    chisqMin = chisq[chisqIndex][isort[0]]
+    nbest = printBest( chisq[chisqIndex], tcmList, nrList, tanDeltaList ) 
+    print "chisqMin = %.3f" % chisqMin
+
+    tcm0 = []
+    tcm1 = []
+    nr0 = []
+    nr1 = []
+    chisqNorm = []
+    npts = 0
+    for i in isort :
+      npts = npts + 1
+      if chisq[chisqIndex][i] > worstRatio * chisqMin :
+        print "%d / %d points meet chisq criterion" % (npts, len(isort) )
+        break
+      else :
+        newPoint = True
+        for j in range(0,len(tcm0)) :
+          if ( tcmList[i][0] == tcm0[j] ) and ( tcmList[i][1] == tcm1[j] ) :
+            newPoint = False
+        if newPoint :
+          tcm0.append( tcmList[i][0] ) 
+          tcm1.append( tcmList[i][1] ) 
+          nr0.append( nrList[i][0] )
+          nr1.append( nrList[i][1] )
+          #chisqNorm.append( chisq[chisqIndex][i]/ chisqMin )
+          chisqNorm.append( chisq[chisqIndex][i])
+          print i, tcm0[-1]/2.54, tcm1[-1]/2.54, chisqNorm[-1]
+
+    print "will be plotting %d points" % ( len(tcm0) )
+    
+    tin0 = numpy.array(tcm0)/2.54
+    tin1 = numpy.array(tcm1)/2.54
+
+    fig = pyplot.figure()
+    ax = Axes3D(fig)
+    ax.scatter3D( tin0, tin1, nr0, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
+    #ax.plot_trisurf( tin0, tin1, nr0, alpha=0.1  )
+    #ax.scatter3D( tin0, tin1, nr1, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
+    ax.view_init(elev=15,azim=160)
+    pyplot.show()
+
+    pyplot.ioff()
+    pp = PdfPages("Covar.pdf")
+    pyplot.figure( figsize=(11,8) )
+    nplot = 0
+    for jx in range(0,4) :
+      for jy in range( jx+1,4 ) :
+        if len( 
+        x,y,z = stripout( vec, ibest, jx, jy, 4 )
+        print "\n"
+        jbest = numpy.argmin(z)
+        zbest = numpy.nanmin(z)
+        print "zbest = ",zbest
+
+        if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
           nplot = nplot + 1
+          print "nplot = ",nplot
           if nplot > 6 :
             pyplot.savefig( pp, format="pdf" )
             pyplot.show()
             pyplot.figure( figsize=(11,8) )
             nplot = 1
+          fig = pyplot.subplot(2,3,nplot)
+          xmin,xmax = minmax(x,margin=0.01)
+          ymin,ymax = minmax(y,margin=0.01)
+          vmin,vmax = minmax(z,margin=0.0)
+        # section below copied from web example
+          xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
+          xi,yi = numpy.meshgrid(xi,yi)
+          zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
+          xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
+          zibest = numpy.nanmin(zi)
+          print "zibest = ",zibest
+              # return position of interpolated minimum
+              # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
+          # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
+          # fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
+          #    extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
+          clevels = [ 0.999*zibest,2.*zibest,3.*zibest ]
+          colors = ["blue","green"]
+          contour = pyplot.contourf(xi,yi,zi,clevels,colors=colors)
+          #pyplot.colorbar(contour)
+          fig.scatter(x,y,s=10, marker='x', c='black')
+          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='red')
+          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
+          fig.ticklabel_format(useOffset=False)
+          fig.set_xlabel( label[jx], fontsize=12 )
+          fig.set_ylabel( label[jy], fontsize=12 )
+          fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
+          fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
+          pyplot.locator_params( axis='x', nbins=5)
+          pyplot.locator_params( axis='y', nbins=5)
+          fig.tick_params( axis='both', which='major', labelsize=8 )
+          pyplot.tight_layout( pad=3, h_pad=1)
+
     if nplot > 1 :
       pyplot.savefig( pp, format="pdf" )
       pyplot.show()
     pp.close()
+'''
 
 # generate an array of perfect fake data, for single layer or 2 layers
 # can input this to nrefracFit2, use it to figure out how to weight amps and phases
@@ -1811,7 +1919,7 @@ def smoothTransitions( tcmList, nrList, tanDeltaList, deltaTcmList, fitFile, ste
     return [tcmListSm, nrListSm, tanDeltaListSm ]
 
 # for 2 layers only; make 3Dplot of chisq for nr1,nr2 above the (tin1,tin2) plane
-def my3Dplot( pickleFile ) :
+def my3Dplot( pickleFile, chisqIndex=-1, worstRatio=10. ) :
 
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
@@ -1834,22 +1942,21 @@ def my3Dplot( pickleFile ) :
     zplot = []
     c = []
     for n in range(0,ntrials) :
-      if chisq[1][n] < 10.*chisq[0][nbest] :
+      if chisq[1][n] < worstRatio*chisq[chisqIndex][nbest] :
         xplot.append( tcmList[n][0]/2.54 )
         yplot.append( tcmList[n][1]/2.54 )
         zplot.append( nrList[n][0] )
-        c.append( chisq[1][n] )
+        c.append( chisq[chisqIndex][n] )
     fig = pyplot.figure()
     ax = Axes3D(fig)
     ax.scatter3D( xplot, yplot, zplot, c=c, marker="o", alpha=0.6, edgecolors="none")
-    for n in range(0,ntrials) :
-      if chisq[1][n] < 10.*chisq[0][nbest] :
-        xplot.append( tcmList[n][0]/2.54 )
-        yplot.append( tcmList[n][1]/2.54 )
-        zplot.append( nrList[n][1] )
-        c.append( chisq[1][n] )
-    ax.scatter3D( xplot, yplot, zplot, c=c, marker="o", alpha=0.6, edgecolors="none")
-    # ax.plot_trisurf( xplot, yplot, zplot )
+    #for n in range(0,ntrials) :
+    #  if chisq[1][n] < 10.*chisq[0][nbest] :
+    #    xplot.append( tcmList[n][0]/2.54 )
+    #    yplot.append( tcmList[n][1]/2.54 )
+    #    zplot.append( nrList[n][1] )
+    #    c.append( chisq[chisqIndex][n] )
+    #ax.scatter3D( xplot, yplot, zplot, c=c, marker="o", alpha=0.6, edgecolors="none")
     ax.view_init(elev=15,azim=160)
     pyplot.show()
 
@@ -1909,6 +2016,7 @@ def my3Dplot2( pickleFile, chisqIndex=-1, worstRatio=10. ) :
     fig = pyplot.figure()
     ax = Axes3D(fig)
     ax.scatter3D( tin0, tin1, nr0, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
+    #ax.plot_trisurf( tin0, tin1, nr0, alpha=0.1  )
     #ax.scatter3D( tin0, tin1, nr1, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
     ax.view_init(elev=15,azim=160)
     pyplot.show()
