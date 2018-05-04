@@ -145,9 +145,6 @@ def unwrap( phi ) :
 # 
 def expandTree( tcmRange, tcmListIn, nrListIn ) :
     nlayers = len(tcmListIn)
-    #print "tcmListIn = ",tcmListIn
-    #print "nlayers = ", nlayers
-    #print "tcmRange = ", tcmRange
 
   # meshgrid arrays of thicknesses AND refractive indices
   # this is lame, but I can't figure out how to do this elegantly, without if structure
@@ -220,12 +217,16 @@ def expandTree( tcmRange, tcmListIn, nrListIn ) :
 # the deficiency of this approach is that maybe only a small set of thicknesses is possible; it's
 #   dumb to create full very large expanded tree, then prune out all layers with unacceptable thicknesses
 def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
+    print "tcmListIn = ",tcmListIn
     nlayers = len(tcmListIn)
+    print "nlayers = ", nlayers
+    print "tcmRange = ", tcmRange
+    print "tanDListIn = ", tanDListIn
 
   # before calling meshgrid, calculate size of final arrays
     ntrials = 1
     for n in range(0,nlayers) :
-      ntrials = ntrials * len(tcmListIn[n]) * len(nrListIn[n]) * len(tanDListIn)
+      ntrials = ntrials * len(tcmListIn[n]) * len(nrListIn[n]) * len(tanDListIn[n])
     print "initial ntrials = %d" % ntrials
     if ntrials > 1.e12 :
       print "exiting! too many possible trials!"
@@ -713,85 +714,75 @@ def covarPlot2( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
       pyplot.show()
     pp.close()
 
-'''
-# plot lowest chisq for each combination of variables, marginalized over all the others
-def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
+# plot chisq for each combination of variables, "marginalized" over all the others (I think)
+# that is, for each point on the var1,var2 plane, plot the minimum chisq, for any combination
+#    of the other variables
+# this differs from my original implementation, where I plotted the chisq for the values
+#    of the other variables that matched the best fit
+#
+def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
+
     fin = open( pickleFile, "r" )
+    [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+    nlayers = len(tcmList[0])
+    label = []
+    for nl in range(0,nlayers) :
+      label.append("t%d" % (nl+1))
+    for nl in range(0,nlayers) :
+      label.append("nr%d" % (nl+1))
+    for nl in range(0,nlayers) :
+      label.append("tanD%d" % (nl+1))
+    var = numpy.concatenate( (tcmList/2.54,nrList,tanDeltaList), axis=1 )
+      # this makes a flat list of variables for each trial
+    print "labels: ", label 
+    print "shape(tcmList) = ", numpy.shape(tcmList)
+    print "shape(nrList) = ", numpy.shape(nrList)
+    print "shape(tanDeltaList) = ", numpy.shape(tanDeltaList)
+    print "shape(chisq) = ", numpy.shape(chisq)
 
-  # create array of results with 5 columns (t1,t2,nr1,nr2,chisq)
-    if FTS :
-      [tcmList,nrList,Resid] = pickle.load( fin )
-      vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
-        [Resid] ), axis=0 )
-    else :
-      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
-      vec = numpy.concatenate( ( [tcmList[:,0]/2.54], [tcmList[:,1]/2.54], [nrList[:,0]], [nrList[:,1]], \
-        [chisq[chisqIndex]]), axis=0 )
-
-    label = ["t1", "t2", "nr1", "nr2"]
-  
   # sort by chisq
     isort = numpy.argsort( chisq[chisqIndex] )
     print isort[0:10]
     chisqMin = chisq[chisqIndex][isort[0]]
-    nbest = printBest( chisq[chisqIndex], tcmList, nrList, tanDeltaList ) 
     print "chisqMin = %.3f" % chisqMin
+    nbest = printBest( chisq[chisqIndex], tcmList, nrList, tanDeltaList ) 
 
-    tcm0 = []
-    tcm1 = []
-    nr0 = []
-    nr1 = []
-    chisqNorm = []
-    npts = 0
-    for i in isort :
-      npts = npts + 1
-      if chisq[chisqIndex][i] > worstRatio * chisqMin :
-        print "%d / %d points meet chisq criterion" % (npts, len(isort) )
-        break
-      else :
-        newPoint = True
-        for j in range(0,len(tcm0)) :
-          if ( tcmList[i][0] == tcm0[j] ) and ( tcmList[i][1] == tcm1[j] ) :
-            newPoint = False
-        if newPoint :
-          tcm0.append( tcmList[i][0] ) 
-          tcm1.append( tcmList[i][1] ) 
-          nr0.append( nrList[i][0] )
-          nr1.append( nrList[i][1] )
-          #chisqNorm.append( chisq[chisqIndex][i]/ chisqMin )
-          chisqNorm.append( chisq[chisqIndex][i])
-          print i, tcm0[-1]/2.54, tcm1[-1]/2.54, chisqNorm[-1]
-
-    print "will be plotting %d points" % ( len(tcm0) )
-    
-    tin0 = numpy.array(tcm0)/2.54
-    tin1 = numpy.array(tcm1)/2.54
-
-    fig = pyplot.figure()
-    ax = Axes3D(fig)
-    ax.scatter3D( tin0, tin1, nr0, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
-    #ax.plot_trisurf( tin0, tin1, nr0, alpha=0.1  )
-    #ax.scatter3D( tin0, tin1, nr1, c=chisqNorm, marker="o", alpha=0.6, edgecolors="none")
-    ax.view_init(elev=15,azim=160)
-    pyplot.show()
-
+  # now plot one panel for each pair of non-trivial parameters
     pyplot.ioff()
-    pp = PdfPages("Covar.pdf")
+    pp = PdfPages( pickleFile+".covar.pdf")
     pyplot.figure( figsize=(11,8) )
     nplot = 0
-    for jx in range(0,4) :
-      for jy in range( jx+1,4 ) :
-        if len( 
-        x,y,z = stripout( vec, ibest, jx, jy, 4 )
-        print "\n"
-        jbest = numpy.argmin(z)
-        zbest = numpy.nanmin(z)
-        print "zbest = ",zbest
-
-        if (len(numpy.unique(x)) > 1) and (len(numpy.unique(y)) > 1) :
+    for jx in range(0,len(label)) :
+      for jy in range( jx+1,len(label)) :
+        if (len(numpy.unique(var[:,jx])) > 1) and (len(numpy.unique(var[:,jy])) > 1) :     # both parameters have >1 value
+          npts = 0
+          xl = []
+          yl = []
+          zl = []
+          for i in isort :
+            npts = npts + 1
+            if chisq[chisqIndex][i] > worstRatio * chisqMin :
+              print "%d / %d points meet chisq criterion" % (npts, len(isort) )
+              break
+            else :
+              newPoint = True
+              for j in range(0,len(xl)) :
+                if ( var[i][jx] == xl[j] ) and ( var[i][jy] == yl[j] ) :
+                  newPoint = False   # lower chisq already plotted for this x,y
+              if newPoint :
+                xl.append( var[i][jx] ) 
+                yl.append( var[i][jy] ) 
+                zl.append( chisq[chisqIndex][i])    
+                print i, xl[-1], yl[-1], zl[-1]
+          print label[jx], label[jy], " plot %d points" % ( len(xl) )
+          x = numpy.array(xl)
+          y = numpy.array(yl)
+          z = numpy.array(zl)
+    
           nplot = nplot + 1
           print "nplot = ",nplot
           if nplot > 6 :
+            pyplot.suptitle( pickleFile, fontsize=14 )
             pyplot.savefig( pp, format="pdf" )
             pyplot.show()
             pyplot.figure( figsize=(11,8) )
@@ -799,7 +790,7 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
           fig = pyplot.subplot(2,3,nplot)
           xmin,xmax = minmax(x,margin=0.01)
           ymin,ymax = minmax(y,margin=0.01)
-          vmin,vmax = minmax(z,margin=0.0)
+
         # section below copied from web example
           xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
           xi,yi = numpy.meshgrid(xi,yi)
@@ -812,17 +803,17 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
           # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
           # fig.imshow( zi, aspect='auto', origin='lower', vmin=vmin, vmax=vmax, \
           #    extent=[xmin,xmax,ymin,ymax], cmap='terrain' )
-          clevels = [ 0.999*zibest,2.*zibest,3.*zibest ]
+          clevels = [ 0.999*z[0],2.*z[0],3.*z[0] ]
           colors = ["blue","green"]
           contour = pyplot.contourf(xi,yi,zi,clevels,colors=colors)
           #pyplot.colorbar(contour)
           fig.scatter(x,y,s=10, marker='x', c='black')
-          fig.scatter(x[jbest],y[jbest],s=20, marker='x', c='red')
+          fig.scatter(x[0],y[0],s=20, marker='x', c='red')
           fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
           fig.ticklabel_format(useOffset=False)
           fig.set_xlabel( label[jx], fontsize=12 )
           fig.set_ylabel( label[jy], fontsize=12 )
-          fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
+          #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=0.,vmax=.3*z.max())
           #fig.scatter(x,y,c=z,s=200,edgecolors='none',marker='s',vmin=50.,vmax=200.)
           fig.axis( [xmin, xmax, ymin, ymax],fontsize=6 )
           pyplot.locator_params( axis='x', nbins=5)
@@ -831,58 +822,10 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
           pyplot.tight_layout( pad=3, h_pad=1)
 
     if nplot > 1 :
+      pyplot.suptitle( pickleFile, fontsize=14 )
       pyplot.savefig( pp, format="pdf" )
       pyplot.show()
     pp.close()
-'''
-
-# generate an array of perfect fake data, for single layer or 2 layers
-# can input this to nrefracFit2, use it to figure out how to weight amps and phases
-def fakeData( outName, t1=.25, t2=0., n1=3.147, n2=1., sigma=0.0, tanDelta=6.e-4 ):
-    fout = open( outName+".dat", "w" )
-    fGHz1 = numpy.arange(74.,115.1,.04)
-    fGHz2 = numpy.arange(220.,230.1,.1)
-    #fGHzArr = numpy.concatenate( (fGHz1,fGHz2) )
-    fGHzArr = fGHz1
-    angIdeg = 5.16
-    #tcmArr1 = 2.54 * numpy.array( [.008,.250] )
-    #tcmArr1 = 2.54 * numpy.array( [.0093,.2461] )
-    tcmArr1 = 2.54 * numpy.array( [t1] )
-    nrArr1 = numpy.array( [n1] )
-    tanDeltaArr = numpy.array( [tanDelta] ) 
-    fout.write("# file generated by ob.fakeData() with sigma = %.4f\n" % sigma )
-    fout.write("# angIdeg = %.3f\n" % angIdeg )
-    fout.write("# -----------------------------\n")
-    fout.write("# title = \"%s\"\n" % outName)
-    #totin = (tcmArr1[0]+tcmArr1[1])/2.54
-    totin = tcmArr1[0]/2.54
-    fout.write("# totin = %.4f,%.4f\n" % (totin-.001,totin+.001))
-    fout.write("# layer 1\n")
-    fout.write("## true tin = %.5f\n" % (tcmArr1[0]/2.54) )
-    fout.write("## true nr = %.3f\n" % nrArr1[0] )
-    fout.write("#   tin = %.4f,%.4f,%.4f\n" % (tcmArr1[0]/2.54-.001, tcmArr1[0]/2.54+.0011,.0005))
-    fout.write("#   nr = %.4f,%.4f,%.4f\n" % (nrArr1[0]-.5, nrArr1[0]+.505,.02))
-    fout.write("#   tanDelta = %.2e\n" % tanDelta)
-    #fout.write("# layer 2\n")
-    #fout.write("## true tin = %.5f\n" % (tcmArr1[1]/2.54) )
-    #fout.write("## true nr = %.3f\n" % nrArr1[1] )
-    #fout.write("#   tin = %.4f,%.4f,%.4f\n" % (tcmArr1[1]/2.54-.001, tcmArr1[1]/2.54+.0011,.0005))
-    #fout.write("#   nr = %.4f,%.4f,%.4f\n" % (nrArr1[1]-.002, nrArr1[1]+.0021,.002))
-    #fout.write("#   tanDelta = 0.\n")
-    #fout.write("# -----------------------------\n")
-    phs1,trans1 = solveStack(fGHzArr, angIdeg, tcmArr1, nrArr1, tanDeltaArr ) 
-    if sigma > .00001 :
-      measReal = trans1 * numpy.cos(phs1*math.pi/180.) + numpy.random.normal( 0., sigma, len(trans1) )
-      measImag = trans1 * numpy.sin(phs1*math.pi/180.) + numpy.random.normal( 0., sigma, len(phs1) )
-      measAmp = numpy.absolute( (measReal + 1j * measImag ) )
-      measPhs = numpy.angle( (measReal + 1j * measImag), deg=True ) 
-    else :
-      measAmp = trans1
-      measPhs = phs1
-    
-    for n in range(0,len(fGHzArr)) :
-      fout.write("%8.2f  %8.6f  %8.3f  0.005\n" % ( fGHzArr[n], measAmp[n], measPhs[n] ) )
-    fout.close()
 
 # produce Fourier transform of measurements; convert amp,phase to complex
 # if FTS=False, 1st 3 columns of data file are interpreted as fGHz, trans_amp, trans_phase(deg)
@@ -1381,21 +1324,24 @@ def expandPoint( fitParams, index, tcmList, nrList, tanDList ) :
 
       if len(fitParams["tcmList"][nl]) > 1 :
         step = fitParams["tcmList"][nl][1] - fitParams["tcmList"][nl][0]
-        tcmListNew.append( numpy.arange( tcmList[index][nl] - 0.5*step, tcmList[index][nl] + 0.6*step, 0.2*step) )
+        tcmListNew.append( [ tcmList[index][nl]-0.4*step, tcmList[index][nl]-0.2*step, \
+          tcmList[index][nl]+0.2*step, tcmList[index][nl]+0.4*step] )
       else :
-        tcmListNew.append( tcmList[index][nl] )
+        tcmListNew.append( [tcmList[index][nl]] )
 
       if len(fitParams["nrList"][nl]) > 1 :
         step = fitParams["nrList"][nl][1] - fitParams["nrList"][nl][0]
-        nrListNew.append( numpy.arange( nrList[index][nl] - 0.5*step, nrList[index][nl] + 0.6*step, 0.2*step) )
+        nrListNew.append( [ nrList[index][nl]-0.4*step, nrList[index][nl]-0.2*step, \
+          nrList[index][nl]+0.2*step, nrList[index][nl]+0.4*step] )
       else :
-        nrListNew.append( nrList[index][nl] )
+        nrListNew.append( [nrList[index][nl]] )
 
       if len(fitParams["tanDeltaList"][nl]) > 1 :
         step = fitParams["tanDeltaList"][nl][1] - fitParams["tanDeltaList"][nl][0]
-        tanDListNew.append( numpy.arange( tanDList[index][nl] - 0.5*step, tanDList[index][nl] + 0.6*step, 0.2*step) )
+        tanDListNew.append( [ tanDList[index][nl]-0.4*step, tanDList[index][nl]-0.2*step, \
+          tanDList[index][nl]+0.2*step, tanDList[index][nl]+0.4*step] )
       else :
-        tanDListNew.append( tanDList[index][nl] )
+        tanDListNew.append( [tanDList[index][nl]] )
     return tcmListNew, nrListNew, tanDListNew 
     
 def printElapsed( ntrials, i, nblock, secs0 ) :
@@ -1484,6 +1430,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=True, Iterate=False, path="/o/pla
       print "\nfitting %d additional trials" % ntrials2
       chisqExtra = 1.e6*numpy.ones( (nDataSets+2, ntrials2) )
       chisq = numpy.concatenate( (chisq, chisqExtra), axis=1 )
+      secs0 = time.time()       
       for i in range(ntrials+1, len(tcmList) ) :
         printElapsed( ntrials2, i, 1000, secs0 )
         errs = []
