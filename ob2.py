@@ -128,108 +128,41 @@ def unwrap( phi ) :
         phi[n] = phi[n] - 360.
     return phi
      
-# expandTree uses meshgrid to expand the thickness and refractive index arrays
+# expandTree2 uses meshgrid to expand the thickness and refractive index arrays
 #
 # input: 
 #   tcmRange = [tcmMin,tcmMax]  - specifies allowed range of total thicknesses
 #   tcmListIn = [ [tcm1list], [tcm2list], ...] - lists of thicknesses to model for each layer
 #   nrListIn = [ [nr1list], [nr2list], ... ] - lists of refractive indices to model for each layer
+#   tanDListIN - list of refractive indices to model for each layer
 # output :
 #   tcmListOut = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
 #   nrListOut = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
 #
-# thus: tcmlistOut[i] and nrListOut[i] specify one set of thicknesses and refractive indices
-#   that should be modeled; note that same list of thicknesses may appear many times, one
+# thus: tcmlistOut[i], nrListOut[i], tanDListOut[i] specify one set of thicknesses, refractive indices,
+#   and loss tangents that should be modeled; 
+#    ote that same list of thicknesses may appear many times, one
 #   for each possible set of refractive indices; same for refractive indices
 # total thickness of tcmListOut is guaranteed to be in the range [tcmMin,tcmMax]
 # 
-def expandTree( tcmRange, tcmListIn, nrListIn ) :
-    nlayers = len(tcmListIn)
-
-  # meshgrid arrays of thicknesses AND refractive indices
-  # this is lame, but I can't figure out how to do this elegantly, without if structure
-    if nlayers == 1 :
-      a = numpy.meshgrid( tcmListIn[0], nrListIn[0] )
-    elif nlayers == 2 :
-      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],nrListIn[0],nrListIn[1] ) 
-    elif nlayers == 3 :
-      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2], \
-            nrListIn[0],nrListIn[1],nrListIn[2])
-    elif nlayers == 4 :
-      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],\
-            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3])
-    elif nlayers == 5 :
-      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4], \
-            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4] )
-    elif nlayers == 6 :
-      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],tcmListIn[5], \
-            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4],nrListIn[5] )
-    elif nlayers == 7 :
-      a = numpy.meshgrid( tcmListIn[0],tcmListIn[1],tcmListIn[2],tcmListIn[3],tcmListIn[4],tcmListIn[5],tcmListIn[6], \
-            nrListIn[0],nrListIn[1],nrListIn[2],nrListIn[3],nrListIn[4],nrListIn[5],nrListIn[6] )
-    else :
-      print "nlayers = %d not allowed by expandTree" % nlayers
-      return
-
-  # flatten each array contained in a 
-    b = []
-    for i in range(0,len(a)) :
-      b.append( a[i].flatten() )
-
-  # constrained layers are indicated by -L, where L is the corresponding layer
-    for n in range(0,nlayers) :
-      if b[n][0] < 0. :
-        m = int( abs(b[n][0]) + 0.5 )
-        try :
-          b[n] = b[m-1]
-          print "mirrored thicknesses for layer %d into layer row %d" % (m,n+1)
-        except :
-          print "mirroring failed; tried to copy row %d into row %d" % (m-1,n)
-          return
-      if b[n+nlayers][0] < 0. :
-        m = int( abs(b[n+nlayers][0]) + 0.5 )    # e.g., -1 -> 1
-        try :
-          b[n+nlayers] = b[m+nlayers-1]
-          print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
-        except :
-          print "mirroring failed; tried to copy row %d into row %d" % (m+nlayers-1,n+nlayers)
-          return
-
-  # compute total thickness for each possible stack
-    totcm = numpy.zeros( len(b[0]) )
-    for i in range(0,nlayers) :
-      totcm = totcm + b[i]
-    #print "totcm = ",totcm
-    #print " ========== "
-  
-  # now form transpose, retain only rows where thickness is within allowed range
-    c = numpy.transpose(b)
-    d = []
-    for n in range(0,len(c)) :
-      if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
-        d.append( c[n] )
-        #print d[-1]    
-
-  # return separate tcm and nr arrays
-    return numpy.hsplit( numpy.array(d),2)
-
-# same as expandTree, except includes tanDelta
 # the deficiency of this approach is that maybe only a small set of thicknesses is possible; it's
 #   dumb to create full very large expanded tree, then prune out all layers with unacceptable thicknesses
+#
 def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
-    print "tcmListIn = ",tcmListIn
+    # print "tcmListIn = ",tcmListIn
+    # print "nrListIn = ",tcmListIn
+    # print "tanDListIn = ", tanDListIn
     nlayers = len(tcmListIn)
-    print "nlayers = ", nlayers
-    print "tcmRange = ", tcmRange
-    print "tanDListIn = ", tanDListIn
+    # print "nlayers = ", nlayers
+    # print "tcmRange = ", tcmRange
 
-  # before calling meshgrid, calculate size of final arrays
+  # before calling meshgrid, calculate size of arrays that it will produce
     ntrials = 1
     for n in range(0,nlayers) :
       ntrials = ntrials * len(tcmListIn[n]) * len(nrListIn[n]) * len(tanDListIn[n])
-    print "initial ntrials = %d" % ntrials
+    # print "initial ntrials = %d" % ntrials
     if ntrials > 1.e12 :
-      print "exiting! too many possible trials!"
+      print "exiting! too many possible trials, estimated at %.2e!" % ntrials
       return
 
   # meshgrid arrays of thicknesses, refractive indices, and tanDs
@@ -273,7 +206,7 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
         m = int( abs(b[n][0]) + 0.5 )
         try :
           b[n] = b[m-1]
-          print "mirrored thicknesses for layer %d into layer row %d" % (m,n+1)
+          # print "mirrored thicknesses for layer %d into layer row %d" % (m,n+1)
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m-1,n)
           return
@@ -281,7 +214,7 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
         m = int( abs(b[n+nlayers][0]) + 0.5 )    # e.g., -1 -> 1
         try :
           b[n+nlayers] = b[m+nlayers-1]
-          print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
+          # print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m+nlayers-1,n+nlayers)
           return
@@ -289,7 +222,7 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
         m = int( abs(b[n+2*nlayers][0]) + 0.5 )    # e.g., -1 -> 1
         try :
           b[n+2*nlayers] = b[m+2*nlayers-1]
-          print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
+          # print "mirrored tanDeltas for layer %d into layer %d" % (m,n+1)
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m+2*nlayers-1,n+2*nlayers)
           return
@@ -307,7 +240,7 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
         d.append( c[n] )
 
   # return separate tcm, nr, and tanD arrays
-    print "final ntrials = %d" % len(numpy.hsplit(numpy.array(d),3)[0])
+    # print "final ntrials = %d" % len(numpy.hsplit(numpy.array(d),3)[0])
     return numpy.hsplit( numpy.array(d),3)
 
 
@@ -720,6 +653,8 @@ def covarPlot2( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
 # this differs from my original implementation, where I plotted the chisq for the values
 #    of the other variables that matched the best fit
 #
+# bug: tries to plot mirrored parameters against each other
+#
 def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
 
     fin = open( pickleFile, "r" )
@@ -762,7 +697,7 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
           for i in isort :
             npts = npts + 1
             if chisq[chisqIndex][i] > worstRatio * chisqMin :
-              print "%d / %d points meet chisq criterion" % (npts, len(isort) )
+              # print "%d / %d points meet chisq criterion" % (npts, len(isort) )
               break
             else :
               newPoint = True
@@ -773,14 +708,12 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
                 xl.append( var[i][jx] ) 
                 yl.append( var[i][jy] ) 
                 zl.append( chisq[chisqIndex][i])    
-                print i, xl[-1], yl[-1], zl[-1]
-          print label[jx], label[jy], " plot %d points" % ( len(xl) )
+                # print i, xl[-1], yl[-1], zl[-1]
           x = numpy.array(xl)
           y = numpy.array(yl)
           z = numpy.array(zl)
     
           nplot = nplot + 1
-          print "nplot = ",nplot
           if nplot > 6 :
             pyplot.suptitle( pickleFile, fontsize=14 )
             pyplot.savefig( pp, format="pdf" )
@@ -794,10 +727,13 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
         # section below copied from web example
           xi,yi = numpy.linspace( xmin, xmax, 50), numpy.linspace(ymin, ymax, 50)
           xi,yi = numpy.meshgrid(xi,yi)
-          zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='cubic')
+          try :
+            zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='linear')
+          except :
+            zi = scipy.interpolate.griddata( (x,y) ,z, (xi,yi), method='nearest')
           xibest,yibest = numpy.unravel_index(numpy.nanargmin(zi),zi.shape)
           zibest = numpy.nanmin(zi)
-          print "zibest = ",zibest
+          print label[jx], label[jy], " plot %d points  zibest = %.2f" % ( len(xl), zibest )
               # return position of interpolated minimum
               # zi[xibest,yibest] occurs at x[xibest,yibest],y[xibest,yibest]
           # print "xibest,yibest,zibest =",xibest,yibest,zi[xibest,yibest]
@@ -808,8 +744,8 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
           contour = pyplot.contourf(xi,yi,zi,clevels,colors=colors)
           #pyplot.colorbar(contour)
           fig.scatter(x,y,s=10, marker='x', c='black')
-          fig.scatter(x[0],y[0],s=20, marker='x', c='red')
-          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='s', c='red')
+          fig.scatter(x[0],y[0],s=40, marker='s', c='red')
+          fig.scatter(xi[xibest,yibest],yi[xibest,yibest],s=40, marker='x', c='red')
           fig.ticklabel_format(useOffset=False)
           fig.set_xlabel( label[jx], fontsize=12 )
           fig.set_ylabel( label[jy], fontsize=12 )
@@ -905,7 +841,7 @@ def makeString( oneList, fmt=4 ) :
         return "%.3f, %.3f,... %.3f" % (oneList[0],oneList[1],oneList[-1])
 
 # model Oliver's data
-# this routine won't work anymore without changing it to use fitFile
+# this routine won't work anymore without changing it to use fitFile and expandTree2
 def nrefracFit3( infile ) :
     print " "
     fullName = infile + ".dat"
@@ -1309,12 +1245,9 @@ def selectPrefitData( fGHz, trans, phase, unc ) :
       # print fsparse[-1],tsparse[-1],psparse[-1],usparse[-1]
     return numpy.array(fsparse), numpy.array(tsparse), numpy.array(psparse), numpy.array(usparse)      
 
-# used to create finer grid around the points with lowest chisq
-# tcmRange is the [min,max] allowed thickness in cm
-# tcmList is the list of layer thicknesses [ tcm1, tcm2, ...] for the point in question
-# tcmstep is the new step size in thickness for each layer
-# nrList is the list of refractive indices [ nr1, nr2, ...] for the point in question
-# nrstep is the new step size in refractive index for each layer
+# used to create 5x finer grid around grid point with index i
+# step size is 5x finer than calculated from fitParams
+# returns new lists tcmList, nrList, tanDlist just around that point
 def expandPoint( fitParams, index, tcmList, nrList, tanDList ) :
     nlayers = len(tcmList[index])
     tcmListNew = []
@@ -1323,25 +1256,29 @@ def expandPoint( fitParams, index, tcmList, nrList, tanDList ) :
     for nl in range(0,nlayers) :
 
       if len(fitParams["tcmList"][nl]) > 1 :
-        step = fitParams["tcmList"][nl][1] - fitParams["tcmList"][nl][0]
+        step = fitParams["tcmList"][nl][1] - fitParams["tcmList"][nl][0]    # original step size
         tcmListNew.append( [ tcmList[index][nl]-0.4*step, tcmList[index][nl]-0.2*step, \
           tcmList[index][nl]+0.2*step, tcmList[index][nl]+0.4*step] )
       else :
-        tcmListNew.append( [tcmList[index][nl]] )
+        tcmListNew.append( fitParams["tcmList"][nl] )  # fixed value if positive, mirror if negative
 
       if len(fitParams["nrList"][nl]) > 1 :
         step = fitParams["nrList"][nl][1] - fitParams["nrList"][nl][0]
         nrListNew.append( [ nrList[index][nl]-0.4*step, nrList[index][nl]-0.2*step, \
           nrList[index][nl]+0.2*step, nrList[index][nl]+0.4*step] )
       else :
-        nrListNew.append( [nrList[index][nl]] )
+        nrListNew.append( fitParams["nrList"][nl] )   # fixed value if positive, mirror if negative
 
       if len(fitParams["tanDeltaList"][nl]) > 1 :
         step = fitParams["tanDeltaList"][nl][1] - fitParams["tanDeltaList"][nl][0]
         tanDListNew.append( [ tanDList[index][nl]-0.4*step, tanDList[index][nl]-0.2*step, \
           tanDList[index][nl]+0.2*step, tanDList[index][nl]+0.4*step] )
       else :
-        tanDListNew.append( [tanDList[index][nl]] )
+        tanDListNew.append( fitParams["tanDeltaList"][nl] )   # fixed value if positive, mirror if negative
+
+    # print tcmListNew
+    # print nrListNew
+    # print tanDListNew
     return tcmListNew, nrListNew, tanDListNew 
     
 def printElapsed( ntrials, i, nblock, secs0 ) :
@@ -1432,7 +1369,7 @@ def nrefracFit5( fitFile, pCutoff=10., pdfOnly=True, Iterate=False, path="/o/pla
       chisq = numpy.concatenate( (chisq, chisqExtra), axis=1 )
       secs0 = time.time()       
       for i in range(ntrials+1, len(tcmList) ) :
-        printElapsed( ntrials2, i, 1000, secs0 )
+        printElapsed( ntrials2, i-ntrials, 1000, secs0 )
         errs = []
         for j in range(0,2*nDataSets,2) :
           phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
