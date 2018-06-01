@@ -1297,7 +1297,7 @@ def printElapsed( ntrials, i, nblock, secs0 ) :
 #   chisq[0] < pCutoff * pchisqBest
 # fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
 #
-def nrefracFit5( fitFile, pCutoff=10., pdfOnly=True, Iterate=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
   # fitParams dictionary contains list of data files, parameter ranges to search, etc
     fitParams = readFitFile( fitFile )
