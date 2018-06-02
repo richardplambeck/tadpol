@@ -60,52 +60,39 @@ def makeList( inString ) :
       print "makeList: error interpreting input string '%s'" % inString
       return [0.]
 
-# readTransFile inputs data from transmission file created by OpticsBench/09nov2016/unpack.py;
-#   or from files averaged with binit, which have rms uncertainty in column 4; can also be used
-#   to read Oliver's FTS data if it is reformatted with phase=0. in column 3
-# lines not beginning with "#" should contain fGHz, transmission, and phase change when
-#    dielectric is inserted into beam
-# lines beginning with "#" may contain information related to fitting, such as the angle
-#    of incidence, the total thickness limits of the dielectric stack, title for a plot,
-#    and range of thickness, refractive index, and tanDelta to search for each layer;
-#    all these variables are indicated by keywords followed by "=" 
-# lines beginning with "##" are ignored
-# tcmList is a list of lists: tcmList[i] is a list of possible thicknesses for layer i
-# not all combinations of thicknesses are possible, however, since total thickness 
-#   of the sample is constrained to lie in the range totcm[0]-totcm[1]
-# when computing transmission, skip all combinations which fail this test
-# 9jan2018 - modify so that this file will read rms uncertainty from averaged data files;
-#   use readUnc=True to do this; readUnc=False for older data files
-# 14feb2018 - return only angIdeg, not full list of fitConstraints - these now are read from fitFile
+# readTransFile inputs data
+# default - assume created by unpack3.py: col1 = fGHz, col2 = amp, col3 = phase, col4 = vector uncertainty
+# following line "# FTS", interpret col2 = pwr, col3 = pwr unc
+# default - assume angle of incidence = 0; otherwise expect "# angIdeg = xx.xx"
 #
-def readTransFile( infile, readUnc=True, path="/o/plambeck/PolarBear/OpticsBench/" ) :
-  fin = open(path+infile, "r")
+def readTransFile( infile, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+  fin = open( path + infile, "r" )
   fGHz = []
   trans = []
   dphi = []
   unc = []
   angIdeg = -1000.
+  FTS = False
   for line in fin :
-    if line.startswith( "##" ) :     # ignore lines beginning with double hash mark
-      continue
-    elif not line.startswith( "#" ) :    # lines without hash marks are data
+    if not line.startswith( "#" ) :    # lines without hash marks are data
       a = line.split()
       fGHz.append( float( a[0] ) )
       trans.append( float( a[1] ) )
-      dphi.append( float( a[2] ) )
-      if readUnc :                    # averaged data file; data must be preceded by "# readUnc" line
+      if FTS :
+        dphi.append( 0. )
+        unc.append( float( a[2] ) )
+      else :
+        dphi.append( float( a[2] ) )
         unc.append( float(a[3]) )        
-      else :                          # otherwise set all uncertainties to 1.
-        unc.append( 1. )              
     else :                               # lines with single hash marks are search parameters
       if "angIdeg" in line :
         angIdeg = float( line[line.find("=")+1:] )
-      elif "readUnc" in line :
-        readUnc = True
+      elif "FTS" in line :
+        FTS = True
   if angIdeg == -1000. :
     print "FATAL ERROR: angIdeg is not given in data file %s" % (path+infile)
   else :
-    return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), numpy.array(unc), angIdeg
+    return numpy.array(fGHz), numpy.array(trans), numpy.array(dphi), numpy.array(unc), angIdeg, FTS
 
 
 # use Born and Wolf [13.4] eqn (7) and (4) to compute n2*cos(theta2) for lossy dielectic
@@ -1308,24 +1295,29 @@ def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plamb
     vecmeas = []
     unc = []
     angIdeg = []
+    FTSdata = []    # True if FTS (power), False if heterodyne (amplitude)
+
     for datafile in fitParams["datafileList"] :
       print "\nreading data file %s" % datafile
-      f,amp,phs,u,angI = readTransFile( datafile, path=path )     # read single data file
+      f,amp,phs,u,angI,FTS = readTransFile( datafile, path=path )     # read single data file
 
     # create sparse data set for prefit, probing peaks and valleys; save as an odd-numbered data set
       pf, pamp, pphs, pu =  selectPrefitData( f, amp, phs, u ) 
       fGHz.append( pf )
       vecmeas.append( pamp * numpy.exp(1j*numpy.radians(pphs)) )
+         # note: although FTS data are scalars (power transmission) they are saved as vectors anyway
       unc.append( pu )
       angIdeg.append( angI )  
+      FTSdata.append( FTS )
 
     # now append full data set to lists; these will be even-numbered
       fGHz.append(f)
       vecmeas.append( amp * numpy.exp(1j*numpy.radians(phs)) )  
       unc.append(u)
       angIdeg.append( angI )  
+      FTSdata.append( FTS )
 
-  # now create tree of parameters to search
+  # create tree of parameters to search
     tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
       # tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
       # nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
@@ -1345,7 +1337,10 @@ def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plamb
       errs = []
       for j in range(0,2*nDataSets,2) :
         phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
-        vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
+        if FTSdata[j] :
+          vecmodel = amp*amp
+        else :
+          vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
         errs.append( (vecmeas[j]-vecmodel)/unc[j] )
       chisq[0,i] = numpy.var( numpy.concatenate(errs) )
     nbest = printBest( chisq[0], tcmList, nrList, tanDeltaList )      # nbest is INDEX of parameters with smallest chisq
@@ -1373,7 +1368,10 @@ def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plamb
         errs = []
         for j in range(0,2*nDataSets,2) :
           phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
-          vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
+          if FTSdata[j] :
+            vecmodel = amp*amp
+          else :
+            vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
           errs.append( (vecmeas[j]-vecmodel)/unc[j] )
         chisq[0,i] = numpy.var( numpy.concatenate(errs) )
 
@@ -1402,7 +1400,10 @@ def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plamb
         errs = []
         for j in range(1, len(fGHz), 2) :
           phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
-          vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
+          if FTSdata[j] :
+            vecmodel = amp*amp
+          else :
+            vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
           errs.append( (vecmeas[j]-vecmodel)/unc[j] )
           chisq[(j+1)/2, i] = numpy.var(errs[-1])      # this is variance for fit to single data set only!
           # print "chisq[%d, %d] = %.3f" % ( (j+1)/2, i, numpy.var(errs[-1]))
@@ -1456,12 +1457,16 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=14 )
 
     # retrieve the raw data; also, identify points used for prefit
-      fGHz,trans,dphs_meas,unc,angIdeg = readTransFile( datafile, path=path )
+      fGHz,trans,dphs_meas,unc,angIdeg,FTS = readTransFile( datafile, path=path )
       pf, pamp, pphs, pu =  selectPrefitData( fGHz, trans, dphs_meas, unc ) 
 
     # recalculate the model amps and phases for the best fit parameters
       dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
-      dphi = unwrap( dphs_meas-dphs_est )
+      if FTS :
+        dphi = numpy.zeros( len(dphs_meas) )
+        trans_est = trans_est*trans_est
+      else :
+        dphi = unwrap( dphs_meas-dphs_est )
 
     # top left panel is phase vs freq, measured and fit
       ax = fig.add_axes( [.1,.6,.38,.32] )
