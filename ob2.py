@@ -1116,40 +1116,45 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
 
     # recalculate the model amps and phases for the best fit parameters
       dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
-      if FTS :
-        dphi = numpy.zeros( len(dphs_meas) )
-        trans_est = trans_est*trans_est
-      else :
+
+    # plot phase unless FTS
+      xmin,xmax = minmax( fGHz )
+      if not FTS :
         dphi = unwrap( dphs_meas-dphs_est )
 
-    # top left panel is phase vs freq, measured and fit
-      ax = fig.add_axes( [.1,.6,.38,.32] )
-      xmin,xmax = minmax( fGHz )
-      ymin,ymax = minmax( numpy.concatenate((dphs_meas,dphs_est)))
-      ax.axis( [xmin, xmax, ymin, ymax] )
-      ax.tick_params( labelsize=10 )
-      ax.plot( fGHz, dphs_meas, "bo", ms=2. )
-      ax.plot( pf, pphs, "kx", ms=5. )
-      ax.plot( fGHz, dphs_est, "r-" )
-      ax.set_ylabel("phase (deg)", fontsize=10)
-      ax.set_ylim( [-195.,195.] )
-      pyplot.grid(True)
+      # top left panel is phase vs freq, measured and fit
+        ax = fig.add_axes( [.1,.6,.38,.32] )
+        ymin,ymax = minmax( numpy.concatenate((dphs_meas,dphs_est)))
+        ax.axis( [xmin, xmax, ymin, ymax] )
+        ax.tick_params( labelsize=10 )
+        ax.plot( fGHz, dphs_meas, "bo", ms=2. )
+        ax.plot( pf, pphs, "kx", ms=5. )
+        ax.plot( fGHz, dphs_est, "r-" )
+        ax.set_ylabel("phase (deg)", fontsize=10)
+        ax.set_ylim( [-195.,195.] )
+        pyplot.grid(True)
   
-    # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
-      ax = fig.add_axes( [.1,.37,.38,.2]) 
-      ymin,ymax = minmax( dphi, margin=.2 )
-      ax.axis( [xmin, xmax, ymin, ymax] )
-      ax.plot( fGHz, dphi, "o-", ms=1. )
-      ax.tick_params( labelsize=10 )
-      dphiavg = numpy.average(dphi)
-      ax.plot( [fGHz[0],fGHz[-1]],[dphiavg,dphiavg],"r--" )
-      ax.set_ylabel("residual (deg)", fontsize=10)
-      ax.set_xlabel("freq (GHz)", fontsize=10)
-      ax.set_ylim( [-9.,9.] )
-      pyplot.grid(True)
+      # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
+        ax = fig.add_axes( [.1,.37,.38,.2]) 
+        ymin,ymax = minmax( dphi, margin=.2 )
+        ax.axis( [xmin, xmax, ymin, ymax] )
+        ax.plot( fGHz, dphi, "o-", ms=1. )
+        ax.tick_params( labelsize=10 )
+        dphiavg = numpy.average(dphi)
+        ax.plot( [fGHz[0],fGHz[-1]],[dphiavg,dphiavg],"r--" )
+        ax.set_ylabel("residual (deg)", fontsize=10)
+        ax.set_xlabel("freq (GHz)", fontsize=10)
+        ax.set_ylim( [-9.,9.] )
+        pyplot.grid(True)
 
     # top right panel is transmission vs freq, measured and theoretical
-      ax = fig.add_axes( [.57,.6,.38,.32] )
+      if FTS :
+        trans_est = trans_est*trans_est
+        ax = fig.add_axes( [.1,.6,.85,.32] )
+        ax.set_ylabel("transmitted pwr", fontsize=10)
+      else :
+        ax = fig.add_axes( [.57,.6,.38,.32] )
+        ax.set_ylabel("transmitted amplitude", fontsize=10)
       ymin,ymax = minmax( numpy.concatenate((trans,trans_est)) )
       ax.axis( [xmin, xmax, ymin, ymax] )
       if numpy.mean(unc) > .5 :
@@ -1159,12 +1164,14 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       ax.plot( pf, pamp, "kx", ms=5. )
       ax.plot( fGHz, trans_est, "r-" )
       ax.tick_params( labelsize=10 )
-      ax.set_ylabel("transmission", fontsize=10)
       ax.set_ylim( [.5,1.05] )
       pyplot.grid(True)
 
     # middle right panel is measured-theoretical trans
-      ax = fig.add_axes( [.57,.37,.38,.2])
+      if FTS :
+        ax = fig.add_axes( [.1,.37,.85,.2] )
+      else :
+        ax = fig.add_axes( [.57,.37,.38,.2])
       ax.tick_params( labelsize=10 )
       dtrans = trans-trans_est
       ymin,ymax = minmax( dtrans, margin=0.2 )
@@ -1309,10 +1316,7 @@ def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
 # vary thickness of each layer over a range, predict transmission curve
 # fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
 # fuzzy1 does (weighted) vector average of ALL allowed thicknesses to get final transmission amp and phase;
-def fuzzy1( fitFile, fGHz=numpy.arange(70.,230.1,.1) ) :
-    #fGHz = numpy.concatenate( (numpy.arange(76.,115.,.2),numpy.arange(205.,230.,.2)) )
-    #fGHz = numpy.arange(70.,230.,.1)
-    angIdeg = 5.16
+def fuzzy1( fitFile, fGHz=numpy.arange(70.,300.1,.1), angIdeg=0. ) :
     fitParams = readFitFile( fitFile )
     tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     ntrials = len(tcmList)
