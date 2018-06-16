@@ -19,7 +19,7 @@ import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from mpl_toolkits.mplot3d import Axes3D
 import scipy
-from scipy.interpolate import splrep, splev
+from scipy.interpolate import splrep, splev, interp1d
 import scipy.fftpack
 import scipy.stats
 import os
@@ -144,11 +144,22 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
     # print "tcmRange = ", tcmRange
 
   # before calling meshgrid, calculate size of arrays that it will produce
+  # also, create 1st list of parameters to model, just in case there is is for modeling
     ntrials = 1
+    tcmList = []
+    nrList = []
+    tanDList = []
     for n in range(0,nlayers) :
       ntrials = ntrials * len(tcmListIn[n]) * len(nrListIn[n]) * len(tanDListIn[n])
-    # print "initial ntrials = %d" % ntrials
-    if ntrials > 1.e12 :
+      tcmList.append( tcmListIn[n][0] )
+      nrList.append( nrListIn[n][0] )
+      tanDList.append( tanDListIn[n][0] )
+   
+  # in the special case where ntrials=1 (as in modeling a stack), we are finished!
+    if ntrials == 1 :
+      print "modeling only 1 trial"
+      return numpy.array([tcmList]),numpy.array([nrList]),numpy.array([tanDList])
+    elif ntrials > 1.e12 :
       print "exiting! too many possible trials, estimated at %.2e!" % ntrials
       return
 
@@ -225,6 +236,10 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
     for n in range(0,len(c)) :
       if (totcm[n] >= tcmRange[0]) and (totcm[n] <= tcmRange[1]) :
         d.append( c[n] )
+
+  # send error message and quit if no rows meet the thickness criterion
+    if len(d) == 0 :
+      sys.exit("\n** exiting: none of the proposed stacks meet thickness criterion **\n\n")
 
   # return separate tcm, nr, and tanD arrays
     # print "final ntrials = %d" % len(numpy.hsplit(numpy.array(d),3)[0])
@@ -818,7 +833,6 @@ def readFitFile( sampleName ) :
         tanDeltaList.append( makeList(line[line.find("=")+1:]) )
       elif "deltaTin" in line :
         deltaTinList.append( float(line[line.find("=")+1:] ) )    # allow only 1 value!
-        print deltaTinList
     # this is an alternative way of specifying mirrored layer
       elif "mirror" in line :
         tcmList.append( makeList(line[line.find("=")+1:]) )
@@ -1164,7 +1178,10 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       ax.plot( pf, pamp, "kx", ms=5. )
       ax.plot( fGHz, trans_est, "r-" )
       ax.tick_params( labelsize=10 )
-      ax.set_ylim( [.5,1.05] )
+      if FTS :
+        ax.set_ylim( [.3,1.05] )
+      else :
+        ax.set_ylim( [.5,1.05] )
       pyplot.grid(True)
 
     # middle right panel is measured-theoretical trans
@@ -1352,22 +1369,19 @@ def fuzzy1( fitFile, fGHz=numpy.arange(70.,300.1,.1), angIdeg=0. ) :
 #   scales less than a wavelength, so that there is a gradation in the refractive index
 #   and loss tangent from one layer to the next
 # normally the input fitFile should specify exactly one model, with fixed thicknesses, 
-#   refractive indices, and tanDeltas; the thicknesses are interpreted to be the MEAN 
-#   thicknesses of these layers
-# the additional list deltaTinList specifies the thickness of each transition (e.g., 0 for
-#   sharp transition, .002 for transition with .002" p-p variation, etc); note that for
-#   n layers there are (n+1) transitions, so this array must have length n+1; it is OK
-#   to specify a transition thickness of 0.
-# nsteps is the number of intermediate layers between transitions; subroutine "smoothTransitions"
-#   adds nsteps additional layers between each of the main layers before passing the
-#   final arrays to solveStack
+#   refractive indices, and tanDeltas; the thicknesses are interpreted to be the nominal
+#   thicknesses of the layers, without accounting for the transition regions; that is,
+#   the total thicknesses of the pure layers should add up to be the total puck thickness
+# deltaTinList specifies the thickness of each transition (e.g., 0 for an abrupt transition,
+#   0.002 for transition with .002" p-p variation, etc); note that for n layers there must
+#   be (n+1) transitions specified
 #
-def fuzzy2( fitFile ) :
+def fuzzy2( fitFile, angIdeg=5.16 ) :
     #fGHz = numpy.concatenate( (numpy.arange(76.,115.,.2),numpy.arange(205.,230.,.2)) )
     #fGHz = numpy.arange(210.,219.6,.1)
-    fGHz = numpy.arange(70.,230.,.1)
+    #fGHz = numpy.arange(70.,230.1,.2)
+    fGHz = numpy.arange(110.,240.,1.)
     fitParams = readFitFile( fitFile )
-    angIdeg = 5.16
     tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     ntrials = len(tcmList)
     if len(fitParams["deltaTinList"]) == len(tcmList[0])+1 :
@@ -1395,33 +1409,44 @@ def fuzzy2( fitFile ) :
     fout.write("# ---------------------------------------------------- \n")
     for line in fin:
       fout.write("# %s" % line)
+    fout.write("# angIdeg = %.2f\n" % angIdeg)
     fout.write("# ---------------------------------------------------- \n")
     fout.write("# average power transmission = %.3f\n#\n" % (numpy.average(pwr)) )
     for i in range(0,len(fGHz)) :
-      fout.write("%8.2f  %8.6f  %8.3f  %8.3f\n" % (fGHz[i], amplitude[i], phase[i], pwr[i] ) )
+      fout.write("%9.3f  %8.6f  %8.3f  .01   %8.3f\n" % (fGHz[i], amplitude[i], phase[i], pwr[i] ) )
     fout.close()
   # compute power transmission averaged over band
 
-# smoothTransitions expands the number of layers in each stack to model small scale
-#  thickness variations; it interpolates refractive index and tanDelta for each of these
-#  incremental transition layers
-# deltaTcmList is the variation in thickness of each interface - so its length is len(tcmList) + 1;
-#  that is, it gives variation in thickness [entering layer 1, between layer 1 and layer 2, between
-#  layer2 and layer3, ... , leaving layerN]
-# tcmList[m] is taken to be the MEAN thickness of layer m
-# 
-# nsteps is the number of intermediate layers in each transition
-def smoothTransitions( tcmList, nrList, tanDeltaList, deltaTcmList, fitFile, stepsizeIn=.0002 ) :
+# smoothTransitions expands the number of layers in each stack to model gradual changes
+#  in the index of refraction - due, for example, to surface roughness on a scale much
+#  less than a wavelength; it interpolates the refractive index and tanDelta through
+#  these transition layers
+# deltaTcmList is a list of the transition layer thicknesses, including the interfaces
+#  to air on either side of the puck; so its length should be len(tcmList) + 1;
+# tcmList[m] is the NOMINAL thickness of layer m; smoothTransitions reduces this
+#  thickness appropriately to account for the transition layers
+# to aid in visualizing the variation in refractive index, this routine writes out a
+#  "profile" of refractive index vs distance through the puck
+#
+def smoothTransitions( tcmList, nrList, tanDeltaList, deltaTcmList, fitFile, stepsizeIn=.0005 ) :
     stepsize = stepsizeIn*2.54
     tcmListSm = []  
     nrListSm = []
     tanDeltaListSm = []
     nrPrev = 1.
     tdPrev = 0.
-    xcm = -deltaTcmList[0]/2.     # begin profile at xcm
+    xcm = 0.     # begin profile at xcm
     fout = open(fitFile+".profile","w")
     fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrPrev,0.))
 
+  # reduce thicknesses of "pure" layers to allow for transition regions
+    for n in range(0,len(tcmList)) :
+      tcmList[n] = tcmList[n] - deltaTcmList[n]/2. 
+      tcmList[n] = tcmList[n] - deltaTcmList[n+1]/2. 
+    tcmList[0] = tcmList[0] - deltaTcmList[0]/2.
+    tcmList[-1] = tcmList[-1] - deltaTcmList[-1]/2.
+
+  # now work through the stack, to create tcmListsm, etc.
     for n in range(0,len(tcmList)) :
 
     # deal with the transition at the beginning of each layer 
@@ -1435,20 +1460,24 @@ def smoothTransitions( tcmList, nrList, tanDeltaList, deltaTcmList, fitFile, ste
           nrListSm.append( nrPrev + ns*nrstep )
           tanDeltaListSm.append( tdPrev + ns*tdstep )
           fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+             # this is the beginning of the step
           xcm = xcm + tcmListSm[-1]
           fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+             # this is the end of the step
 
-    # thickness of layer n itself must be reduced to account for transitions on either side 
-      tcmListSm.append( tcmList[n] - (deltaTcmList[n] + deltaTcmList[n+1])/2.)
+    # put in the "pure" layer
+      tcmListSm.append( tcmList[n] )
       nrListSm.append( nrList[n] )
       tanDeltaListSm.append( tanDeltaList[n] )
       fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+         # this is the beginning of the step
       xcm = xcm + tcmListSm[-1]
       fout.write("%9.6f %9.6f %9.6f\n" % (xcm/2.54,nrListSm[-1],tanDeltaListSm[-1]))
+         # this is the end of the step
       nrPrev = nrList[n]
       tdPrev = tanDeltaList[n]
 
-  # final transition back to nr=1
+  # final transition back to air
     if deltaTcmList[-1] > 0. :
       nsteps = int( round(deltaTcmList[-1]/stepsize) )
       deltastep = deltaTcmList[-1]/nsteps
@@ -1574,3 +1603,108 @@ def testExpand( fitFile, index) :
     print "\nstart with:", tcmList[index], nrList[index], tanDeltaList[index]
     print "\nexpand to:"
     expandPoint( fitParams, index, tcmList, nrList, tanDeltaList ) 
+
+# designed to find most likely freq offset between heterodyne and FTS data
+# resamples FTS data to heterodyne resolution using interp1d, covering a slightly wider freq range than heterodyne data;
+#   then find what offset (in channels) gives highest crosscorrelation, convert this to frequency
+#
+def frqOffset( FTSfile, hetfile, fstart=205.2, fstop=229.8, fstep=0.05 ) :
+    fGHz1,trans1,dphs_meas,unc,angIdeg,FTS = readTransFile( hetfile+".avg.dat", path="/o/plambeck/PolarBear/OpticsBench/" )
+    fGHz2,trans2,dphs_meas,unc,angIdeg,FTS = readTransFile( FTSfile+"_transmission.txt", path="/o/plambeck/PolarBear/ARcoatings/FTS/" )
+
+  # resample heterodyne data
+    fout = open("interp.dat","w")
+    fGHzHet = numpy.arange(fstart,fstop+fstep,fstep)
+    hetInterp = interp1d( fGHz1, numpy.power(trans1,2.))
+    pwrHet = hetInterp( fGHzHet )
+    fout.write("# --- het data --- #\n")
+    for f,p in zip(fGHzHet,pwrHet) :
+      fout.write( "%10.4f %10.4f\n" % (f,p) )
+
+  # resample FTS data over slightly wider freq range
+    fGHzFTS = numpy.arange( fstart-30.*fstep,fstop+31.*fstep, fstep)
+    FTSinterp = interp1d( fGHz2, trans2 )
+    pwrFTS = FTSinterp( fGHzFTS )
+    fout.write("# --- FTS data --- #\n")
+    for f,p in zip(fGHzFTS, pwrFTS) :
+      fout.write( "%10.4f, %10.4f\n" % (f,p) )
+    fout.close()
+
+    ccor = numpy.correlate( pwrFTS-numpy.average(pwrFTS), pwrHet-numpy.average(pwrHet), mode='valid')
+    foffset = (numpy.argmax(ccor) - len(ccor)/2 )*fstep
+       # so if signals are correlated with zero delay, argmax = 5 (counting from 0, not 1),
+       # and len(ccor)/2 = 5 using integer arithmetic, so result should be 0
+    # print foffset, ccor
+    return foffset
+
+# take out linear slope from FTS data to match heterodyne; also shift freq scale
+def shiftFTS( FTSname, het3mmfile, het1mmfile, offsetGHz=-.4) :
+    fGHz1,trans1,dphs_meas,unc,angIdeg,FTS = readTransFile( het3mmfile+".avg.dat", path="/o/plambeck/PolarBear/OpticsBench/" )
+    fGHz2,trans2,dphs_meas,unc,angIdeg,FTS = readTransFile( het1mmfile+".avg.dat", path="/o/plambeck/PolarBear/OpticsBench/" )
+    fGHz3,trans3,dphs_meas,unc,angIdeg,FTS = readTransFile( FTSname+"_transmission.txt", path="/o/plambeck/PolarBear/ARcoatings/FTS/" )
+    f1,h1 = calcTavg( 90., 115.,fGHz1,numpy.power(trans1,2.))    
+    f2,h2 = calcTavg( 205., 230.,fGHz2,numpy.power(trans2,2.))    
+    f3,F3 = calcTavg( 90., 115., fGHz3, trans3 )
+    f4,F4 = calcTavg( 205., 230., fGHz3, trans3 )
+    fout = open( FTSname+"_shifted.txt", "w" )
+    fout.write("# output from ob2.shiftFTS\n")
+    fout.write("# %s with tilt removed, shifted by %.2f GHz\n" % (FTSname+"_transmission.txt", offsetGHz))
+    fout.write("# FTS\n")
+    fout.write("# angIdeg = 0.\n")
+    for n in range(0, len(fGHz3)) :
+      if fGHz3[n] >= 110. and fGHz3[n] <= 240. :
+        Fav = F3 + (fGHz3[n]-f3)*(F4-F3)/(f4-f3)
+        hav = h1 + (fGHz3[n]-f1)*(h2-h1)/(f2-f1)
+        fout.write("%10.3f  %10.4f  %10.4f\n" % (fGHz3[n]+offsetGHz, trans3[n]-Fav+hav, unc[n]) )
+    fout.close()
+
+# computes mean freq and power for data between fstart and fstop
+def calcTavg( fstart, fstop, fGHzArr, pwrArr ) : 
+   npts = 0
+   favg = 0.
+   pavg = 0.
+   for f,p in zip(fGHzArr,pwrArr) :
+     if f >= fstart and f<=fstop :
+       npts = npts + 1
+       favg = favg + f
+       pavg = pavg + p
+   return (favg/npts),(pavg/npts)
+   
+# make fitFile to model a coating with an increasing density profile,
+#   to mimic a Fillite coating; then use fuzzy2 to model
+# want nr = (1 - exp(-x/xscale)) * nr / (1-exp(-t/xscale))
+# t = total thickness of coating in inches
+# nr is refractive index at the boundary with underlying alumina puck
+# tscale is the 1/e scale factor for the refractive index
+# dt = step size in inches
+# tanD = tanDelta (assumed equal for all steps)
+#
+def profile( t, nr, tscale, dt=.0005, tanD=.01 ) :
+    x = numpy.arange(dt,t+.0001,dt)
+    ncoeff = (nr-1.)/(1.-math.exp(-t/tscale))
+    print ncoeff
+    nr = 1.+ncoeff * (1. - numpy.exp( -1.*(x-dt/2.)/tscale))
+       # this is nr at the MIDPOINT of the layer 
+    fout1 = open("profile.dat","w")
+    fout1.write(" %8.5f %8.5f %8.3f\n" % (-.01, 1, 0.))
+    fout1.write(" %8.5f %8.5f %8.3f\n" % (0., 1, 0.))
+    fout2 = open("profile.fitFile","w")
+    fout2.write("title = profile\n")
+    fout2.write("totin = %.5f,%.5f\n" % (.25+t-.001,.25+t+.001))
+    for n in range(0,len(x)) :
+      fout1.write(" %8.5f %8.5f %8.3f\n" % (x[n],nr[n],tanD))
+      fout2.write("\n  tin = %.5f\n" % dt)
+      fout2.write("  nr = %.4f\n" % nr[n] )
+      fout2.write("  tanDelta = %.3f\n" % tanD )
+
+  # now include the alumina puck
+    fout2.write("\n  tin = .25\n")
+    fout2.write("  nr = 3.116\n")
+    fout2.write("  tanDelta = 0.0004\n")
+    fout1.write(" %8.5f %8.5f %8.3f\n" % (x[-1],3.116,.0004))
+    fout1.write(" %8.5f %8.5f %8.3f\n" % (x[-1]+.25,3.116,.0004))
+    fout1.write(" %8.5f %8.5f %8.3f\n" % (x[-1]+.25,1,0))
+    fout1.write(" %8.5f %8.5f %8.3f\n" % (x[-1]+.26,1,0))
+    fout1.close()
+    fout2.close()
+
