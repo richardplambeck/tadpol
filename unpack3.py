@@ -173,11 +173,12 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
 
 
 # average data into chunks, compute rms of each chunk
-# also: dump out power to another file
 def binit( infile, frqinterval=0.199, minpts=3 ) :
     fin = open(infile+".dat","r")
     fout = open(infile+".avg.dat","w")
-    fout2 = open(infile+".pwr.dat","w")
+    #fout2 = open(infile+".pwr.dat","w")
+    First = True       # will pick out first data line; write header above this
+    fout.write( "# binned data from %s\n" % (infile+".dat") )
     f0 = 0.
     npts = 0
     frq = 0. 
@@ -186,6 +187,10 @@ def binit( infile, frqinterval=0.199, minpts=3 ) :
       if line.startswith("#") :
         fout.write( "%s" % line )
       else :
+        if First :
+          fout.write( "# ------------------------------------------------------------------ \n")
+          fout.write("#  frq     amp_avg   phs_avg    vec_std     pwr_avg   pwr_std   navg\n")
+          First = False
         a = line.split()
         if (float(a[0]) - f0) > frqinterval :
           if npts >= minpts :
@@ -196,12 +201,12 @@ def binit( infile, frqinterval=0.199, minpts=3 ) :
             else :
               vecstd = 1.
               pwrstd = 1.
-            fout.write("%8.2f  %8.6f  %8.3f  %10.6f  %2d\n" % (frq/npts, numpy.absolute(vecavg), \
-              numpy.angle(vecavg,deg=True), vecstd, npts)) 
-            fout2.write("%8.2f  %8.6f  %8.6f\n" % (frq/npts, numpy.average( pwr ), pwrstd ))
+            fout.write("%8.2f  %8.6f  %8.3f  %10.6f    %8.6f  %8.6f   %2d\n" % (frq/npts, numpy.absolute(vecavg), \
+              numpy.angle(vecavg,deg=True), vecstd, numpy.average(pwr), pwrstd, npts)) 
+            #fout2.write("%8.2f  %8.6f  %8.6f\n" % (frq/npts, numpy.average( pwr ), pwrstd ))
           else :
-            fout.write("# npts = %d\n" % npts)
-            fout2.write("# npts = %d\n" % npts)
+            fout.write("# missing bin; npts = %d, too few to compute uncertainty\n" % npts)
+            #fout2.write("# npts = %d\n" % npts)
           f0 = float(a[0])
           npts = 0
           frq = 0. 
@@ -221,12 +226,12 @@ def binit( infile, frqinterval=0.199, minpts=3 ) :
       else :
         vecstd = 1.
         pwrstd = 1.
-      fout.write("%8.2f  %8.6f  %8.3f  %10.6f  %2d\n" % (frq/npts, numpy.absolute(vecavg), \
-        numpy.angle(vecavg,deg=True), vecstd, npts)) 
-      fout2.write("%8.2f  %8.6f  %8.6f\n" % (frq/npts, numpy.average( pwr ), pwrstd ))
+      fout.write("%8.2f  %8.6f  %8.3f  %10.6f    %8.6f  %8.6f   %2d\n" % (frq/npts, numpy.absolute(vecavg), \
+        numpy.angle(vecavg,deg=True), vecstd, numpy.average(pwr), pwrstd, npts)) 
+      #fout2.write("%8.2f  %8.6f  %8.6f\n" % (frq/npts, numpy.average( pwr ), pwrstd ))
     else :
-      fout.write("# npts = %d\n" % npts)
-      fout2.write("# npts = %d\n" % npts)
+      fout.write("# missing bin; npts = %d, too few to compute uncertainty\n" % npts)
+      #fout2.write("# npts = %d\n" % npts)
     fin.close()
     fout.close()
-    fout2.close()
+    #fout2.close()
