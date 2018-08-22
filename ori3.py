@@ -215,7 +215,7 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=1, tmpfile
 # ----------------------------------------------------------------------------------------------
 # getuvspec is retrieves visibility spectra using uvspec
 
-def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200)' ):
+def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200)', offset="0.0,0.0" ):
     '''dump out spectrum of selected region with uvspec, return [chan, freqLSR, flux] arrays'''
 
   # step 1: use uvlist to retrieve veldop from the header
@@ -234,9 +234,12 @@ def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200
     chan = []
     freq = []
     flux = []
+
+  # CAUTION: this used to use option=ampscalar!
     p= subprocess.Popen( ( shlex.split("uvspec vis=%s select=%s axis=freq,amp stokes=i \
-      options=ampscalar,avall,nobase interval=100000 hann=%d log=%s" % \
-      (infile,select,hann,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+      options=avall,nobase interval=100000 hann=%d log=%s offset=%s" % \
+      (infile,select,hann,tmpfile,offset) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+
     time.sleep(1)
     result = p.communicate()[0]
     print result
@@ -2390,6 +2393,8 @@ def archiveSrch( infile ) :
               FreqSupportCol = n
             if "PI name" in a[n] :
               PIcol = n
+            if "Field of view" in a[n] :
+              FovCol = n
       # create dictionary holding values; append to list of dictionaries
         else :
           if len( a[ReleaseCol] ) < 2 :     # in a few cases, field is blank
@@ -2400,6 +2405,9 @@ def archiveSrch( infile ) :
                    'LAS'  : float( a[largestAngScaleCol] ),
                    'release' : a[ReleaseCol],
                    'PI'   : a[PIcol],
+                   'FOV'  : a[FovCol],
+                   'RA'   : a[RACol],
+                   'DEC'  : a[DecCol]
                  }
           projList.append( proj )
             # proj('spw') = spw
@@ -2434,12 +2442,40 @@ def inrange( spw, frqBand ) :
       return False
     else :
       return True	  # some piece of spw must lie inside frqBand
-    
+
+# convenience function to turn RA or DEC ascii triplet into a decimal
+def decimal( triplet ) :
+   a = triplet.split(":")
+   if float(a[0]) > 0. :
+     return float(a[0]) + float(a[1])/60. + float(a[2])/3600.
+   else :
+     return float(a[0]) - float(a[1])/60. - float(a[2])/3600.
+ 
+# convenience function to see if radec of target lies within FOV of observation
+def inbeam( radec, proj ) :
+    RAtarg = 15.*decimal( radec[0] )
+    DECtarg = decimal( radec[1] )
+    RAobs = float( proj['RA'] )     # it appears that archive gives decimal degrees for RA
+    DECobs = float( proj['DEC'] )
+    deltaRA = (RAtarg - RAobs)/math.cos(math.radians(DECtarg))
+    deltaDEC = DECtarg - DECobs
+    offset = 3600*math.sqrt( pow(deltaRA,2) + pow(deltaDEC,2) ) #/ float(proj['FOV'] )
+       # offset, expressed as fraction of field of view; e.g. 0.5 means at half pwr point
+       # mosaics are a problem; not sure what to do with these 
+    print "offset = %.2f, FOV = %.2f" % (offset, float(proj['FOV']))
+    if offset < 0.6*float(proj['FOV']) :
+       return True
+    else :
+       return False
+        
 # generate plot of frequency coverage for data in ALMA archive
 # infile = tab separated output from search query
 # frqBand = [f1GHz,f2GHz] = freq range of interest (plot only datasets within this range)
 #
-def archivePlot( infile, frqBand, vmarker1=None ) :
+recombList = [85.688,92.034,99.023,106.737,124.747,135.286,147.047,160.211,174.995,191.657,210.502, \
+  231,901,256.302,284.250,316.415,353.623,396.901,447.540,507.175,577.896,662.404]
+
+def archivePlot( infile, frqBand, radec=["05:35:14.109","-05:22:22.73"], frqMarkerList=recombList ) :
     projList = archiveSrch( infile ) 
     today = datetime.datetime.today()
     deltavert=.03
@@ -2453,7 +2489,7 @@ def archivePlot( infile, frqBand, vmarker1=None ) :
     for proj in projList :
       newproj = True
       for spw in proj['spw'] :
-        if inrange( spw,frqBand ) :
+        if inrange( spw,frqBand ) and inbeam( radec, proj ) :
           if newproj:         # allow extra 1-unit gap between projects
             vert = vert+deltavert
             if vert > (1.-deltavert/2.) :
@@ -2482,8 +2518,9 @@ def archivePlot( infile, frqBand, vmarker1=None ) :
           pyplot.axhline( y=vert+rheight/2., color='gray', linestyle='dotted')
           p.add_patch( rect ) 
     pyplot.yticks([])
-    if vmarker1 :
-      pyplot.axvline( x=vmarker1, color="red", linestyle="dashed")
+    if len(frqMarkerList) > 0 :
+      for frq in frqMarkerList :
+        pyplot.axvline( x=frq, color="red", linestyle="dashed")
     p.grid(True)
     pyplot.savefig( pp, format='pdf' )
     pp.close()
@@ -2522,3 +2559,45 @@ def clumpBoxes( infile="xx.olay", box=1. ) :
       draArcsec = 15.*(raSec - 14.514)          # RA offset from SrcI
       ddecArcsec = 30.575 - decSec     # negative ddec for larger DEC because decs are negative
       print "(%.2f,%.2f,%.2f,%.2f)" % (draArcsec+box/2.,ddecArcsec-box/2.,draArcsec-box/2.,ddecArcsec+box/2.)
+
+# generate vector field as overlay file (to compare SiO and 29SiO pol directions on one plot, 5/10/18)
+def vecs( poli, pa, olay, delta=.03, scale=5., color=0 ) :
+  
+    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog_poli format=(3F12.5)" % poli ) ), \
+       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+    result = p.communicate()[0]
+    print result
+    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog_pa format=(3F12.5)" % pa ) ), \
+       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+    result = p.communicate()[0]
+    print result
+  
+  # open the logs, fill out lists, then convert to array
+    fin_poli = open("imtablog_poli","r")
+    fin_pa = open("imtablog_pa","r")
+    fout = open(olay,"w")
+    fout.write("color %d\n" % color)
+    for line1,line2 in zip(fin_poli,fin_pa) :
+      a = line1.split()
+      b = line2.split()
+      if (a[0] != b[0]) or (a[1] != b[1]) :
+        print "error - positions don't match"
+      else :
+      # testing ( x % delta < 1.e-5 ) sometimes failed because it returned ~delta rather than 0
+        fracRA,wholeRA = math.modf( float(a[0])/delta )
+        fracDEC,wholeDEc = math.modf( float(a[1])/delta )
+        if abs(fracRA) < 0.1*delta and abs(fracDEC) < 0.1*delta :
+          print a[0],a[1],a[2],b[2]
+          if scale > 0.:
+            length = scale*float(a[2])
+          else :
+            length = -1.*scale
+        # cgdisp documentation is wrong; x,y is not center of vector, it is starting point;
+        # therefore, write out 2 half-length vectors 180 degrees apart
+          fout.write("vector arcsec arcsec vec no %s %s %8.4f %s 0\n" % \
+            (a[0],a[1],length/2.,float(b[2])) )
+          fout.write("vector arcsec arcsec vec no %s %s %8.4f %s 0\n" % \
+            (a[0],a[1],length/2.,float(b[2])-180.) )
+    fin_poli.close()
+    fin_pa.close()
+    fout.close()
