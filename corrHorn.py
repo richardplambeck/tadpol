@@ -4,11 +4,17 @@
 import math
 
 clight = 2.998e10   # cm/sec
-a = .35        # inches
-Rcap = 1.683   # inches
-flareAngle = 12   # degrees
-freq = 110      # GHz
+freq = 90      # GHz
 
+# standard WR10 CARMA horn; aperture .6986", flare angle 12 deg
+a = .6986/2.        # radius of aperture, inches
+flareAngle = 12     # half-angle of flare, degrees
+
+# smaller corrugated horn
+a = .5872/2.
+flareAngle = 15
+
+Rcap = a/math.sin(math.radians(flareAngle))    # inches
 hornLength = Rcap * math.cos( math.radians(flareAngle) )
 
 # Wylde eqn 23
