@@ -32,7 +32,7 @@ def unpack( infile, outfile ) :
         if First :
           t0 = time
           First = False
-        fout.write("%8.2f  %8.6f  %8.3f  %8.5f  pos %7.3f  %8.1f \n" % (freq, amp, phs, LOpwr, pos, time-t0) )
+        fout.write("%8.2f  %8.6f  %8.3f  %8.5f  pos %5.3f  %8.1f \n" % (freq, amp, phs, LOpwr, pos, time-t0) )
     fin.close()
     fout.write("# end\n")    # needed by trans, below
     fout.close()
@@ -47,6 +47,7 @@ def unpack( infile, outfile ) :
 #
 def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
     fin = open( infile,"r")
+    print "\n%s" % outfile
     fout = open( outfile,"w")
     fout2 = open( "repeat.dat", "w" )
     fout2.write("# %s\n" % infile )
@@ -64,6 +65,7 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
     ampP = 0.
     phsP = 0.
     LOpwr = 0.
+    Bad = False
     f = []
     t = []
     p = []
@@ -81,7 +83,7 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
       if line.startswith("#") :          
         if (nref == 0) or (nP == 0) :    # first line in file, or perhaps some kind of screwup
           continue 
-        elif ampref < .001 :  
+        elif Bad :
           print "bad data - skipping frequency %.2f" % freq
         else :
           frefsave.append( freq )
@@ -98,12 +100,12 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
             delphs = delphs - 360.
           while (delphs < -180.) :
             delphs = delphs + 360.
-          print freq, nref, nP, ampref, ampP
+          # print freq, nref, nP, amprefsave[-1], ampP, trans
           f.append( freq )
           t.append( transTrue )
           p.append( delphs ) 
           lo.append( LOpwr/npwr )
-          # fout.write("%8.2f  %8.6f  %8.3f  %8.6f\n" % (freq,trans,delphs,LOpwr/npwr))
+          #fout.write("%8.2f  %8.6f  %8.3f  %8.6f\n" % (freq,trans,delphs,LOpwr/npwr))
           
 
       # rezero all the buffers
@@ -116,12 +118,16 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
         phsP = 0.
         LOpwr = 0.
         nline = 0  # nline is here just because of the bug that affected 4pucksK-4pucksM
+        Bad = False
 
     # process data line
       else :
         nline = nline+1
         a = line.split()
         freq = float(a[0])
+      # if even one entry for this freq has amp < .0001, discard the entire freq
+        if float(a[1]) < .0001 :      
+          Bad = True
         pos = float(a[5])
         LOpwr = LOpwr + float(a[3]) 
         npwr = npwr + 1
