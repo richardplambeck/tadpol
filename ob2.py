@@ -785,8 +785,8 @@ def differ( inFile, outFile ):
     fin.close()
     fout.close()
   
-# readFitFile is helper routine for nrefracFit5, fuzzy1, fuzzy2
-# for nrefracFit5, it specifies the search ranges to fit
+# readFitFile is helper routine for nrefracFit, fuzzy1, fuzzy2
+# for nrefracFit, it specifies the search ranges to fit
 # for fuzzy1 and fuzzy2 it specifies the parameters to model
 # it reads file "sample.fitFile", where "sample" is the name of the sample
 # this file should contain the following information: 
@@ -945,14 +945,14 @@ def printElapsed( ntrials, i, nblock, secs0 ) :
       else :
         print "... %d/%d finished; %.2f minutes remaining" % (i,ntrials,secsremaining/60.)
 
-# nrefracFit5 handles joint fits to multiple data sets, each with its own angIdeg and freq coverage
+# nrefracFit handles joint fits to multiple data sets, each with its own angIdeg and freq coverage
 #   (but currently it will not handle both heterodyne and FTS data)
 # it uses a prefit: calculates chisq[0] for a very sparse dataset that samples just max and min values;
 #   then does the calculation for the full dataset only for those parameters where 
 #   chisq[0] < pCutoff * pchisqBest
 # fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
 #
-def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
   # fitParams dictionary contains list of data files, parameter ranges to search, etc
     fitParams = readFitFile( fitFile )
@@ -1077,6 +1077,10 @@ def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plamb
           # print "chisq[%d, %d] = %.3f" % ( (j+1)/2, i, numpy.var(errs[-1]))
       chisq[-1,i] = numpy.var( numpy.concatenate(errs) )   # this is variance for joint fit to all data
     nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+
+  # save the date and time (added 31-oct-2018)
+    now = datetime.datetime.now()
+    dateString = now.strftime("%Y-%m-%d   %H:%M")
         
   # save results for further analysis in a unique pickle file (don't overwrite old file)
     nseq = 1
@@ -1084,20 +1088,27 @@ def nrefracFit5( fitFile, pCutoff=5., pdfOnly=True, Iterate=True, path="/o/plamb
       nseq = nseq + 1
     pickleFile = fitFile + ".pickle.%d" % nseq
     fout = open( pickleFile, "wb" )
-    pickle.dump( [fitParams,tcmList,nrList,tanDeltaList,chisq], fout ) 
+    pickle.dump( [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString], fout ) 
       # note: angIdeg was used in fit, but it is stored in each data file
     fout.close() 
 
   # plot the fit
     time.sleep(1)
-    plotFit5( pickleFile, pdfOnly=pdfOnly, path=path )
+    plotFit( pickleFile, pdfOnly=pdfOnly, path=path )
 
-def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
-    fin = open( pickleFile, "rb" )
-    [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+
+  # dateString was added on 31-oct-2018; must be able to handle earlier files without it
+    try :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
+    except :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      dateString = " "
     fin.close() 
     nlayers = len( tcmList[0] )
 
@@ -1224,7 +1235,7 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
             color="black", rotation='horizontal' )
         else :
           tstring = makeString( tcmListIn[nl]/2.54 )
-          nstring = makeString( nrListIn[nl], fmt=3 )
+          nstring = makeString( nrListIn[nl], fmt=4 )
           tanDstring = makeString( tanDeltaListIn[nl] )
           ax.text( 0.03, ylab, "%d: [%s]" % (nl+1,tstring), \
             transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
@@ -1273,6 +1284,13 @@ def plotFit5( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
             color="black", rotation='horizontal' )
           ylab = ylab - ystep
       pyplot.axis('off')
+    
+    # print date and time in lower right corner
+      ax = fig.add_axes( [.1,.05,.85,.1])
+      ax.text(.5, 0., "%s" % dateString, \
+            transform=ax.transAxes, horizontalalignment='center', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+      pyplot.axis('off')
 
       pyplot.savefig( pp, format="pdf" )
       if not pdfOnly :
@@ -1286,8 +1304,13 @@ def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
 
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
-    fin = open( pickleFile, "rb" )
-    [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+    try :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
+    except :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      dateString = " "
     fin.close() 
     nlayers = len( tcmList[0] )
  
@@ -1708,3 +1731,60 @@ def profile( t, nr, tscale, dt=.0005, tanD=.01 ) :
     fout1.close()
     fout2.close()
 
+# ==== UNFINISHED!! ====
+'''
+# csvOut reads pickle file written by nrefracFit, returns csv lines giving:
+#   line 1:  puckLabel,picklefile,dataFile(s),chisq,{layer1 params}
+#   line 2:  ,,,,{layer2 params}
+#   line N:  ,,,,{layerN params} 
+#   where layer params are {tsrchmin,tmin,tbest,tmax,tsrchmax,nrsrchmin,nrmin,nrbest,nrmax,nrsrchmax,tanDsrchmin,etc}
+def csvOut{ pickleFile }
+    try :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
+    except :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      dateString = " "
+    fin.close() 
+    nlayers = len( tcmList[0] )
+
+    print "\n10 best fits minimizing overall residuals:"
+    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+
+  # create savet,saven,savetanD lists, containing all configurations with chisq< 2.* minchisq
+    savet = []
+    savenr = []
+    savetanD = []
+    for n in range(0,len(chisq[-1])) :
+      if chisq[-1,n] < 2.*chisq[-1,nbest]:
+        savet.append( tcmList[n] )
+        savenr.append( nrList[n] )
+        savetanD.append( tanDeltaList[n] )
+
+  fitParams = { "datafileList": datafileList, \
+                "title" : title, \
+                "tcmRange" : totcmRange, \
+                "tcmList" : tcmList, \
+                "nrList" : nrList, \
+                "tanDeltaList" : tanDeltaList,
+                "deltaTinList" : deltaTinList }
+  # write the output string
+    outString1 = "%s,%s,%s,%s" % (pickleFile[:pickleFile.index('.')],pickleFile,fitParams['datafileList'],chisq[-1])
+
+
+# summaryPlot will make bar graph plot showing results for a 2 layer puck
+def summaryPlot( infile ) :
+    pyplot.ioff()
+    pp = PdfPages( "summary.pdf")
+    fig =  pyplot.figure( figsize=(11,8) )
+
+    ymin = .1
+    yrange = .8
+    ax1 = fig.add_axes( [.05,ymin,.05,yrange] )   # puck labels
+    ax2 = fig.add_axes( [.10,ymin,.20,yrange] )   # eps1
+    ax3 = fig.add_axes( [.30,ymin,.20,yrange] )   # t1
+    ax4 = fig.add_axes( [.50,ymin,.20,yrange] )   # eps2
+    ax5 = fig.add_axes( [.70,ymin,.20,yrange] )   # t2
+    
+'''
