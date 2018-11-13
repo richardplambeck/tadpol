@@ -41,21 +41,14 @@ def unpack( infile, outfile ) :
 # refpos = position of reference, usually hole in puck transporter (but could be alumina puck?)
 # Ppos = position of puck 
 # currently, blocks of data at given frequency must be separated by comment lines
-# fitFile contains fitting information (number of layers, thickness limits, etc) for this puck;
-#    it does not change from run to run, will be copied into output file
 # set minline=1 for 4pucksH,K,L,M.raw
 #
-def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
+def trans( infile, outfile, refpos, Ppos, tol=0.2, minline=0 ) :
     fin = open( infile,"r")
     print "\n%s" % outfile
     fout = open( outfile,"w")
     fout2 = open( "repeat.dat", "w" )
     fout2.write("# %s\n" % infile )
-    if fitFile :
-      fin2 = open( fitFile, "r")
-      for line in fin2 :
-        fout.write( "%s" % line )
-      fin2.close()
     nline = 0
     nref = 0
     nP = 0
@@ -70,9 +63,11 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
     t = []
     p = []
     lo = []
+
     frefsave = []
     amprefsave = []
     phsrefsave = []
+
     for line in fin :
 
     # copy all comment lines to output file
@@ -86,6 +81,7 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
         elif Bad :
           print "bad data - skipping frequency %.2f" % freq
         else :
+          print freq, nref
           frefsave.append( freq )
           trans = (ampP/nP)/(ampref/nref)
           amprefsave.append( ampref/nref ) 
@@ -100,14 +96,13 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
             delphs = delphs - 360.
           while (delphs < -180.) :
             delphs = delphs + 360.
-          # print freq, nref, nP, amprefsave[-1], ampP, trans
+          print freq, nref, nP, amprefsave[-1], ampP, trans
           f.append( freq )
           t.append( transTrue )
           p.append( delphs ) 
           lo.append( LOpwr/npwr )
           #fout.write("%8.2f  %8.6f  %8.3f  %8.6f\n" % (freq,trans,delphs,LOpwr/npwr))
           
-
       # rezero all the buffers
         nref = 0
         nP = 0
@@ -125,10 +120,13 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
         nline = nline+1
         a = line.split()
         freq = float(a[0])
+
       # if even one entry for this freq has amp < .0001, discard the entire freq
         if float(a[1]) < .0001 :      
           Bad = True
         pos = float(a[5])
+
+      # create avg LOpwr at this freq, for ref or puck lines
         LOpwr = LOpwr + float(a[3]) 
         npwr = npwr + 1
 
@@ -136,20 +134,22 @@ def trans( infile, outfile, refpos, Ppos, fitFile=None, tol=0.2, minline=0 ) :
         if abs(pos-refpos) < tol and (nline > minline) :
           nref += 1
 
-        # dump difference between ref values to file repeat.dat, in case it is needed
-          if nref == 2 and ampref > .001 :
-            ratio = float(a[1])/ampref
-            deltaphs = float(a[2]) - phsref
-            fout2.write("%8.2f  %8.6f  %8.3f\n" % (freq,ratio,deltaphs))
-
-          ampref = ampref + float(a[1])
-
         # deal with case where ref phase jitters between +/-180
           phstmp = float(a[2])
-          if nref > 1 and phstmp > phsref + 180. :
+          if nref == 2 and phstmp > phsref + 180. :
             phstmp = phstmp - 360.
-          if nref > 1 and phstmp < phsref - 180. :
+          if nref == 2 and phstmp < phsref - 180. :
             phstmp = phstmp + 360.
+
+        # dump difference between ref values to file repeat.dat, in case it is needed
+          if nref == 2 and ampref > .0001 :
+            ratio = float(a[1])/ampref
+            deltaphs = phstmp - phsref
+            fout2.write("%8.2f  %8.6f  %8.3f\n" % (freq,ratio,deltaphs))
+            if abs(deltaphs) > 5. :
+              Bad =True
+
+          ampref = ampref + float(a[1])
           phsref = phsref + phstmp  
 
       # process puck line (normally, there is only 1 measurement so we don't check for 180 degree phase change))
