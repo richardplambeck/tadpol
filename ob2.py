@@ -687,9 +687,9 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
 #   as elements 1-N/2, neg freq terms as N/2+1:
 #
 def FFT( infile, FTS=False ) :
-    fullName = infile + ".dat"
-    fGHz,trans,phs,title,angIdeg,tcmRange,tcmListIn,nrListIn,tanDeltaList = readTransFile( fullName )
+    fGHz,trans,phs,u,angI,FTS = readTransFile( infile )     # read single data file
     if FTS :
+    
       yf = numpy.fft.fft(trans) 
     else :
       measReal = trans * numpy.cos(phs*math.pi/180.)
@@ -701,13 +701,12 @@ def FFT( infile, FTS=False ) :
     print "delta = ",delta
     print "tnsec = ",tnsec
     fig = pyplot.subplot(1,1,1)
-    fig.plot( tnsec, yf[0:len(yf)//2], "-",color="r", linewidth=0.5 )
+    #fig.plot( tnsec, yf[0:len(yf)//2], "-",color="r", linewidth=0.5 )
     if not FTS :
-      fig.plot( tnsec, yf2[:len(yf)//2], "-",color="b", linewidth=0.5 )
+      fig.plot( tnsec[1:], yf2[1:len(yf)//2], "-",color="b", linewidth=0.5 )
     else :
       fig.plot( tnsec, numpy.abs(yf)[0:len(yf)//2], "-", color="b", linewidth=0.5)
     pyplot.show()
-    
 
 def FT2() :
     N=600
@@ -814,7 +813,8 @@ def readFitFile( sampleName ) :
       line = line[0:line.find("#")]      # strip off comments, if any
     if len(line) > 0 :                   # ignore blank lines (or those beginning with #)
       if "title" in line :
-        title = line[line.find("=")+1:].strip()
+        title = line[line.find("=")+1:].strip("\n")
+        print "title = %s" % title
       elif "data" in line :
         datafileList.append( line[line.find("=")+1:].strip() )
       elif "totcm" in line :
@@ -848,6 +848,18 @@ def readFitFile( sampleName ) :
                 "deltaTinList" : deltaTinList }
   return fitParams
 
+def findPeriod( fGHz, trans ) :
+    #fGHz,trans,phs,u,angI,FTS = readTransFile( infile )     # read single data file
+    yf = numpy.abs(numpy.fft.fft(trans))
+    delta = fGHz[1]-fGHz[0]
+    tnsec = numpy.linspace( 0., 1./(2.*delta), len(yf)//2 )
+    index = numpy.argmax(yf[1:len(yf)/2]) + 1
+    print yf[:5]
+    print tnsec[:5]
+    period = 1./tnsec[index]
+    print "period = %.2f GHz" % period
+    return period
+
 # selects data points for prefit; these are points near the min and max transmission
 # input: full data set
 # output: sparse data set
@@ -858,7 +870,7 @@ def readFitFile( sampleName ) :
 #   typical spacing between peaks, take midpoints as minima
 #
 def selectPrefitData( fGHz, trans, phase, unc ) :
-    period = 7.5					    # estimated period of transmission data, GHz
+    period = findPeriod( fGHz, trans)					    # estimated period of transmission data, GHz
     tma = numpy.ma.asarray( trans )     # create masked array of transmission data
 
   # create list of maxima, one per period
@@ -1133,7 +1145,7 @@ def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/O
   # one page per dataset
     for datafile in fitParams["datafileList"] :
       fig =  pyplot.figure( figsize=(11,8) )
-      pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=14 )
+      pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=12 )
 
     # retrieve the raw data; also, identify points used for prefit
       fGHz,trans,dphs_meas,unc,angIdeg,FTS = readTransFile( datafile, path=path )
@@ -1299,8 +1311,11 @@ def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/O
         print "plot saved to file %s" % (pickleFile + ".pdf")
     pp.close()
 
-# append data to spreadsheet
-def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
+# dump fit results to csv file to make it easier to fill out google sheet
+# chisq array includes fits to individual data sets and to joint fit;
+#   use this to tabulate best fit for each dataset and for the joint fit
+#
+def tabulateResults( pickleFile, outFile="summary.csv" ) :
 
   # read fit results from pickleFile
     print "loading fit results from file %s" % pickleFile
@@ -1314,28 +1329,24 @@ def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
     fin.close() 
     nlayers = len( tcmList[0] )
  
-  # dump chisq for pretest, all datasets, and joint fit 
-    fout = open( chisqFile, "w" )
-    for i in range(0,len(chisq[0])) :
-      fout.write("%6d" % i)
-      for j in range(0,len(chisq)) :
-        fout.write("%14.3f" % chisq[j,i])
-      fout.write("\n")
-    fout.close()
-
-  # print fit results and uncertainty for each dataset individually 
+  # print fit results, uncertainties, and chisq for each dataset individually 
     fout = open( outFile, "a" )
     for j in range(1,len(chisq)):
+
+    # for fits to a single data set, don't write out joint fit results, as they are the same as individual fit
+      if (len(chisq) == 3) and (j == 2) :
+        break
+
       name = "joint fit"
       if j < len(chisq)-1 :
-        name = fitParams["datafileList"][j-1]
+        name = fitParams["datafileList"][j-1].strip(".avg.dat")
 
       print "\n====="
       print "\n10 best fits for %s" % name
       nbest = printBest( chisq[j], tcmList, nrList, tanDeltaList ) 
 
       best,tcmFit,nrFit,tanDfit = summarize( chisq[j], tcmList, nrList, tanDeltaList )
-      fout.write("\n%s,%s,%.3f," % (fitParams["title"], name, best ) )   # col 1 is puck name, col 2 is dataFile name
+      fout.write("\n%s,%s,%s,%.3f," % (pickleFile,fitParams["title"], name, best ) )   # col 1 is puck name, col 2 is dataFile name
       print best
       print tcmFit/2.54
       print nrFit
@@ -1344,11 +1355,11 @@ def tabulateResults( pickleFile, outFile="summary.csv", chisqFile="junk"  ) :
         print fitParams["nrList"][nl][0]
         print nrFit[nl,0],nrFit[nl,1],nrFit[nl,2]
         print fitParams["nrList"][0][-1]
-        fout.write("  %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["tcmList"][nl][0]/2.54, tcmFit[nl,0]/2.54, \
+        fout.write(", %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["tcmList"][nl][0]/2.54, tcmFit[nl,0]/2.54, \
           tcmFit[nl,1]/2.54, tcmFit[nl,2]/2.54, fitParams["tcmList"][nl][-1]/2.54 ) )
-        fout.write("  %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["nrList"][nl][0], nrFit[nl,0], \
+        fout.write(", %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["nrList"][nl][0], nrFit[nl,0], \
           nrFit[nl,1], nrFit[nl,2], fitParams["nrList"][nl][-1]) )
-        fout.write(" %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["tanDeltaList"][nl][0], tanDfit[nl,0], \
+        fout.write(", %.4f,%.4f,%.4f,%.4f,%.4f," % (fitParams["tanDeltaList"][nl][0], tanDfit[nl,0], \
           tanDfit[nl,1], tanDfit[nl,2], fitParams["tanDeltaList"][nl][-1]) )
     fout.write("\n")
     fout.close()
