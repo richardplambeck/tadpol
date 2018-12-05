@@ -1,9 +1,10 @@
-# model.py
+# oriModel.py
 # misc python calculations relevant to Orion HII region paper
 
 # from Numeric import *
-from numpy import *
+import numpy
 import math
+from scipy.optimize import curve_fit
 
 # ------------- constants ------------------ #
 Te = 8000            # electron temp in K
@@ -15,7 +16,7 @@ clight = 2.9979e10   # c in cm/sec
 au = 1.496e13        # 1 AU in cm
 pc = 3.0856e18		 # 1 pc in cm
 G = 6.6732e-8        # grav constant in dynes cm^2 g^-2
-dAU = 415 * pc/au    # 400 pc in AU 
+dAU = 400 * pc/au    # 400 pc in AU 
 mass_e = 9.109e-28	 # electron mass in grams
 mass_H = 1.6605e-24  # atomic mass unit in grams
 mass_sun = 1.989e33  # solar mass in g
@@ -28,7 +29,7 @@ def boxcargauss( v1, vstep, nchan, a0, a1, v0, fwhm, outfile ) :
   nsteps = 0
 
   # --- step through velocity range in 0.1 km/sec steps --- #
-  for v in arange( v1-vstep/2., v1+nchan*vstep, .1 ) :
+  for v in numpy.arange( v1-vstep/2., v1+nchan*vstep, .1 ) :
     if (v > (vcenter+vstep/2.) ) :
       ofile.write("%10.2f  %10.4f  %d\n" % (vcenter,amp/nsteps,nsteps))
       amp = 0.
@@ -89,8 +90,18 @@ def blackbody2(fGHz, Tb, rAU=10 ) :
 
   #tau0 = 8.235e-2 * pow(Te,-1.35) * pow(fGHz,-2.1)	# Lang, eq 1-223
   
-# --- continuum and line emissivities vs radius --- #
+# --- gaussian function used to fit radial brightness --- #
+def gaussian( x, a, b ) :
+  return a * numpy.exp(-4.*math.log(2.) * numpy.power(x,2.)/pow(b,2))
+
+# --- dump file of continuum and line emissivity (0-1) vs radius (in milliarcsec) at a particular frequency
+# --- also calculate continuum and (peak) line flux, and Gaussian fit to FWHM of emission region
 def radial (outfile, fGHz, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
+  xAUarr = []
+  eCarr = []
+  eLarr = []
+  sumC = 0.
+  sumL = 0.
   ofile = open(outfile,"w")
   ofile.write("# alpha = %.2f\n" % alpha)
   ofile.write("# r0 = %.2f AU\n" % r0AU )
@@ -98,18 +109,40 @@ def radial (outfile, fGHz, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
   ofile.write("# rmax = %.2e AU\n" % rmaxAU)
   ofile.write("# dx = %.4e AU\n" % dxAU)
   ofile.write("# f = %.2f GHz\n" % fGHz)
-  for xAU in arange(dxAU/2.,rmaxAU,dxAU) :
+  ofile.write("# r (mas)   eC    eL\n")
+  for xAU in numpy.arange(dxAU/2.,rmaxAU,dxAU) :
     EM = em(xAU, alpha, r0AU, n0, rmaxAU)
     tC = tauC(EM,fGHz)
     tL = tauL(EM,fGHz,fwhm)
     eC = 1.
     if (tC < 100.): 
-      eC = (1. - exp(-1.*tC))
+      eC = (1. - math.exp(-1.*tC))
+    sumC = sumC + eC * xAU * dxAU            # add (1-exp(-tauC)) * radius * dr
     eL = 1.
     if ((tL+tC) < 100.): 
-      eL = 1. - exp(-1.*(tL+tC))
-    ofile.write("%8.3f  %8.5f  %8.5f\n" % (xAU, eC, eL))
+      eL = 1. - math.exp(-1.*(tL+tC))
+    sumL = sumL + eL * xAU * dxAU
+    xAUarr.append( xAU )
+    eCarr.append( eC )
+    eLarr.append( eL )
+  popt,pcov = curve_fit( gaussian, xAUarr, eCarr )
+  for xAU,eC,eL in zip(xAUarr,eCarr,eLarr) :
+    ofile.write("%8.2f  %8.5f  %8.5f  %8.5f\n" % (1000.*xAU/400., eC, gaussian(xAU, *popt),  eL))
   ofile.close()
+  const = 4. * math.pi * kB * Te * 1.e44 / (dAU * dAU * c * c)
+  return const*sumC*fGHz*fGHz, const*sumL*fGHz*fGHz, popt[1]
+     # popt = amplitude and FWHM of gaussian fit to emissivity vs radius in AU
+
+  # mas assumes distance of 400 pc
+
+def radialModel( outfile, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
+  fout = open( outfile, "w" ) 
+  for freq in range(10,400,10) :
+    fluxC,fluxL,FWHM_AU = radial("dummy", freq, fwhm, alpha, r0AU, n0, rmaxAU, dxAU )
+    fout.write("%8.2f %8.3f  %8.2f %8.3f  %8.2f %8.3f  %8.2f\n" % (freq, math.log10(freq), fluxC, math.log10(fluxC), \
+       fluxL, math.log10(fluxL), FWHM_AU*2.5) )    # 2.5 = 1000/400 converts AU into milliarcsec
+  fout.close()
+  
 
 # --- continuum opacity, Rohlfs & Wilson 9.35 --- #
 def tauC( EM, fGHz ) :
@@ -125,7 +158,7 @@ def em (xAU, alpha, r0AU, n0, rmaxAU) :
   dyAU = .1
   ymaxAU = math.sqrt(rmaxAU*rmaxAU - xAU*xAU)		# integrate to same max radius each time
   em = 0.
-  for yAU in arange( dyAU/2., ymaxAU, dyAU ) :
+  for yAU in numpy.arange( dyAU/2., ymaxAU, dyAU ) :
     rAU = math.sqrt(xAU * xAU + yAU * yAU)
     ne = n0
     if (rAU > r0AU) :
@@ -145,13 +178,13 @@ def flux( outfile, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
   ofile.write("# fwhm = %.2f km/sec\n" % fwhm)
   const = 4. * math.pi * kB * Te * 1.e44 / (dAU * dAU * c * c)
   #for fGHz in flist :
-  for logf in arange(0.4, 3.6, 0.1):
+  for logf in numpy.arange(0.4, 3.6, 0.1):
     fGHz = pow(10., logf)
     print fGHz
     logf = math.log10(fGHz)
     sumC = 0.
     sumL = 0.
-    for xAU in arange(dxAU/2.,rmaxAU,dxAU) :
+    for xAU in numpy.arange(dxAU/2.,rmaxAU,dxAU) :
       EM = em(xAU, alpha, r0AU, n0, rmaxAU)    # emission measure in annulus at radius xAU
 
       tC = tauC(EM,fGHz)					   # continuum opacity for this emission measure
@@ -169,7 +202,7 @@ def flux( outfile, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
       # --- the following section finds average opacity of line in wider channel --- #
       # eL = 0.
       # ntmp = 0
-      # for v in arange(2.5,47.5,5.) :	# integrate from 0-50 km/sec in 5 km/sec bins
+      # for v in numpy.arange(2.5,47.5,5.) :	# integrate from 0-50 km/sec in 5 km/sec bins
       #  tLv = tL * gauss(v,fwhm)
       #  eLv = 1.						# eLv is (1-exp(-tau)) at this velocity
       #  if ((tLv + tC) < 30) :
@@ -187,39 +220,6 @@ def flux( outfile, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
 # --- find gauss at velocity v relative to velocity 0, for width fwhm --- #
 def gauss( v, fwhm ) :
   return exp(-2.7726 * pow(v/fwhm, 2.))
-
-def examples () :
-# radial (outfile, fGHz, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) 
-#  radial ("r43.dat", 43., 39., -10., 5., 1.e7, 50., 0.5 ) 
-# flux ( outfile,     fwhm, alpha,  r0AU,   n0,  rmaxAU,  dxAU ) :
-# flux ("fnormal.dat", 26.,  -10.,  10.0,  2.e7,   20.,   0.5 )
-#  flux ("BNmodel.dat",      23.,  -5.,    9.5,  3.e7,   30.,   0.5 )   # save
-#  flux ("BNmodel1.dat",      23.,  -3.3,    7,  4.5e7,   30.,   0.5 )   # good fit to most of the spectrum
-#  flux ("HII.dat",     23.,  -20.,   9.5,  3.e7,   30.,   0.5 )
-# def flux (outfile, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
-#  flux ("Imodel.dat",   23.,  -10,   6.8,  8.5e7,   60.,   0.5 )   # save - good fit
-#  flux ("IHII.dat",   23.,  -100,   7.6,  7.1e7,   60.,   0.5 )   # save - good fit
-#  flux ("BNmodel2.dat",      23.,  -10.,    10.5,  2.8e7,   30.,   0.5 )   # good fit to 43,89,229 GHz points
-#  flux ("Imodel.dat",   23.,  -10,   6.8,  8.5e7,   60.,   0.5 )   # save - good fit
-#  flux ("classicHII.dat",   23.,  -20,   6.8,  1.e7,   60.,   0.5 ) 
-#  flux ("classicWind.dat",   23.,  -2,   .1,  1.e10,   60.,   0.5 )
-#  flux ("classicHyper.dat",   23.,  -3,   3,  1.e7,   60.,   0.5 )
-
-#   ---- feb 2011 ---
-#   flux ("Imodel.26feb2011.dat",   23.,  -20, 6.8,  3e8,  50., 0.5 )
-
-#   ---- jul 2012 ----
-#   radial(outfile,           fGHz, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) 
-#   radial("Imodel.radial.dat", 662., 23., -50., 6.8,   3e8,  20,  0.1)
-#   flux ("Imodel.dat",   23.,  -20, 6.8,  3e8,  10., 0.1 )
-#   flux ("Imodelextreme.dat", 40., -50., 6.8, 6e8, 10., 0.1 )
-#   flux ("Imodel3e8.dat",   23.,  -50, 6.8,  3e8,  10., 0.1 )
-#   flux ("Imodel3e9.dat",   23.,  -50, 6.8,  3e9,  10., 0.1 )
-#   flux ("Imodel3e10.dat",   23.,  -50, 6.8,  3e10,  10., 0.1 )
-
-#   flux ( outfile,     fwhm, alpha,  r0AU,   n0,  rmaxAU,  dxAU ) :
-   flux ("Imodel.dat",   30.,  -50,   7.5,  1.5e8,   20.,   0.1 )   # save - good fit
-   flux( "BNmodel2.dat",  30.,  -3.5,  7.4,  5e7,   50.,   0.1 )	# good fit feb2011
 
 # freq for Halpha(n+1 -> n); for H and heavy element (K); velocity difference between them
 def freq( n ):
@@ -239,7 +239,7 @@ def I1( a ) :
   xmax = x		# this value of x is after function y(x) tapers back toward zero
   dx = xmax/1000.     # 1000 steps
   tot = 0.
-  for x in arange(dx/2., xmax, dx) :
+  for x in numpy.arange(dx/2., xmax, dx) :
     y = exp(-1. * a * x) * (pow(x,0.5)*pow(x+1.,1.5) + pow(x,1.5)*pow(x+1.,0.5))
     tot = tot + y * dx
   tot = tot * (1. - exp(-1.*a))
@@ -254,7 +254,7 @@ def I2( a ) :
   xmax = x		# this value of x is after function y(x) tapers back toward zero
   dx = xmax/1000.     # 1000 steps
   tot = 0.
-  for x in arange(dx/2., xmax, dx) :
+  for x in numpy.arange(dx/2., xmax, dx) :
     y = exp(-1.*a*x) * (x*pow(x+1.,1.5) + pow(x,1.5)*(x+1.))
     tot = tot + y * dx
   tot = tot * (1. - exp(-1.*a))
@@ -269,7 +269,7 @@ def I3( a ) :
   xmax = x		# this value of x is after function y(x) tapers back toward zero
   dx = xmax/1000.     # 1000 steps
   tot = 0.
-  for x in arange(dx/2., xmax, dx) :
+  for x in numpy.arange(dx/2., xmax, dx) :
     y = exp(-1.*a*x) * (math.log(x) + math.log(x+1.)) * pow(x,1.5) * pow(x+1.,1.5)
     tot = tot + y * dx
   tot = tot * (1. - exp(-1.*a))
@@ -284,7 +284,7 @@ def I4( a ) :
   xmax = x		# this value of x is after function y(x) tapers back toward zero
   dx = xmax/1000.     # 1000 steps
   tot = 0.
-  for x in arange(dx/2., xmax, dx) :
+  for x in numpy.arange(dx/2., xmax, dx) :
     y = exp(-1.*a*x) * (pow(x,2.)*pow(x+1.,1.5) + pow(x,1.5)*pow(x+1.,2.))
     tot = tot + y * dx
   tot = tot * (1. - exp(-1.*a))
@@ -316,7 +316,7 @@ def kHIRM ( T ) :
 # --- compare my evaluation of eqn 20 of Dalgarno and Lane with fit from Reid and Menten --- #
 # --- this shows that the fit is excellent! --- #
 def HIcmp () :
-  for T in arange(1000.,3000.,50.) :
+  for T in numpy.arange(1000.,3000.,50.) :
     print T,1.e18*kHIRM(T), 1.e18*kHI(T,10.)
 
 def kH2 ( T, fGHz ) :
@@ -335,7 +335,7 @@ def kH2RM ( T ) :
   return a0 + a1*T + a2*pow(T,2.) + a3*pow(T,3.)
 
 def H2cmp () :
-  for T in arange(1000.,3000.,50.) :
+  for T in numpy.arange(1000.,3000.,50.) :
     print T,1.e18*kH2RM(T), 1.e18*kH2(T,10.)
 
 
@@ -385,7 +385,7 @@ def neSolve ( nH, T ) :
 # try to replicate Reid and Menten fig 5
 def RMfig5() :
   nH = 1.e12
-  for T in arange(1000,2020,20) :
+  for T in numpy.arange(1000,2020,20) :
     neSolve( nH, T )
   
 # --- number of ionizing photons from eq 2 of Mezger, Smith, & Churchwell 1974 --- #
@@ -442,7 +442,7 @@ def RMfig6( ) :
   fGHz = 43
   tslab = 3.e13
   nH = 1.e11
-  for T in arange(1000.,2100.,100.) :
+  for T in numpy.arange(1000.,2100.,100.) :
     ne = neSolve( nH, T )
     tau = nH * ne * kB * T * kHI( T, fGHz) * tslab   # ignoring contribution from H2
     print "%.0f  %.3e  %.3f" % ( T, tau, math.log10(tau) )
@@ -486,7 +486,7 @@ def HminusSpectrum( T, nH, radiusAU, tslabAU ):
   fout.write("# tot mass = %.4f Mo\n" % totmass )
   print "totmass = %.4f Mo" % totmass
   ne = neSolve( nH, T )  
-  for logf in arange(0.,4.,.1) :
+  for logf in numpy.arange(0.,4.,.1) :
     fGHz = pow(10.,logf)
     tau_Hminus = nH * ne * kB * T * kHI( T, fGHz ) * tslab
     if (tau_Hminus > 10.) :
@@ -512,7 +512,7 @@ def BrehmSpectrum( T, ne, tslab=3.e12 ) :
   fout.write("# tot mass = %.4f Mo\n" % totmass )
   EM = tslab * ne * ne / pc
   fout.write("# emission meas = %.3e cm^6 pc^-1\n" % EM )
-  for fGHz in arange( 10., 700., 10.) :
+  for fGHz in numpy.arange( 10., 700., 10.) :
     tau_brehm = tauff( fGHz, EM, T )
     if (tau_brehm > 10.) :
       Tb = T
@@ -539,3 +539,83 @@ def nH( T, NH ) :
     nH = -b + math.sqrt( b*b - 4. * a * c )/(2.*a)
     print "nH = %.3e, nH/nH = %.3e" % (nH, (nH/NH) )
   
+
+alphaList = numpy.arange(-2.,-4.,-.3)
+r0List = numpy.arange(1.,10.,2.)
+n0List = numpy.arange(1.e7,9.e7,2.e7)
+
+def findBestModel( alphaList, r0List, n0List, fwhm_kms=30., rmaxAU=70., dxAU=0.5, fluxFile="../Figures/BNintFluxSummary", \
+      sizeFile="../Figures/radialFit.dat" ) : 
+
+  # read in measured fluxes and sizes
+    b = numpy.loadtxt( fluxFile )     # freq, flux, unc
+       # b[0] = freq, b[1] = intFlux, b[2] = fluxUncertainty
+    c = numpy.loadtxt( sizeFile )
+       # c[0] = freq, c[1] = FWHM, c[2] = FWHMuncertainty
+
+  # now loop through all possible models, computing separate chisq for flux, size, and combined
+    n = len(alphaList)*len(r0List)*len(n0List)
+    print "evaluating %d models" % n
+    chisqFWHM = numpy.zeros(n)
+    chisqFlux = numpy.zeros(n)
+    chisqBoth = numpy.zeros(n)
+    j = 0
+     
+    for alpha in alphaList :
+      for r0AU in r0List :
+        for n0 in n0List : 
+          j = j + 1
+          for freq,flux,unc in zip(b[0],b[1],b[2]) :
+            fluxC,fluxL,FWHM_AU = radial("dummy", freq, fwhm_kms, alpha, r0AU, n0, rmaxAU, dxAU )
+            chisqFlux[j] = chisqFlux[j] + pow( (flux-fluxC)/unc, 2. )
+          for freq,FWHM,unc in zip(c[0],c[1],c[2]) :
+            fluxC,fluxL,FWHM_AU = radial("dummy", freq, fwhm_kms, alpha, r0AU, n0, rmaxAU, dxAU )
+            chisqFWHM[j] = chisqFWHM[j] + pow( (FWHM-2.5*FWHM_AU)/unc, 2. )
+          print "%5.2f  %4.1f  %.2e  %8.3f  %8.3f" % (alpha, r0AU, n0,
+            chisqFlux[j]/math.sqrt(len(b[0])), chisqFWHM[j]/math.sqrt(len(c[0])))
+
+def examples () :
+# radial (outfile, fGHz, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) 
+#  radial ("r43.dat", 43., 39., -10., 5., 1.e7, 50., 0.5 ) 
+# flux ( outfile,     fwhm, alpha,  r0AU,   n0,  rmaxAU,  dxAU ) :
+# flux ("fnormal.dat", 26.,  -10.,  10.0,  2.e7,   20.,   0.5 )
+#  flux ("BNmodel.dat",      23.,  -5.,    9.5,  3.e7,   30.,   0.5 )   # save
+#  flux ("BNmodel1.dat",      23.,  -3.3,    7,  4.5e7,   30.,   0.5 )   # good fit to most of the spectrum
+#  flux ("HII.dat",     23.,  -20.,   9.5,  3.e7,   30.,   0.5 )
+#  def flux (outfile, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
+#  flux ("Imodel.dat",   23.,  -10,   6.8,  8.5e7,   60.,   0.5 )   # save - good fit
+#  flux ("IHII.dat",   23.,  -100,   7.6,  7.1e7,   60.,   0.5 )   # save - good fit
+#  flux ("BNmodel2.dat",      23.,  -10.,    10.5,  2.8e7,   30.,   0.5 )   # good fit to 43,89,229 GHz points
+#  flux ("Imodel.dat",   23.,  -10,   6.8,  8.5e7,   60.,   0.5 )   # save - good fit
+#  flux ("classicHII.dat",   23.,  -20,   6.8,  1.e7,   60.,   0.5 ) 
+#  flux ("classicWind.dat",   23.,  -2,   .1,  1.e10,   60.,   0.5 )
+#  flux ("classicHyper.dat",   23.,  -3,   3,  1.e7,   60.,   0.5 )
+
+#   ---- feb 2011 ---
+#   flux ("Imodel.26feb2011.dat",   23.,  -20, 6.8,  3e8,  50., 0.5 )
+
+#   ---- jul 2012 ----
+#   radial(outfile,           fGHz, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) 
+#   radial("Imodel.radial.dat", 662., 23., -50., 6.8,   3e8,  20,  0.1)
+#   flux ("Imodel.dat",   23.,  -20, 6.8,  3e8,  10., 0.1 )
+#   flux ("Imodelextreme.dat", 40., -50., 6.8, 6e8, 10., 0.1 )
+#   flux ("Imodel3e8.dat",   23.,  -50, 6.8,  3e8,  10., 0.1 )
+#   flux ("Imodel3e9.dat",   23.,  -50, 6.8,  3e9,  10., 0.1 )
+#   flux ("Imodel3e10.dat",   23.,  -50, 6.8,  3e10,  10., 0.1 )
+
+#   flux ( outfile,     fwhm, alpha,  r0AU,   n0,  rmaxAU,  dxAU ) :
+#   flux ("Imodel.dat",   30.,  -50,   7.5,  1.5e8,   20.,   0.1 )   # save - good fit
+#   flux( "BNmodel2.dat",  30.,  -3.5,  7.4,  5e7,   50.,   0.1 )	# good fit feb2011
+
+#  ---- nov 2018 ----
+#  def flux (outfile, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) :
+#  def radial (outfile, fGHz, fwhm, alpha, r0AU, n0, rmaxAU, dxAU ) 
+#   flux( "BNmodel2.dat",  30.,  -3.5,  7.4,  5.e7,   50.,   0.1 )	# good fit feb2011
+#   radial("BNmodel2.radial.43.dat", 43., 30., -3.5, 7.4, 5.e7,  50.,  0.1)
+#   radial("BNmodel2.radial.86.dat", 97., 30., -3.5, 7.4, 5.e7,  50.,  0.1)
+#   radial("BNmodel2.radial.230.dat", 230., 30., -3.5, 7.4, 5.e7,  50.,  0.1)
+#   radial("BNmodel2.radial.340.dat", 340., 30., -3.5, 7.4, 5.e7,  50.,  0.1)
+#  radialModel("BNmodel2.radialModel", 30., -3.5, 7.4, 5.e7, 50, 0.1 )
+
+#   ---- dec 2018 ---
+  findBestModel( alphaList, r0List, n0List ) 
