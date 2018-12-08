@@ -1311,6 +1311,239 @@ def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/O
         print "plot saved to file %s" % (pickleFile + ".pdf")
     pp.close()
 
+def makeString4( srchmin, low, best, high, srchmax) :
+    lowstring = "   ----   "
+    if low > srchmin :
+       lowstring = "%6.4f" % low
+    histring = "    ----    "
+    if high < srchmax :
+       histring = "%6.4f" % high
+    return "%s   %6.4f   %s" % (lowstring,best,histring)
+    
+  
+# new version of plot that combines search ranges and results for each layer onto 1 line
+def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+
+  # dateString was added on 31-oct-2018; must be able to handle earlier files without it
+    try :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
+    except :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      dateString = " "
+    fin.close() 
+    nlayers = len( tcmList[0] )
+
+    print "\n10 best fits minimizing overall residuals:"
+    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+
+  # create savet,saven,savetanD lists, containing all configurations with chisq< 2.* minchisq
+    savet = []
+    savenr = []
+    savetanD = []
+    for n in range(0,len(chisq[-1])) :
+      if chisq[-1,n] < 2.*chisq[-1,nbest]:
+        savet.append( tcmList[n] )
+        savenr.append( nrList[n] )
+        savetanD.append( tanDeltaList[n] )
+
+  # begin the plot
+    pyplot.ioff()
+    #pyplot.clf()
+    pp = PdfPages( pickleFile + ".pdf")
+
+  # one page per dataset
+    for datafile in fitParams["datafileList"] :
+      fig =  pyplot.figure( figsize=(11,8) )
+      pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=12 )
+
+    # retrieve the raw data; also, identify points used for prefit
+      fGHz,trans,dphs_meas,unc,angIdeg,FTS = readTransFile( datafile, path=path )
+      pf, pamp, pphs, pu =  selectPrefitData( fGHz, trans, dphs_meas, unc ) 
+
+    # recalculate the model amps and phases for the best fit parameters
+      dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
+
+    # plot phase unless FTS
+      xmin,xmax = minmax( fGHz )
+      if not FTS :
+        dphi = unwrap( dphs_meas-dphs_est )
+
+      # top left panel is phase vs freq, measured and fit
+        ax = fig.add_axes( [.1,.6,.38,.32] )
+        ymin,ymax = minmax( numpy.concatenate((dphs_meas,dphs_est)))
+        ax.axis( [xmin, xmax, ymin, ymax] )
+        ax.tick_params( labelsize=10 )
+        ax.plot( fGHz, dphs_meas, "bo", ms=2. )
+        ax.plot( pf, pphs, "kx", ms=5. )
+        ax.plot( fGHz, dphs_est, "r-" )
+        ax.set_ylabel("phase (deg)", fontsize=10)
+        ax.set_ylim( [-195.,195.] )
+        pyplot.grid(True)
+  
+      # middle left panel shows phase residual vs freq; avg shown as horiz dashed line
+        ax = fig.add_axes( [.1,.37,.38,.2]) 
+        ymin,ymax = minmax( dphi, margin=.2 )
+        ax.axis( [xmin, xmax, ymin, ymax] )
+        ax.plot( fGHz, dphi, "o-", ms=1. )
+        ax.tick_params( labelsize=10 )
+        dphiavg = numpy.average(dphi)
+        ax.plot( [fGHz[0],fGHz[-1]],[dphiavg,dphiavg],"r--" )
+        ax.set_ylabel("residual (deg)", fontsize=10)
+        ax.set_xlabel("freq (GHz)", fontsize=10)
+        ax.set_ylim( [-9.,9.] )
+        pyplot.grid(True)
+
+    # top right panel is transmission vs freq, measured and theoretical
+      if FTS :
+        trans_est = trans_est*trans_est
+        ax = fig.add_axes( [.1,.6,.85,.32] )
+        ax.set_ylabel("transmitted pwr", fontsize=10)
+      else :
+        ax = fig.add_axes( [.57,.6,.38,.32] )
+        ax.set_ylabel("transmitted amplitude", fontsize=10)
+      ymin,ymax = minmax( numpy.concatenate((trans,trans_est)) )
+      ax.axis( [xmin, xmax, ymin, ymax] )
+      if numpy.mean(unc) > .5 :
+        ax.plot( fGHz, trans, "o", ms=2. )
+      else :
+        ax.errorbar( fGHz, trans, yerr=unc, elinewidth=0.5, capsize=0 )
+      ax.plot( pf, pamp, "kx", ms=5. )
+      ax.plot( fGHz, trans_est, "r-" )
+      ax.tick_params( labelsize=10 )
+      if FTS :
+        ax.set_ylim( [.3,1.05] )
+      else :
+        ax.set_ylim( [.5,1.05] )
+      pyplot.grid(True)
+
+    # middle right panel is measured-theoretical trans
+      if FTS :
+        ax = fig.add_axes( [.1,.37,.85,.2] )
+      else :
+        ax = fig.add_axes( [.57,.37,.38,.2])
+      ax.tick_params( labelsize=10 )
+      dtrans = trans-trans_est
+      ymin,ymax = minmax( dtrans, margin=0.2 )
+      ax.axis( [xmin, xmax, ymin, ymax] )
+      ax.plot( fGHz, dtrans, "o-", ms=1. )
+      ax.set_xlabel("freq (GHz)", fontsize=10)
+      ax.set_ylabel("residual", fontsize=10)
+      ax.set_ylim( [-.09,.09] )
+      pyplot.grid(True)
+
+    # (fictitious) bottom panel lists search ranges, limits, best values
+      fontSize = 12
+      ystep = .12
+      ax = fig.add_axes( [.1,.1,.85,.2])
+      ylab = 1 - ystep
+      ax.text( 0.0, ylab, "angle = %.2f deg; allowed thickness = [%s]" % \
+        ( angIdeg, makeString(fitParams["tcmRange"]/2.54) ), transform=ax.transAxes, \
+        horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
+      ax.text( 1.0, ylab, "reduced chisq = %.3f " % chisq[-1,nbest], transform=ax.transAxes, \
+        horizontalalignment='right', fontsize=fontSize, color="black", rotation='horizontal' )
+
+      tcmListIn = fitParams["tcmList"]
+      nrListIn = fitParams["nrList"]
+      tanDeltaListIn = fitParams["tanDeltaList"]
+
+      ylab = ylab - ystep - .05
+      ax.text( 0.03, ylab, "layer", style='oblique', horizontalalignment='center')
+      ax.text( 0.18, ylab, "thickness", style='oblique', horizontalalignment='center')
+      ax.text( 0.42, ylab, "index", style='oblique', horizontalalignment='center')
+      ax.text( 0.65, ylab, "epsilon", style='oblique', horizontalalignment='center')
+      ax.text( 0.87, ylab, "tanDelta", style='oblique', horizontalalignment='center')
+      ylab = ylab - 0.02
+     
+      for nl in range(0,nlayers) : 
+        ylab = ylab - ystep 
+        if nrListIn[nl][0] < 0. :
+          ax.text( 0.0, ylab, "%d: mirror layer %d" % (nl+1, -1*nrListIn[nl][0]), \
+            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+        else :
+          ax.text( 0.03, ylab, "%d" % (nl+1), horizontalalignment='center')
+
+          tmin,tmax = tLimits( savet, nl)
+          lowString = "  ----   "
+          if tcmListIn[nl][0] < tmin :
+            lowString = "%.4f" % (tmin/2.54)
+          highString = "  ----   "
+          if tcmListIn[nl][-1] > tmax :
+            highString = "%.4f" % (tmax/2.54)
+          ax.text( 0.105, ylab, "%s" % lowString, horizontalalignment='center') 
+          ax.text( 0.18, ylab, "%.4f" % (tcmList[nbest][nl]/2.54), color='blue', horizontalalignment='center') 
+          ax.text( 0.255, ylab, "%s" % highString, horizontalalignment='center') 
+
+          nrmin,nrmax = tLimits( savenr, nl )
+          lowString = "  ----  "
+          epslowString = "  ----  "
+          if nrListIn[nl][0] < nrmin :
+            lowString = "%.3f" % nrmin
+            epslowString = "%.3f" % (nrmin*nrmin)
+          highString = "  ----  "
+          epshighString = "  ----  "
+          if nrListIn[nl][-1] > nrmax :
+            highString = "%.3f" % nrmax
+            epshighString = "%.3f" % (nrmax*nrmax)
+
+          ax.text( 0.355, ylab, "%s" % lowString, horizontalalignment='center') 
+          ax.text( 0.42, ylab, "%.3f" % (nrList[nbest][nl]), color='blue', horizontalalignment='center') 
+          ax.text( 0.485, ylab, "%s" % highString, horizontalalignment='center') 
+ 
+          ax.text( 0.585, ylab, "%s" % epslowString, horizontalalignment='center') 
+          ax.text( 0.65, ylab, "%.3f" % (pow(nrList[nbest][nl],2)), color='blue', horizontalalignment='center') 
+          ax.text( 0.715, ylab, "%s" % epshighString, horizontalalignment='center') 
+
+
+          tanDmin,tanDmax = tLimits( savetanD, nl )
+          lowString = "  ----   "
+          if tanDeltaListIn[nl][0] < tanDmin :
+            lowString = "%.4f" % tanDmin
+          highString = "  ----   "
+          if tanDeltaListIn[nl][-1] > tmax :
+            highString = "%.4f" % tanDmax
+          ax.text( 0.8, ylab, "%s" % lowString, horizontalalignment='center') 
+          ax.text( 0.87, ylab, "%.4f" % (tanDeltaList[nbest][nl]), color='blue', horizontalalignment='center') 
+          ax.text( 0.94, ylab, "%s" % highString, horizontalalignment='center') 
+
+
+          
+          #ax.text( 0.01, ylab, "%d:     %s      %s      %s"  % \
+          #  (nl+1, makeString4(tcmListIn[nl][0]/2.54, tmin/2.54, tcmList[nbest][nl]/2.54, tmax/2.54, tcmListIn[nl][-1]/2.54), \
+          #  makeString4(nrListIn[nl][0], nrmin, nrList[nbest][nl], nrmax, nrListIn[nl][-1]), \
+          #  makeString4(tanDeltaListIn[nl][0], tanDmin, tanDeltaList[nbest][nl], tanDmax, tanDeltaListIn[nl][-1]) ), \
+          #  transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+          #  color="black", rotation='horizontal' )
+
+         
+
+          #ax.text( 0.2, ylab, "%s" % \
+          #  makeString4(tcmListIn[nl][0]/2.54, tmin/2.54, tcmList[nbest][nl]/2.54, tmax/2.54, tcmListIn[nl][-1]/2.54), \
+          #  transform=ax.transAxes, horizontalalignment='center', fontsize=fontSize, \
+          #  color="black", rotation='horizontal' )
+
+
+      pyplot.axis('off')
+
+    # print date and time at the bottom
+      ax = fig.add_axes( [.1,.05,.85,.1])
+      ax.text(.5, 0., "%s" % dateString, \
+            transform=ax.transAxes, horizontalalignment='center', fontsize=fontSize, \
+            color="black", rotation='horizontal' )
+      pyplot.axis('off')
+
+      pyplot.savefig( pp, format="pdf" )
+      if not pdfOnly :
+        pyplot.show()
+      else :
+        print "plot saved to file %s" % (pickleFile + ".pdf")
+    pp.close()
+
 # dump fit results to csv file to make it easier to fill out google sheet
 # chisq array includes fits to individual data sets and to joint fit;
 #   use this to tabulate best fit for each dataset and for the joint fit
@@ -1367,7 +1600,7 @@ def tabulateResults( pickleFile, outFile="summary.csv" ) :
 # vary thickness of each layer over a range, predict transmission curve
 # fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
 # fuzzy1 does (weighted) vector average of ALL allowed thicknesses to get final transmission amp and phase;
-def fuzzy1( fitFile, fGHz=numpy.arange(70.,300.1,.1), angIdeg=0. ) :
+def fuzzy1( fitFile, fGHz=numpy.arange(70.,115.1,.1), angIdeg=5.16 ) :
     fitParams = readFitFile( fitFile )
     tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     ntrials = len(tcmList)
