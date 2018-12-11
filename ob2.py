@@ -1106,7 +1106,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
 
   # plot the fit
     time.sleep(1)
-    plotFit( pickleFile, pdfOnly=pdfOnly, path=path )
+    plotFit2( pickleFile, pdfOnly=pdfOnly, path=path )
 
 def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
@@ -1311,16 +1311,6 @@ def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/O
         print "plot saved to file %s" % (pickleFile + ".pdf")
     pp.close()
 
-def makeString4( srchmin, low, best, high, srchmax) :
-    lowstring = "   ----   "
-    if low > srchmin :
-       lowstring = "%6.4f" % low
-    histring = "    ----    "
-    if high < srchmax :
-       histring = "%6.4f" % high
-    return "%s   %6.4f   %s" % (lowstring,best,histring)
-    
-  
 # new version of plot that combines search ranges and results for each layer onto 1 line
 def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
@@ -1441,17 +1431,17 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       ystep = .12
       ax = fig.add_axes( [.1,.1,.85,.2])
       ylab = 1 - ystep
-      ax.text( 0.0, ylab, "angle = %.2f deg; allowed thickness = [%s]" % \
+      ax.text( 0.1, ylab, "angle = %.2f deg; allowed thickness = [%s]" % \
         ( angIdeg, makeString(fitParams["tcmRange"]/2.54) ), transform=ax.transAxes, \
         horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
-      ax.text( 1.0, ylab, "reduced chisq = %.3f " % chisq[-1,nbest], transform=ax.transAxes, \
+      ax.text( 0.9, ylab, "reduced chisq = %.3f " % chisq[-1,nbest], transform=ax.transAxes, \
         horizontalalignment='right', fontsize=fontSize, color="black", rotation='horizontal' )
 
       tcmListIn = fitParams["tcmList"]
       nrListIn = fitParams["nrList"]
       tanDeltaListIn = fitParams["tanDeltaList"]
 
-      ylab = ylab - ystep - .05
+      ylab = ylab - ystep - .08
       ax.text( 0.03, ylab, "layer", style='oblique', horizontalalignment='center')
       ax.text( 0.18, ylab, "thickness", style='oblique', horizontalalignment='center')
       ax.text( 0.42, ylab, "index", style='oblique', horizontalalignment='center')
@@ -1469,64 +1459,52 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
           ax.text( 0.03, ylab, "%d" % (nl+1), horizontalalignment='center')
 
           tmin,tmax = tLimits( savet, nl)
-          lowString = "  ----   "
+          lowColor = 'gray'
+          lowStyle = 'oblique'
+          highColor = 'gray'
+          highStyle = 'oblique'
           if tcmListIn[nl][0] < tmin :
-            lowString = "%.4f" % (tmin/2.54)
-          highString = "  ----   "
+            lowColor = 'black'               # search range extends below lower limit
+            lowStyle = 'normal'
           if tcmListIn[nl][-1] > tmax :
-            highString = "%.4f" % (tmax/2.54)
-          ax.text( 0.105, ylab, "%s" % lowString, horizontalalignment='center') 
-          ax.text( 0.18, ylab, "%.4f" % (tcmList[nbest][nl]/2.54), color='blue', horizontalalignment='center') 
-          ax.text( 0.255, ylab, "%s" % highString, horizontalalignment='center') 
+            highColor = 'black'              # search range extends above upper limit
+            highStyle = 'normal'
+          ax.text( 0.105, ylab, "%.4f" % (tmin/2.54), horizontalalignment='center', color=lowColor, style=lowStyle ) 
+          ax.text( 0.180, ylab, "%.4f" % (tcmList[nbest][nl]/2.54), horizontalalignment='center', color='blue' ) 
+          ax.text( 0.255, ylab, "%.4f" % (tmax/2.54), horizontalalignment='center', color=highColor, style=highStyle ) 
 
           nrmin,nrmax = tLimits( savenr, nl )
-          lowString = "  ----  "
-          epslowString = "  ----  "
+          lowColor = 'gray' 
+          lowStyle = 'oblique'
+          highColor = 'gray'
+          highStyle = 'oblique'
           if nrListIn[nl][0] < nrmin :
-            lowString = "%.3f" % nrmin
-            epslowString = "%.3f" % (nrmin*nrmin)
-          highString = "  ----  "
-          epshighString = "  ----  "
+            lowColor = 'black'               # search range extends below lower limit
+            lowStyle = 'normal'
           if nrListIn[nl][-1] > nrmax :
-            highString = "%.3f" % nrmax
-            epshighString = "%.3f" % (nrmax*nrmax)
-
-          ax.text( 0.355, ylab, "%s" % lowString, horizontalalignment='center') 
-          ax.text( 0.42, ylab, "%.3f" % (nrList[nbest][nl]), color='blue', horizontalalignment='center') 
-          ax.text( 0.485, ylab, "%s" % highString, horizontalalignment='center') 
- 
-          ax.text( 0.585, ylab, "%s" % epslowString, horizontalalignment='center') 
-          ax.text( 0.65, ylab, "%.3f" % (pow(nrList[nbest][nl],2)), color='blue', horizontalalignment='center') 
-          ax.text( 0.715, ylab, "%s" % epshighString, horizontalalignment='center') 
-
+            highColor = 'black'              # search range extends above upper limit
+            highStyle = 'normal'
+          ax.text( 0.355, ylab, "%.3f" % nrmin, horizontalalignment='center', color=lowColor, style=lowStyle) 
+          ax.text( 0.420, ylab, "%.3f" % (nrList[nbest][nl]), color='blue', horizontalalignment='center') 
+          ax.text( 0.485, ylab, "%.3f" % nrmax, horizontalalignment='center', color=highColor, style=highStyle) 
+          ax.text( 0.585, ylab, "%.3f" % pow(nrmin,2), horizontalalignment='center', color=lowColor, style=lowStyle) 
+          ax.text( 0.650, ylab, "%.3f" % pow(nrList[nbest][nl],2), color='blue', horizontalalignment='center') 
+          ax.text( 0.715, ylab, "%.3f" % pow(nrmax,2), horizontalalignment='center', color=highColor, style=highStyle) 
 
           tanDmin,tanDmax = tLimits( savetanD, nl )
-          lowString = "  ----   "
+          lowColor = 'gray'
+          lowStyle = 'oblique'
+          highColor = 'gray'
+          highStyle = 'oblique'
           if tanDeltaListIn[nl][0] < tanDmin :
-            lowString = "%.4f" % tanDmin
-          highString = "  ----   "
+            lowColor = 'black'               # search range extends below lower limit
+            lowStyle = 'normal'
           if tanDeltaListIn[nl][-1] > tmax :
-            highString = "%.4f" % tanDmax
-          ax.text( 0.8, ylab, "%s" % lowString, horizontalalignment='center') 
-          ax.text( 0.87, ylab, "%.4f" % (tanDeltaList[nbest][nl]), color='blue', horizontalalignment='center') 
-          ax.text( 0.94, ylab, "%s" % highString, horizontalalignment='center') 
-
-
-          
-          #ax.text( 0.01, ylab, "%d:     %s      %s      %s"  % \
-          #  (nl+1, makeString4(tcmListIn[nl][0]/2.54, tmin/2.54, tcmList[nbest][nl]/2.54, tmax/2.54, tcmListIn[nl][-1]/2.54), \
-          #  makeString4(nrListIn[nl][0], nrmin, nrList[nbest][nl], nrmax, nrListIn[nl][-1]), \
-          #  makeString4(tanDeltaListIn[nl][0], tanDmin, tanDeltaList[nbest][nl], tanDmax, tanDeltaListIn[nl][-1]) ), \
-          #  transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
-          #  color="black", rotation='horizontal' )
-
-         
-
-          #ax.text( 0.2, ylab, "%s" % \
-          #  makeString4(tcmListIn[nl][0]/2.54, tmin/2.54, tcmList[nbest][nl]/2.54, tmax/2.54, tcmListIn[nl][-1]/2.54), \
-          #  transform=ax.transAxes, horizontalalignment='center', fontsize=fontSize, \
-          #  color="black", rotation='horizontal' )
-
+            highColor = 'black'              # search range extends above upper limit
+            highStyle = 'normal'
+          ax.text( 0.80, ylab, "%.4f" % tanDmin, horizontalalignment='center', color=lowColor, style=lowStyle ) 
+          ax.text( 0.87, ylab, "%.4f" % (tanDeltaList[nbest][nl]), horizontalalignment='center', color='blue' ) 
+          ax.text( 0.94, ylab, "%.4f" % tanDmax, horizontalalignment='center', color=highColor, style=highStyle ) 
 
       pyplot.axis('off')
 
