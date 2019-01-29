@@ -688,8 +688,8 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
 #
 def FFT( infile, FTS=False ) :
     fGHz,trans,phs,u,angI,FTS = readTransFile( infile )     # read single data file
+    interp( fGHz, trans, phs )
     if FTS :
-    
       yf = numpy.fft.fft(trans) 
     else :
       measReal = trans * numpy.cos(phs*math.pi/180.)
@@ -708,6 +708,29 @@ def FFT( infile, FTS=False ) :
       fig.plot( tnsec, numpy.abs(yf)[0:len(yf)//2], "-", color="b", linewidth=0.5)
     pyplot.show()
 
+# interpolate to fill in missing data so that FFT can work properly
+def interp( f, amp, phs ) :
+    deltaf = f[1:] - f[0:-1]
+    print "deltaf = ",deltaf
+    (values,counts) = numpy.unique(deltaf,return_counts=True)
+    spacing = values[numpy.argmax(counts)]
+    print "spacing = ", spacing
+    f1 = round(f[0]/spacing) * spacing
+    f2 = round(f[-1]/spacing) * spacing
+    print "f1,f2 = ", f1,f2
+
+# compute magnitude of difference from smoothdata
+def error( data, smoothdata ):
+    f,t,ph,u,angI,FTS = readTransFile( data )     # read single data file
+    fsm,tsm,phsm,u,angI,FTS = readTransFile( smoothdata )
+    v = t * numpy.exp(1j*numpy.radians(ph)) 
+    vsm = tsm * numpy.exp(1j*numpy.radians(phsm)) 
+    vinterp = numpy.interp( f, fsm, vsm )
+    tinterp = numpy.absolute( vinterp )
+    phinterp = numpy.angle( vinterp, deg=True )
+    for i in range(0,len(f)) :
+      print f[i],t[i],ph[i],tinterp[i],phinterp[i]
+    
 def FT2() :
     N=600
     T=1.0/800.
@@ -854,8 +877,8 @@ def findPeriod( fGHz, trans ) :
     delta = fGHz[1]-fGHz[0]
     tnsec = numpy.linspace( 0., 1./(2.*delta), len(yf)//2 )
     index = numpy.argmax(yf[1:len(yf)/2]) + 1
-    print yf[:5]
-    print tnsec[:5]
+    # print yf[:5]
+    # print tnsec[:5]
     period = 1./tnsec[index]
     print "period = %.2f GHz" % period
     return period
@@ -882,20 +905,25 @@ def selectPrefitData( fGHz, trans, phase, unc ) :
         if abs(fGHz[i] - fGHz[nmax]) < 0.75 * period :
           tma[i] = numpy.ma.masked
     nmaxlist = numpy.sort(nlist) 
-    # print "selectPrefitData: nmaxlist =",nmaxlist
+    print "selectPrefitData: nmaxlist =",nmaxlist
 
+  # if there is less than 1 period in the data, just use every 10th point
+    if len(nmaxlist) < 2 :
+      nlist = numpy.arange(0,len(trans),10)
+     
   # assume midpoints between maxima are close to minima
-    if nmaxlist[-1] == len(trans) - 1 :
-      deltan = int( (nmaxlist[-2]-nmaxlist[-3])/2. + 0.5)
     else :
-      deltan = int( (nmaxlist[-1]-nmaxlist[-2])/2. + 0.5)
-    # print "selectPrefitData: avg delta = %d" % deltan
-    if (nmaxlist[0]-deltan) > 0 :
-      nlist.append( nmaxlist[0] - deltan )
-    for n in range(0,len(nmaxlist)-1) :
-      nlist.append(nmaxlist[n] + deltan)
-    if (nmaxlist[-1] + deltan) < len(tma) :
-      nlist.append(nmaxlist[-1] + deltan)      
+      if nmaxlist[-1] == len(trans) - 1 :
+        deltan = int( (nmaxlist[-2]-nmaxlist[-3])/2. + 0.5)
+      else :
+        deltan = int( (nmaxlist[-1]-nmaxlist[-2])/2. + 0.5)
+      # print "selectPrefitData: avg delta = %d" % deltan
+      if (nmaxlist[0]-deltan) > 0 :
+        nlist.append( nmaxlist[0] - deltan )
+      for n in range(0,len(nmaxlist)-1) :
+        nlist.append(nmaxlist[n] + deltan)
+      if (nmaxlist[-1] + deltan) < len(tma) :
+        nlist.append(nmaxlist[-1] + deltan)      
     
   # return sparse arrays
     nsorted = numpy.sort(nlist)
