@@ -15,7 +15,7 @@ import string
 import random
 import matplotlib
 import os
-matplotlib.use('GTKAgg')
+# matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 import matplotlib.colors as colors 
 from matplotlib.backends.backend_pdf import PdfPages
@@ -34,9 +34,11 @@ ccgs = 2.99792e10   # speed of light in cm/sec
 plotParams = { "npanels" : 2,
                "maxPanelsPerPage" : 2,
                "nlap" : 20,
-               "ymin" : -.2,       # -.1 for band7, -.2 for band9
-               "ymax" : 3.,      # 1.95 for band7, 4.8 for band9
-               "linelistFile" : "/o/plambeck/OriALMA/Band7B/Spectra/splat_ann.csv", 
+               "ymin" : .4,       # -.1 for band7, -.2 for band9
+               "ymax" : 1.1,      # 1.95 for band7, 4.8 for band9
+               #"linelistFile" : "/o/plambeck/OriALMA/Band7B/Spectra/splat_ann.csv", 
+               #"linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
+               "linelistFile" : "/o/plambeck/OriALMA/Salty/LowResData/salts.csv", 
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
@@ -49,14 +51,16 @@ plotParams = { "npanels" : 2,
 # create a "specList" dictionary for use by snippet2 and pubFig
 #   'file' is text file containing the spectrum integrated over some region
 #   'flag' is flags file indicating which spectra were flagged for continuum maps
-B7spw0 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw0.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b0"}
-B7spw1 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw1.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b1"}
-B7spw2 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw2.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b2"}
-B7spw3 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw3.100plus.a.txt", 
-          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b3"}
+
+#B7spw0 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw0.100plus.a.txt", 
+#          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b0"}
+#B7spw1 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw1.100plus.a.txt", 
+#          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b1"}
+#B7spw2 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw2.100plus.a.txt", 
+#          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b2"}
+#B7spw3 = {'file': "/big_scr6/plambeck/350GHz/miriad/spw3.100plus.a.txt", 
+#          'flag': "/big_scr6/plambeck/350GHz/miriad/flags_b3"}
+
 B9spw0 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw0.100plus.a.txt", 
           'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a0"}
 B9spw1 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw1.100plus.a.txt", 
@@ -102,6 +106,16 @@ B7Bspw2 = {'file': "/alma_scr/plambeck/340GHz/miriad/spw2.ch100.txt",
 B7Bspw3 = {'file': "/alma_scr/plambeck/340GHz/miriad/spw3.ch100.txt", 
            'flag': "/alma_scr/plambeck/340GHz/miriad/flags_a3"}
 
+# put these in on 17oct2018 to run from harpo on /o/plambeck/OriALMA/Salty/LowResData
+B7spw0 = {'file': "spw0.100plus.a.txt", 
+          'flag': "flags_b0"}
+B7spw1 = {'file': "spw1.100plus.a.txt", 
+          'flag': "flags_b1"}
+B7spw2 = {'file': "spw2.100plus.a.txt", 
+          'flag': "flags_b2"}
+B7spw3 = {'file': "spw3.100plus.a.txt", 
+          'flag': "flags_b3"}
+
 specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
 
 
@@ -133,6 +147,13 @@ def readspec( inspec, vsource=5. ) :
         freq.append( float(a[1])/(1.-(vsource-vs0)/ckms) )
         flux.append( float(a[2]) ) 
     fin.close()
+
+  # special case: renumber channels to handle B3 BN spectra made in 4 sections, each labeled chan 1-480
+    if len(chan) == 1920 and chan[0] != 1920 and chan[-1] != 1920 :
+      if chan[0] == 1 :
+        chan = range(1,1921,1)
+      else :
+        chan = range(1920,0,-1)
     return numpy.array(chan), numpy.array(freq), numpy.array(flux)
 
 # ----------------------------------------------------------------------------------------------
@@ -282,7 +303,7 @@ def getuvspec( infile, vsource=5., hann=3, tmpfile="junk", select='uvrange(0,200
 #   - ann uses it to annotate the plot (all outputs needed)
 #   - pruneLineList uses it to read in the raw file (variables veldop and shadevel not used)
 
-def processLineList( lineListFile, vsource=5. ) :
+def processLineList( lineListFile, vsource ) :
     '''read splatalogue.csv file, return [ name, freq, TL, intensity, veldop, shadevel ] lists'''
 
     print "reading in spectral line list from %s" % lineListFile
@@ -341,7 +362,6 @@ def processLineList( lineListFile, vsource=5. ) :
 
       # process data lines; this can crash if one of the required columns is not present
         elif not line.startswith("#") :
-          print line
           name.append( a[nameCol] )
           vdop.append( vlsr )
           dopfac = 1. - (vlsr - vsource)/ckms
@@ -349,7 +369,9 @@ def processLineList( lineListFile, vsource=5. ) :
 
         # sometimes freq shows up as calculated freq, other times as measured freq
           if len(a[freqCol]) > 0 :
-            freq.append( dopfac * float(a[freqCol]) )
+            freq.append( dopfac * float(a[freqCol].split(",")[0])/1.e9 )
+            print "... ", a[nameCol], dopfac, a[freqCol], freq[-1]
+            #freq.append( dopfac * float(a[freqCol]) )
           else :
             freq.append( dopfac * float(a[altFreqCol]) )
 
@@ -493,11 +515,11 @@ def yvalue( freq, flux, fline ) :
     return 1000.
 
 # ----------------------------------------------------------------------------------------------
-def ann( p, freq, flux, fmin, fmax, plotParams ) :
+def ann( p, freq, flux, fmin, fmax, plotParams, vsource ) :
     '''annotates plot with spectral line labels'''
     print "annotating freq range %.3f to %.3f GHz" % (fmin,fmax)
     if plotParams["linelistFile"] :
-      name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"] )
+      name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( plotParams["linelistFile"], vsource )
       for n in range(0,len(name)) :
         if (linefreq[n] >= fmin) and (linefreq[n] <= fmax) :
           print "fmin = %.4f, fmax = %.4f, linefreq = %.4f" % (fmin,fmax,linefreq[n])
@@ -526,7 +548,6 @@ def ann( p, freq, flux, fmin, fmax, plotParams ) :
             if shadeColor[n] == "blue" : alpha=0.2
             p.fill_between( freq, plotParams["contLevel"], flux, color=shadeColor[n], alpha=alpha, lw=0, \
               where=numpy.abs(freq-midpt) < diff )
-            
              
 # ----------------------------------------------------------------------------------------------
 # return continuum level, continuum rms, and flaggedBad array
@@ -707,7 +728,7 @@ def hist( chan, freq, fluxList, flaggedBad, plotParams ) :
 
     # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
-        ann( p, freq, fluxList[0], freq[nch1], freq[nch2], plotParams )
+        ann( p, freq, fluxList[0], freq[nch1], freq[nch2], plotParams, vsource )
 
       pyplot.suptitle( plotParams["title"], fontsize=8 )
       if (np == maxPanelsPerPage) :
@@ -813,22 +834,21 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 #def pubFig( specList=[BN7spw0,BN7spw1], plotParams=plotParams, vsource=9. ) :
 #def pubFig( specList=[B8spw0,B8spw1,B8spw2,B8spw3], plotParams=plotParams, vsource=5. ) :
 #def pubFig( specList=[B6spw0,B6spw1,B6spw2,B6spw3], plotParams=plotParams, vsource=5. ) :
-def pubFig( specList=[B7Bspw0,B7Bspw1,B7Bspw2,B7Bspw3], plotParams=plotParams, vsource=5. ) :
+#def pubFig( specList=[B7Bspw0,B7Bspw1,B7Bspw2,B7Bspw3], plotParams=plotParams, vsource=5. ) :
 
+def pubFig( specList, plotParams, vsource=5. ) :
     pyplot.ioff()
     pp = PdfPages("spectrum.pdf")
     ymin = plotParams["ymin"]
     ymax = plotParams["ymax"]
-    npanels = 4
     fig = pyplot.figure( figsize=(8,11) )
 
-    # npanels = 1
     # fig = pyplot.figure( figsize=(11,8) )
 
     npanel = 1
     for spectrum in specList: 
       [chan, freq, flux ] = readspec( spectrum["file"], vsource=vsource )
-      p = pyplot.subplot(npanels,1,npanel)
+      p = pyplot.subplot( plotParams["npanels"], 1, npanel)
       p.grid( True, linewidth=0.05, color="0.01" )   # color=0.1 is a light gray
 
       fmin = freq[0]
@@ -866,11 +886,11 @@ def pubFig( specList=[B7Bspw0,B7Bspw1,B7Bspw2,B7Bspw3], plotParams=plotParams, v
 
     # annotate lines in linelistFile; also, if desired, shade emission or absorption
       if plotParams["linelistFile"] :
-        ann( p, freq, flux, freq[0], freq[-1], plotParams )
-      if npanel == npanels :
+        ann( p, freq, flux, freq[0], freq[-1], plotParams, vsource )
+      if npanel == plotParams["npanels"] :
          p.set_xlabel("freq (GHz)", fontsize=8)
       p.set_ylabel("flux density (Jy)", fontsize=8)
-      if npanel >= npanels :
+      if npanel >= plotParams["maxPanelsPerPage"] :
         pyplot.savefig( pp, format='pdf' )
         pyplot.show()
         npanel = 1
@@ -888,7 +908,7 @@ def calcIntensity( infile, T ) :
   hPlanck = 6.62607e-27 
   kBoltzmann = 1.38065e-16
 
-  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
+  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile, vsource=0. )
   Iba = numpy.zeros( len(name) )
   for n in range(0, len(name) ) :
     TU = TL[n] + (hPlanck * freq[n]*1.e9 / kBoltzmann)   # upper state energy in K
@@ -897,7 +917,7 @@ def calcIntensity( infile, T ) :
   return Iba
 
 def plotIntensity( infile ) :
-  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile )
+  name,freq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( infile, vsource=0. )
   T = 100
   Iba = calcIntensity( infile, T) * 37424./pow(T,1.5)
   fig,ax = pyplot.subplots()
@@ -921,7 +941,7 @@ def snippet2( lineListFile="/o/plambeck/OriALMA/Spectra/snip.csv",
     vrange=90., vsource=5.0 ) :
 
   # read the lineList file
-    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile )
+    name,linefreq,QN,TL,TU,Smusq,intensity,vdop,shadeColor,shadeWidth = processLineList( lineListFile, vsource )
 
   # extract snippet for each line in the file
     for n in range(0,len(name)) :
@@ -2600,4 +2620,15 @@ def vecs( poli, pa, olay, delta=.03, scale=5., color=0 ) :
             (a[0],a[1],length/2.,float(b[2])-180.) )
     fin_poli.close()
     fin_pa.close()
+    fout.close()
+
+def hann( infile, outfile, hann=15 ) :
+    fGHz,amp = numpy.loadtxt( infile, unpack=True )
+    h = numpy.hanning( hann+2 )	# for odd n, numpy returns a window function with 0 as first and last values
+    sm = h[1:-1]/numpy.sum(h)
+      # for some reason numpy.hanning returns an array 
+    amp2 = numpy.convolve( amp, sm, mode="same")
+    fout = open( outfile, "w" )
+    for f,a,a2 in zip(fGHz,amp,amp2) :
+      fout.write("%10.6f %10.5f %10.5f\n" % (f,a,a2))
     fout.close()
