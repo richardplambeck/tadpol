@@ -2546,19 +2546,21 @@ def archivePlot( infile, frqBand, radec=["05:35:14.109","-05:22:22.73"], frqMark
     pp.close()
     pyplot.show()
 
-#clumpList = [ { "name": "SrcI", "box" : "(0.50,-0.50,-0.50,0.50)", "vlsr" : 5. }, \
-#              { "name": "HC1",  "box" : "(1.49,-0.73,0.49,0.27)",  "vlsr" : 5. }, \
-#              { "name": "HC2",  "box" : "(0.59,-2.22,-0.41,-1.22)", "vlsr" : 5. }, \
-#              { "name": "HC3",  "box" : "(-0.76,-4.93,-1.76,-3.93)", "vlsr" : 5. }, \
-#              { "name": "BN",   "box" : "(-5.57,7.35,-6.57,8.35)", "vlsr" : 21. }, \
-#              { "name": "IRc7", "box" : "(-3.34,-1.34,-4.34,-0.34)", "vlsr" : 10. }, \
-#              { "name": "W1",   "box" : "(-4.96,2.07,-5.96,3.07)", "vlsr" : 10. }, \
-#              { "name": "SW",   "box" : "(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. }, \
-#              { "name": "N",    "box" : "(6.29,12.57,5.29,13.57)", "vlsr" : 10. }, \ 
-#              { "name": "N2",   "box" : "(1.7,.7,.7,1.7)", "vlsr" : 10. } ]
+#clumpList = [ { "name": "SrcI",    "region":"arcsec,box(0.50,-0.50,-0.50,0.50)", "vlsr" : 5. }, \
+#              { "name": "HC1",     "region":"arcsec,box(1.49,-0.73,0.49,0.27)",  "vlsr" : 5. }, \
+#              { "name": "HC2",     "region":"arcsec,box(0.59,-2.22,-0.41,-1.22)", "vlsr" : 5. }, \
+#              { "name": "HC3",     "region":"arcsec,box(-0.76,-4.93,-1.76,-3.93)", "vlsr" : 5. }, \
+#              { "name": "BN",      "region":"arcsec,box(-5.57,7.35,-6.57,8.35)", "vlsr" : 21. }, \
+#              { "name": "IRc7",    "region":"arcsec,box(-3.34,-1.34,-4.34,-0.34)", "vlsr" : 10. }, \
+#              { "name": "W1",      "region":"arcsec,box(-4.96,2.07,-5.96,3.07)", "vlsr" : 10. }, \
+#              { "name": "SW",      "region":"arcsec,box(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. }, \
+#              { "name": "N",       "region":"arcsec,box(6.29,12.57,5.29,13.57)", "vlsr" : 10. }, \ 
+#              { "name": "N2",      "region":"arcsec,box(1.7,.7,.7,1.7)", "vlsr" : 10. } ]
+#  
+#              { "name":"SrcIdisk", "region":"arcsec,polygon(.14,-.2,-.03,.02,.01,.07,.22,-.14)",  "vlsr":5.}   use for highres
 
 # added 9 nov 2017; trying to find region with simpler spectrum for Suchi to fit
-clumpList = [ { "name": "SW",   "box" : "(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. } ] 
+clumpList = [ { "name": "SW",   "region" : "arcsec,box(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. } ] 
 
 # use imlist options=stat to get statistics of region; return [plane, max, min, rms] arrays
 def dumpstats( infile, region, tmpfile="junk" ) :
@@ -2591,16 +2593,15 @@ def dumpstats( infile, region, tmpfile="junk" ) :
 def mosspectra( ) :
     noisebox = 'arcsec,box(10)'
     for clump in clumpList:
-      # for spw in ["spw0", "spw1", "spw2", "spw3"] :
-      for spw in ["spw2"] :
+      for spw in ["spw0", "spw1", "spw2", "spw3"] :
         infile = "/alma_scr/plambeck/220GHz_mosaic/miriad/mos.%s.cm" % spw
         hann = 1
-        outfile = "/o/plambeck/OriALMA/220Spectra/%s.%s.txt2" % (clump["name"],spw)
-        # outfile = "/alma_scr/plambeck/XCLASS/%s.%s.txt" % (clump["name"],spw)
+        # outfile = "/o/plambeck/OriALMA/220Spectra/%s.%s.txt2" % (clump["name"],spw)
+        outfile = "/alma_scr/plambeck/XCLASS/%s.%s.txt" % (clump["name"],spw)
         print infile
-        [chan, freq, flux ] = getspec( infile, region='arcsec,box%s' % clump["box"], \
+        [chan, freq, flux ] = getspec( infile, region=clump["region"], \
            vsource=clump["vlsr"], hann=hann )
-        [plane, smax, smin, srms ] = dumpstats( infile, region='%s' % noisebox )
+        [plane, smax, smin, srms ] = dumpstats( infile, region=noisebox )
         print "spectra contains %d chans; stats contains %d planes" % (len(chan),len(plane))
         if len(plane) != len(chan) :
           print "FATAL ERROR"
@@ -2608,16 +2609,15 @@ def mosspectra( ) :
         fout = open( outfile, "w" )
         fout.write("# spectrum created with ori3.mosspectra\n")
         fout.write("# infile: %s\n" % infile)
-        fout.write("# region: arcsec,box%s\n" % clump["box"] )
+        fout.write("# region: %s\n" % clump["region"] )
         fout.write("# vsource: %.2f\n" % clump["vlsr"] )
         fout.write("# hann: %d\n" % hann)
-        fout.write("# chan, freq, flux\n")
+        fout.write("# noisebox: %s\n" % noisebox )
+        fout.write("#  freq_MHz       flux     map_max     map_min    map_rms   plane\n")
         for [chn,frq,flx] in zip( chan, freq, flux ) :
           n = int(chn)-1 
-          fout.write("%5d  %12.6f  %9.7f  %9.7f  %9.7f  %9.7f\n" % (chn,frq,flx,smax[n],smin[n],srms[n]))
+          fout.write("%13.5f  %9.7f  %9.7f  %9.7f  %9.7f  %5d\n" % (1000.*frq,flx,smax[n],smin[n],srms[n],chn))
         fout.close() 
-        # dumpspec( infile, outfile, region='arcsec,box%s' % clump["box"], \
-        #         vsource=clump["vlsr"], hann=1. )
 
 # short routine to read absolute positions from olay file, generate regions
 def clumpBoxes( infile="xx.olay", box=1. ) :
