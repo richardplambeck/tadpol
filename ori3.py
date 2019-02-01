@@ -2554,20 +2554,70 @@ def archivePlot( infile, frqBand, radec=["05:35:14.109","-05:22:22.73"], frqMark
 #              { "name": "IRc7", "box" : "(-3.34,-1.34,-4.34,-0.34)", "vlsr" : 10. }, \
 #              { "name": "W1",   "box" : "(-4.96,2.07,-5.96,3.07)", "vlsr" : 10. }, \
 #              { "name": "SW",   "box" : "(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. }, \
-#              { "name": "N",    "box" : "(6.29,12.57,5.29,13.57)", "vlsr" : 10. } ]
+#              { "name": "N",    "box" : "(6.29,12.57,5.29,13.57)", "vlsr" : 10. }, \ 
+#              { "name": "N2",   "box" : "(1.7,.7,.7,1.7)", "vlsr" : 10. } ]
 
 # added 9 nov 2017; trying to find region with simpler spectrum for Suchi to fit
-clumpList = [ { "name": "N2",   "box" : "(1.7,.7,.7,1.7)", "vlsr" : 10. } ]
+clumpList = [ { "name": "SW",   "box" : "(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. } ] 
 
+# use imlist options=stat to get statistics of region; return [plane, max, min, rms] arrays
+def dumpstats( infile, region, tmpfile="junk" ) :
+    plane = []
+    smax = []
+    smin = []
+    srms = [] 
+    p= subprocess.Popen( ( shlex.split("imlist in=%s region=%s options=stat log=%s" % \
+      (infile,region,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+    print result
+    if "Fatal Error" in result :
+      print " --- fatal --- "
+      return
+    n = 0
+    fin = open( tmpfile, "r" )
+    for line in fin :
+      n = n+1
+      if n>12 :
+        a = line.split()
+        plane.append( int(a[0]) )
+        smax.append( float(a[3]) )
+        smin.append( float(a[4]) )
+        srms.append( float(a[6]) )
+    return plane, smax, smin, srms
+    fin.close()
+
+# mosspectra is designed to write out spectra for Suchi's project
 def mosspectra( ) :
+    noisebox = 'arcsec,box(10)'
     for clump in clumpList:
-      for spw in ["spw0", "spw1", "spw2", "spw3"] :
-        infile = "mos.%s.cm" % spw
-        # outfile = "/o/plambeck/OriALMA/220Spectra/%s.%s.txt" % (clump["name"],spw)
-        outfile = "/alma_scr/plambeck/XCLASS/%s.%s.txt" % (clump["name"],spw)
+      # for spw in ["spw0", "spw1", "spw2", "spw3"] :
+      for spw in ["spw2"] :
+        infile = "/alma_scr/plambeck/220GHz_mosaic/miriad/mos.%s.cm" % spw
+        hann = 1
+        outfile = "/o/plambeck/OriALMA/220Spectra/%s.%s.txt2" % (clump["name"],spw)
+        # outfile = "/alma_scr/plambeck/XCLASS/%s.%s.txt" % (clump["name"],spw)
         print infile
-        dumpspec( infile, outfile, region='arcsec,box%s' % clump["box"], \
-                vsource=clump["vlsr"], hann=1. )
+        [chan, freq, flux ] = getspec( infile, region='arcsec,box%s' % clump["box"], \
+           vsource=clump["vlsr"], hann=hann )
+        [plane, smax, smin, srms ] = dumpstats( infile, region='%s' % noisebox )
+        print "spectra contains %d chans; stats contains %d planes" % (len(chan),len(plane))
+        if len(plane) != len(chan) :
+          print "FATAL ERROR"
+          return
+        fout = open( outfile, "w" )
+        fout.write("# spectrum created with ori3.mosspectra\n")
+        fout.write("# infile: %s\n" % infile)
+        fout.write("# region: arcsec,box%s\n" % clump["box"] )
+        fout.write("# vsource: %.2f\n" % clump["vlsr"] )
+        fout.write("# hann: %d\n" % hann)
+        fout.write("# chan, freq, flux\n")
+        for [chn,frq,flx] in zip( chan, freq, flux ) :
+          n = int(chn)-1 
+          fout.write("%5d  %12.6f  %9.7f  %9.7f  %9.7f  %9.7f\n" % (chn,frq,flx,smax[n],smin[n],srms[n]))
+        fout.close() 
+        # dumpspec( infile, outfile, region='arcsec,box%s' % clump["box"], \
+        #         vsource=clump["vlsr"], hann=1. )
 
 # short routine to read absolute positions from olay file, generate regions
 def clumpBoxes( infile="xx.olay", box=1. ) :
