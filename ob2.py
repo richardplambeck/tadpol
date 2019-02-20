@@ -21,6 +21,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import scipy
 from scipy.interpolate import splrep, splev, interp1d
 import scipy.fftpack
+import scipy.signal
 import scipy.stats
 import os
 import bisect
@@ -688,37 +689,83 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
 #
 def FFT( infile, FTS=False ) :
     fGHz,trans,phs,u,angI,FTS = readTransFile( infile )     # read single data file
-    interp( fGHz, trans, phs )
-    if FTS :
-      yf = numpy.fft.fft(trans) 
-    else :
-      measReal = trans * numpy.cos(phs*math.pi/180.)
-      measImag = trans * numpy.sin(phs*math.pi/180.)
-      yf = numpy.abs( numpy.fft.fft(measReal + 1j*measImag) )
-      yf2 = numpy.abs( numpy.fft.fft( trans*trans) )
-    delta = fGHz[1]-fGHz[0]
-    tnsec = numpy.linspace( 0., 1./(2.*delta), len(yf)//2 )
-    print "delta = ",delta
-    print "tnsec = ",tnsec
+    fnew,ynew = interp( fGHz, trans, phs )
+    # if FTS :
+    #   yf = numpy.fft.fft(trans) 
+    # measReal = trans * numpy.cos(phs*math.pi/180.)
+    # measImag = trans * numpy.sin(phs*math.pi/180.)
+    # yf = numpy.abs( numpy.fft.fft(measReal + 1j*measImag) )
+    # yf = numpy.abs( numpy.fft.fft(ynew) )
+    # yf2 = numpy.abs( numpy.fft.fft( trans*trans) )
+    delta = fnew[1]-fnew[0]
+        # '//' means integer division, e.g. 5//2 = 2
+    #print "delta = ",delta
+    #print "tnsec = ",tnsec
+    yf = scipy.fftpack.fft( numpy.power( numpy.abs(ynew),2) )
+    # yf = scipy.fftpack.fft( ynew )
+    # tnsec = numpy.linspace( 0., 1./(2.*delta), len(yf)//2 )   
+    # yplot = numpy.abs(yf[1:len(yf)//2]) + numpy.abs(yf[-1:len(yf)//2:-1])
+    xf = scipy.fftpack.fftfreq( len(fnew), fnew[1]-fnew[0] )
+    xp = scipy.fftpack.fftshift(xf)
+    yp = scipy.fftpack.fftshift(yf)
+    yf2 = scipy.fftpack.fft( numpy.power(numpy.abs(ynew),2) )
+
     fig = pyplot.subplot(1,1,1)
+    #fig.semilogy( tnsec[2:], yplot[1:], "-",color="r", linewidth=0.5 )
     #fig.plot( tnsec, yf[0:len(yf)//2], "-",color="r", linewidth=0.5 )
-    if not FTS :
-      fig.plot( tnsec[1:], yf2[1:len(yf)//2], "-",color="b", linewidth=0.5 )
-    else :
-      fig.plot( tnsec, numpy.abs(yf)[0:len(yf)//2], "-", color="b", linewidth=0.5)
+    #if not FTS :
+    #  fig.plot( tnsec[1:], yf2[1:len(yf)//2], "-",color="b", linewidth=0.5 )
+    #else :
+    # fig.plot( tnsec, yf[0:len(yf)//2], "-", color="b", linewidth=0.5)
+    fig.semilogy( xp, numpy.abs(yp), "-", color="b", linewidth=0.5)
+    fig.grid()
     pyplot.show()
+    fout = open("junk2","w")
+    npts = len(yf)
+    for n in range(1,npts//2) :
+      fout.write("%10.5f  %10.5f  %10.5f  %10.5f  %10.5f\n" % (xf[n],numpy.abs(yf[n]),xf[npts-n],abs(yf[npts-n]), numpy.abs(yf2[n]) ) )
+    fout.close()
 
 # interpolate to fill in missing data so that FFT can work properly
-def interp( f, amp, phs ) :
+# finds longest sequence of data *ending in fmax* for which gaps do not exceed 2*dfout
+# CAUTION: right now, the bad sections are assumed to be at low end of band,
+#   so the sequence ends at fmax
+# fill in gaps of up to .08 MHz using numpy.interp
+#
+def interp( f, amp, phs, dfout=.04 ) :
+
+  # find spacing of original data
     deltaf = f[1:] - f[0:-1]
-    print "deltaf = ",deltaf
     (values,counts) = numpy.unique(deltaf,return_counts=True)
     spacing = values[numpy.argmax(counts)]
-    print "spacing = ", spacing
-    f1 = round(f[0]/spacing) * spacing
-    f2 = round(f[-1]/spacing) * spacing
-    print "f1,f2 = ", f1,f2
+    print "original data: %d points from %.2f to %.2f GHz, %.2f GHz spacing" % \
+       (len(f),f[0],f[-1],spacing)
 
+  # find longest sequence *ending in f[-1]* with gaps <= 2*dfout
+    for i in range(1,len(f)) :
+      gap = round( (f[i]-f[i-1])/dfout )
+      if gap > 1 :
+        print "... gap of %3d points precedes frequency %6.2f" % (gap,f[i])
+        if gap > 2 :
+          fmin = f[i]
+    fnew = numpy.arange(fmin,f[-1]+spacing,dfout)
+    print "interpolated data: %d points from %.2f to %.2f GHz, %.2f GHz spacing" % \
+       (len(fnew),fnew[0],fnew[-1],dfout) 
+
+  # convert amp and phs to complex
+    measReal = amp * numpy.cos(phs*math.pi/180.)
+    measImag = amp * numpy.sin(phs*math.pi/180.)
+    newReal = numpy.interp(fnew,f,measReal)
+    newImag = numpy.interp(fnew,f,measImag)
+    ynew = newReal + 1j*newImag
+    newAmp = numpy.abs(ynew)
+    newPhs = numpy.angle( ynew, deg=True )
+    fout = open("junk", "w")
+    for f1,a1,p1 in zip(fnew,newAmp,newPhs) :
+      fout.write("%8.3f  %9.6f  %9.3f\n" % (f1,a1,p1) )
+    fout.close()
+    return fnew,ynew
+  
 # compute magnitude of difference from smoothdata
 def error( data, smoothdata ):
     f,t,ph,u,angI,FTS = readTransFile( data )     # read single data file
@@ -1376,6 +1423,7 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
 
   # one page per dataset
     for datafile in fitParams["datafileList"] :
+      print fitParams["title"]
       fig =  pyplot.figure( figsize=(11,8) )
       pyplot.suptitle( "%s   %s   %s" % (fitParams["title"],pickleFile,datafile), fontsize=12 )
 
@@ -1477,6 +1525,7 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       ax.text( 0.87, ylab, "tanDelta", style='oblique', horizontalalignment='center')
       ylab = ylab - 0.02
      
+      totThickness = 0.
       for nl in range(0,nlayers) : 
         ylab = ylab - ystep 
         if nrListIn[nl][0] < 0. :
@@ -1500,6 +1549,7 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
           ax.text( 0.105, ylab, "%.4f" % (tmin/2.54), horizontalalignment='center', color=lowColor, style=lowStyle ) 
           ax.text( 0.180, ylab, "%.4f" % (tcmList[nbest][nl]/2.54), horizontalalignment='center', color='blue' ) 
           ax.text( 0.255, ylab, "%.4f" % (tmax/2.54), horizontalalignment='center', color=highColor, style=highStyle ) 
+          totThickness = totThickness + tcmList[nbest][nl]/2.54
 
           nrmin,nrmax = tLimits( savenr, nl )
           lowColor = 'gray' 
@@ -1533,6 +1583,11 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
           ax.text( 0.80, ylab, "%.4f" % tanDmin, horizontalalignment='center', color=lowColor, style=lowStyle ) 
           ax.text( 0.87, ylab, "%.4f" % (tanDeltaList[nbest][nl]), horizontalalignment='center', color='blue' ) 
           ax.text( 0.94, ylab, "%.4f" % tanDmax, horizontalalignment='center', color=highColor, style=highStyle ) 
+
+    # put total modeled thickness on last line if more than 1 layer
+      if nlayers > 1 :
+        ylab = ylab - ystep 
+        ax.text( 0.180, ylab, "%.4f" % totThickness, horizontalalignment='center', color='blue' ) 
 
       pyplot.axis('off')
 
