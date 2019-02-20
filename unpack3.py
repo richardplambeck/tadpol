@@ -49,6 +49,7 @@ def trans( infile, outfile, refpos, Ppos, tol=0.2, minline=0 ) :
     fout = open( outfile,"w")
     fout2 = open( "repeat.dat", "w" )
     fout2.write("# %s\n" % infile )
+    fout3 = open( "refamps", "w" )
     nline = 0
     nref = 0
     nP = 0
@@ -73,6 +74,7 @@ def trans( infile, outfile, refpos, Ppos, tol=0.2, minline=0 ) :
     # copy all comment lines to output file
       if line.startswith("#") and not line.startswith("# freq:") :   
         fout.write("%s" % line )
+        fout3.write("%s" % line )
 
     # new frequency; write out previously accumulated daa
       if line.startswith("#") :          
@@ -81,7 +83,6 @@ def trans( infile, outfile, refpos, Ppos, tol=0.2, minline=0 ) :
         elif Bad :
           print "bad data - skipping frequency %.2f" % freq
         else :
-          print freq, nref
           frefsave.append( freq )
           trans = (ampP/nP)/(ampref/nref)
           amprefsave.append( ampref/nref ) 
@@ -96,7 +97,6 @@ def trans( infile, outfile, refpos, Ppos, tol=0.2, minline=0 ) :
             delphs = delphs - 360.
           while (delphs < -180.) :
             delphs = delphs + 360.
-          print freq, nref, nP, amprefsave[-1], ampP, trans
           f.append( freq )
           t.append( transTrue )
           p.append( delphs ) 
@@ -170,11 +170,11 @@ def trans( infile, outfile, refpos, Ppos, tol=0.2, minline=0 ) :
     fout2.close()
 
   # now dump out amplitudes of reference, to search for standing waves
-    fout3 = open( "refamps", "w" )
+  # add angIdeg line and 4th column with 0 so I can read with readTransFile
     iarr = numpy.argsort(frefsave)
     for i in range(0,len(iarr)) :
         j = iarr[i]
-        fout3.write("%8.2f  %8.6f  %8.3f\n" % (frefsave[j],amprefsave[j],phsrefsave[j]) )
+        fout3.write("%8.2f  %8.6f  %8.3f  0.0\n" % (frefsave[j],amprefsave[j],phsrefsave[j]) )
     fout3.close()
 
 
@@ -182,43 +182,48 @@ def trans( infile, outfile, refpos, Ppos, tol=0.2, minline=0 ) :
 def binit( infile, frqinterval=0.199, minpts=3 ) :
     fin = open(infile+".dat","r")
     fout = open(infile+".avg.dat","w")
-    #fout2 = open(infile+".pwr.dat","w")
     First = True       # will pick out first data line; write header above this
     fout.write( "# binned data from %s\n" % (infile+".dat") )
     f0 = 0.
     npts = 0
-    frq = 0. 
+    frq = []
     vec = []
     for line in fin:
       if line.startswith("#") :
         fout.write( "%s" % line )
       else :
+
         if First :
           fout.write( "# ------------------------------------------------------------------ \n")
           fout.write("#  frq     amp_avg   phs_avg    vec_std     pwr_avg   pwr_std   navg\n")
           First = False
+
         a = line.split()
-        if (float(a[0]) - f0) > frqinterval :
-          if npts >= minpts :
+        if (float(a[0]) - f0) >= frqinterval :
+          if len(vec) >= minpts :
             vecavg = numpy.average( vec )
-            if npts > 1 :
+            if len(vec) > 1 :
               vecstd = numpy.std(vec,ddof=1)/math.sqrt(float(npts))
               pwrstd = numpy.std(pwr,ddof=1)/math.sqrt(float(npts))
             else :
               vecstd = 1.
               pwrstd = 1.
-            fout.write("%8.2f  %8.6f  %8.3f  %10.6f    %8.6f  %8.6f   %2d\n" % (frq/npts, numpy.absolute(vecavg), \
+            for i in range(0,len(vec)) :
+              if abs(vec[i] - vecavg) > 2.*math.sqrt(npts)*vecstd :
+                print "noisy point at %.2f" % frq[i], abs(vec[i] - vecavg), 3.*math.sqrt(npts)*vecstd
+                #vec.remove(i)
+              #npts = len(vec)
+            frqavg = numpy.average( frq )
+            fout.write("%8.2f  %8.6f  %8.3f  %10.6f    %8.6f  %8.6f   %2d\n" % (frqavg, numpy.absolute(vecavg), \
               numpy.angle(vecavg,deg=True), vecstd, numpy.average(pwr), pwrstd, npts)) 
-            #fout2.write("%8.2f  %8.6f  %8.6f\n" % (frq/npts, numpy.average( pwr ), pwrstd ))
           else :
             fout.write("# missing bin; npts = %d, too few to compute uncertainty\n" % npts)
-            #fout2.write("# npts = %d\n" % npts)
           f0 = float(a[0])
           npts = 0
-          frq = 0. 
+          frq = [] 
           vec = []
           pwr = []
-        frq = frq + float(a[0])
+        frq.append( float(a[0]) )
         vec.append( float(a[1]) * numpy.exp( 1j*math.radians(float(a[2])) ) )   # convert to real+j*imag
         pwr.append( pow( float(a[1]), 2) )
         npts = npts + 1
@@ -226,18 +231,16 @@ def binit( infile, frqinterval=0.199, minpts=3 ) :
   # remember to print out the last point
     if npts >= minpts :
       vecavg = numpy.average( vec )
+      frqavg = numpy.average( frq )
       if npts > 1 :
         vecstd = numpy.std(vec,ddof=1)/math.sqrt(float(npts))
         pwrstd = numpy.std(pwr,ddof=1)/math.sqrt(float(npts))
       else :
         vecstd = 1.
         pwrstd = 1.
-      fout.write("%8.2f  %8.6f  %8.3f  %10.6f    %8.6f  %8.6f   %2d\n" % (frq/npts, numpy.absolute(vecavg), \
+      fout.write("%8.2f  %8.6f  %8.3f  %10.6f    %8.6f  %8.6f   %2d\n" % (frqavg, numpy.absolute(vecavg), \
         numpy.angle(vecavg,deg=True), vecstd, numpy.average(pwr), pwrstd, npts)) 
-      #fout2.write("%8.2f  %8.6f  %8.6f\n" % (frq/npts, numpy.average( pwr ), pwrstd ))
     else :
       fout.write("# missing bin; npts = %d, too few to compute uncertainty\n" % npts)
-      #fout2.write("# npts = %d\n" % npts)
     fin.close()
     fout.close()
-    #fout2.close()
