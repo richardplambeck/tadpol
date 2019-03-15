@@ -116,7 +116,7 @@ def unwrap( phi ) :
         phi[n] = phi[n] - 360.
     return phi
      
-# expandTree2 uses meshgrid to expand the thickness and refractive index arrays
+# expandTree uses meshgrid to expand the thickness and refractive index arrays
 #
 # input: 
 #   tcmRange = [tcmMin,tcmMax]  - specifies allowed range of total thicknesses
@@ -136,7 +136,7 @@ def unwrap( phi ) :
 # the deficiency of this approach is that maybe only a small set of thicknesses is possible; it's
 #   dumb to create full very large expanded tree, then prune out all layers with unacceptable thicknesses
 #
-def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
+def expandTree( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
     # print "tcmListIn = ",tcmListIn
     # print "nrListIn = ",tcmListIn
     # print "tanDListIn = ", tanDListIn
@@ -201,35 +201,43 @@ def expandTree2( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
 
   # constrained layers are indicated by -L, where L is the corresponding layer
     for n in range(0,nlayers) :
+
+    # deal with mirrored thicknesses 
       if b[n][0] < 0. :
         m = int( abs(b[n][0]) + 0.5 )
         try :
           b[n] = b[m-1]
-          # print "mirrored thicknesses for layer %d into layer row %d" % (m,n+1)
+          print "mirrored thicknesses for layer %d into layer row %d" % (m,n+1)
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m-1,n)
           return
+    
+    # deal with mirrored refractive indices
       if b[n+nlayers][0] < 0. :
         m = int( abs(b[n+nlayers][0]) + 0.5 )    # e.g., -1 -> 1
         try :
           b[n+nlayers] = b[m+nlayers-1]
-          # print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
+          print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m+nlayers-1,n+nlayers)
           return
+
+    # deal with mirrored loss tangents
       if b[n+2*nlayers][0] < 0. :
         m = int( abs(b[n+2*nlayers][0]) + 0.5 )    # e.g., -1 -> 1
         try :
           b[n+2*nlayers] = b[m+2*nlayers-1]
-          # print "mirrored tanDeltas for layer %d into layer %d" % (m,n+1)
+          print "mirrored tanDeltas for layer %d into layer %d" % (m,n+1)
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m+2*nlayers-1,n+2*nlayers)
           return
 
-  # compute total thickness for each possible stack
+  # compute total thickness for each possible stack; len(b[0] = total number of trials
     totcm = numpy.zeros( len(b[0]) )
     for i in range(0,nlayers) :
+      print b[i]/2.54
       totcm = totcm + b[i]
+    print totcm/2.54
   
   # now form transpose, retain only rows where thickness is within allowed range
     c = numpy.transpose(b)
@@ -732,7 +740,7 @@ def FFT( infile, FTS=False ) :
 #   so the sequence ends at fmax
 # fill in gaps of up to .08 MHz using numpy.interp
 #
-def interp( f, amp, phs, dfout=.04 ) :
+def interp( f, amp, phs, dfout=.02 ) :
 
   # find spacing of original data
     deltaf = f[1:] - f[0:-1]
@@ -1073,7 +1081,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       FTSdata.append( FTS )
 
   # create tree of parameters to search
-    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
       # tcmList = [ [tcm1,tcm2,...], [tcm1,tcm2,...], ... ] - expanded lists of thicknesses
       # nrList = [ [nr1,nr2,...], [nr1,nr2,...], ... ] - expanded lists of refractive indices
       # thus: { tcmlist[i], nrList[i], tanDeltaList[i] } specify one set of thicknesses, refractive indices, tanDs to be modeled
@@ -1106,7 +1114,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       for i in range(0,ntrials) :
         if chisq[0,i] < pchisqCutoff :
           tx,nx,tDx = expandPoint( fitParams, i, tcmList, nrList, tanDeltaList ) 
-          tcmExtra,nrExtra,tanDextra = expandTree2( fitParams["tcmRange"], tx, nx, tDx )
+          tcmExtra,nrExtra,tanDextra = expandTree( fitParams["tcmRange"], tx, nx, tDx )
         # append to existing list of trials (should check for duplicates here!)
           tcmList = numpy.concatenate( (tcmList, tcmExtra) )
           nrList = numpy.concatenate( (nrList, nrExtra) )
@@ -1483,8 +1491,10 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       ax.tick_params( labelsize=10 )
       if FTS :
         ax.set_ylim( [.3,1.05] )
-      else :
+      elif ymin > .5 :
         ax.set_ylim( [.5,1.05] )
+      else :
+        ax.set_ylim( [ymin,ymax] )
       pyplot.grid(True)
 
     # middle right panel is measured-theoretical trans
@@ -1661,9 +1671,9 @@ def tabulateResults( pickleFile, outFile="summary.csv" ) :
 # vary thickness of each layer over a range, predict transmission curve
 # fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
 # fuzzy1 does (weighted) vector average of ALL allowed thicknesses to get final transmission amp and phase;
-def fuzzy1( fitFile, fGHz=numpy.arange(70.,115.1,.1), angIdeg=5.16 ) :
+def fuzzy1( fitFile, fGHz=numpy.arange(65.,175.1,.1), angIdeg=5.16 ) :
     fitParams = readFitFile( fitFile )
-    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     ntrials = len(tcmList)
     print "averaging results of %d trials" % ntrials
     vecmodel = numpy.zeros( len(fGHz), dtype=complex )
@@ -1690,7 +1700,7 @@ def fuzzy1( fitFile, fGHz=numpy.arange(70.,115.1,.1), angIdeg=5.16 ) :
   # now write out the model data, in format compatible with readTransData
     unc = .02
     for i in range(0,len(fGHz)) :
-      fout.write("%8.2f  %8.6f  %8.3f  %6.4f   1  %7.3f\n" % (fGHz[i], amplitude[i], phase[i], unc, pwr[i] ) )
+      fout.write("%8.2f  %8.6f  %8.3f  %6.4f   1  %9.5f\n" % (fGHz[i], amplitude[i], phase[i], unc, pwr[i] ) )
     fout.close()
 
 # fuzzy2 creates model transmission data for the case where the surfaces are rough on
@@ -1710,7 +1720,7 @@ def fuzzy2( fitFile, angIdeg=5.16 ) :
     #fGHz = numpy.arange(70.,230.1,.2)
     fGHz = numpy.arange(110.,240.,1.)
     fitParams = readFitFile( fitFile )
-    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     ntrials = len(tcmList)
     if len(fitParams["deltaTinList"]) == len(tcmList[0])+1 :
       print "using deltaTinList =", fitParams["deltaTinList"]
@@ -1927,7 +1937,7 @@ def my3Dplot2( pickleFile, chisqIndex=-1, worstRatio=10. ) :
 
 def testExpand( fitFile, index) :
     fitParams = readFitFile( fitFile )
-    tcmList,nrList,tanDeltaList = expandTree2( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     print "\nstart with:", tcmList[index], nrList[index], tanDeltaList[index]
     print "\nexpand to:"
     expandPoint( fitParams, index, tcmList, nrList, tanDeltaList ) 
