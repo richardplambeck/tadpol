@@ -19,7 +19,7 @@ import matplotlib.pyplot as pyplot
 from matplotlib.backends.backend_pdf import PdfPages
 from mpl_toolkits.mplot3d import Axes3D
 import scipy
-from scipy.interpolate import splrep, splev, interp1d
+from scipy.interpolate import splrep, splev, interp1d, UnivariateSpline
 import scipy.fftpack
 import scipy.signal
 import scipy.stats
@@ -157,10 +157,10 @@ def expandTree( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
       tanDList.append( tanDListIn[n][0] )
    
   # in the special case where ntrials=1 (as in modeling a stack), we are finished!
-    if ntrials == 1 :
-      print "modeling only 1 trial"
-      return numpy.array([tcmList]),numpy.array([nrList]),numpy.array([tanDList])
-    elif ntrials > 1.e12 :
+    #if ntrials == 1 :
+    #  print "modeling only 1 trial"
+    #  return numpy.array([tcmList]),numpy.array([nrList]),numpy.array([tanDList])
+    if ntrials > 1.e12 :
       print "exiting! too many possible trials, estimated at %.2e!" % ntrials
       return
 
@@ -235,9 +235,9 @@ def expandTree( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
   # compute total thickness for each possible stack; len(b[0] = total number of trials
     totcm = numpy.zeros( len(b[0]) )
     for i in range(0,nlayers) :
-      print b[i]/2.54
+      # print b[i]/2.54
       totcm = totcm + b[i]
-    print totcm/2.54
+    # print totcm/2.54
   
   # now form transpose, retain only rows where thickness is within allowed range
     c = numpy.transpose(b)
@@ -353,6 +353,7 @@ def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
         # h = nrefrac * tcm * cos(theta2)
         # Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
         nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+        print nCosTheta2
         h = tcm * nCosTheta2
         Y1 = nCosTheta2
         M = numpy.dot( numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] ), M)
@@ -689,6 +690,18 @@ def covarPlot3( pickleFile, chisqIndex=-1, worstRatio=10. ) :
       pyplot.show()
     pp.close()
 
+def smoothCurve( infile, df=0.1 ):
+    fGHz,trans,phs,u,angI,FTS = readTransFile( infile )     # read single data file
+    spl1 = UnivariateSpline(fGHz,trans,k=2)
+    spl2 = UnivariateSpline(fGHz,trans,k=3)
+    fnew = numpy.arange( fGHz[0],fGHz[-1]+df,df)
+    ss1 = spl1(fnew)
+    ss2 = spl2(fnew)
+    fout = open("junk","w")
+    for f,s1,s2 in zip(fnew,ss1,ss2) :
+      fout.write("%8.3f  %9.5f  %9.5f\n" % (f,s1,s2) )
+    fout.close()
+
 # produce Fourier transform of measurements; convert amp,phase to complex
 # if FTS=False, 1st 3 columns of data file are interpreted as fGHz, trans_amp, trans_phase(deg)
 # if FTS=True, 1st 3 columns of data file are interpreted as fGHz, trans_pwr, uncertainty 
@@ -911,11 +924,11 @@ def readFitFile( sampleName ) :
         tanDeltaList.append( makeList(line[line.find("=")+1:]) )
       elif "deltaTin" in line :
         deltaTinList.append( float(line[line.find("=")+1:] ) )    # allow only 1 value!
-    # this is an alternative way of specifying mirrored layer
+    # "mirror = n" is an alternative way of specifying mirrored layer 
       elif "mirror" in line :
-        tcmList.append( makeList(line[line.find("=")+1:]) )
-        nrList.append( makeList(line[line.find("=")+1:]) )
-        tanDeltaList.append( makeList(line[line.find("=")+1:]) )
+        tcmList.append( -1*makeList(line[line.find("=")+1:]) )
+        nrList.append( -1*makeList(line[line.find("=")+1:]) )
+        tanDeltaList.append( -1*makeList(line[line.find("=")+1:]) )
   fin.close()
   fitParams = { "datafileList": datafileList, \
                 "title" : title, \
@@ -1096,6 +1109,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
     print "\nbeginning prefit"
     print "modeling %d layers, %d trials" % (nlayers, ntrials)
     for i in range(0,ntrials) :
+      # print i, tcmList[i]/2.54, nrList[i], tanDeltaList[i]
       printElapsed( ntrials, i, 1000, secs0 )
       errs = []
       for j in range(0,2*nDataSets,2) :
@@ -1538,61 +1552,64 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       totThickness = 0.
       for nl in range(0,nlayers) : 
         ylab = ylab - ystep 
+        nlyr = nl+1
+        ntest = nl
         if nrListIn[nl][0] < 0. :
-          ax.text( 0.0, ylab, "%d: mirror layer %d" % (nl+1, -1*nrListIn[nl][0]), \
-            transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
-            color="black", rotation='horizontal' )
-        else :
-          ax.text( 0.03, ylab, "%d" % (nl+1), horizontalalignment='center')
+          nlyr = int(-1*nrListIn[nl][0])
+          ntest = nlyr - 1    # use for checking search range; use mirror value
+          #ax.text( 0.0, ylab, "%d: mirror layer %d" % (nl+1, -1*nrListIn[nl][0]), \
+          #  transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+          #  color="black", rotation='horizontal' )
 
-          tmin,tmax = tLimits( savet, nl)
-          lowColor = 'gray'
-          lowStyle = 'oblique'
-          highColor = 'gray'
-          highStyle = 'oblique'
-          if tcmListIn[nl][0] < tmin :
-            lowColor = 'black'               # search range extends below lower limit
-            lowStyle = 'normal'
-          if tcmListIn[nl][-1] > tmax :
-            highColor = 'black'              # search range extends above upper limit
-            highStyle = 'normal'
-          ax.text( 0.105, ylab, "%.4f" % (tmin/2.54), horizontalalignment='center', color=lowColor, style=lowStyle ) 
-          ax.text( 0.180, ylab, "%.4f" % (tcmList[nbest][nl]/2.54), horizontalalignment='center', color='blue' ) 
-          ax.text( 0.255, ylab, "%.4f" % (tmax/2.54), horizontalalignment='center', color=highColor, style=highStyle ) 
-          totThickness = totThickness + tcmList[nbest][nl]/2.54
+        ax.text( 0.03, ylab, "%d" % nlyr, horizontalalignment='center')
+        tmin,tmax = tLimits( savet, nl)
+        lowColor = 'gray'
+        lowStyle = 'oblique'
+        highColor = 'gray'
+        highStyle = 'oblique'
+        if tcmListIn[ntest][0] < tmin :
+          lowColor = 'black'               # search range extends below lower limit
+          lowStyle = 'normal'
+        if tcmListIn[ntest][-1] > tmax :
+          highColor = 'black'              # search range extends above upper limit
+          highStyle = 'normal'
+        ax.text( 0.105, ylab, "%.4f" % (tmin/2.54), horizontalalignment='center', color=lowColor, style=lowStyle ) 
+        ax.text( 0.180, ylab, "%.4f" % (tcmList[nbest][nl]/2.54), horizontalalignment='center', color='blue' ) 
+        ax.text( 0.255, ylab, "%.4f" % (tmax/2.54), horizontalalignment='center', color=highColor, style=highStyle ) 
+        totThickness = totThickness + tcmList[nbest][nl]/2.54
 
-          nrmin,nrmax = tLimits( savenr, nl )
-          lowColor = 'gray' 
-          lowStyle = 'oblique'
-          highColor = 'gray'
-          highStyle = 'oblique'
-          if nrListIn[nl][0] < nrmin :
-            lowColor = 'black'               # search range extends below lower limit
-            lowStyle = 'normal'
-          if nrListIn[nl][-1] > nrmax :
-            highColor = 'black'              # search range extends above upper limit
-            highStyle = 'normal'
-          ax.text( 0.355, ylab, "%.3f" % nrmin, horizontalalignment='center', color=lowColor, style=lowStyle) 
-          ax.text( 0.420, ylab, "%.3f" % (nrList[nbest][nl]), color='blue', horizontalalignment='center') 
-          ax.text( 0.485, ylab, "%.3f" % nrmax, horizontalalignment='center', color=highColor, style=highStyle) 
-          ax.text( 0.585, ylab, "%.3f" % pow(nrmin,2), horizontalalignment='center', color=lowColor, style=lowStyle) 
-          ax.text( 0.650, ylab, "%.3f" % pow(nrList[nbest][nl],2), color='blue', horizontalalignment='center') 
-          ax.text( 0.715, ylab, "%.3f" % pow(nrmax,2), horizontalalignment='center', color=highColor, style=highStyle) 
+        nrmin,nrmax = tLimits( savenr, nl )
+        lowColor = 'gray' 
+        lowStyle = 'oblique'
+        highColor = 'gray'
+        highStyle = 'oblique'
+        if nrListIn[ntest][0] < nrmin :
+          lowColor = 'black'               # search range extends below lower limit
+          lowStyle = 'normal'
+        if nrListIn[ntest][-1] > nrmax :
+          highColor = 'black'              # search range extends above upper limit
+          highStyle = 'normal'
+        ax.text( 0.355, ylab, "%.3f" % nrmin, horizontalalignment='center', color=lowColor, style=lowStyle) 
+        ax.text( 0.420, ylab, "%.3f" % (nrList[nbest][nl]), color='blue', horizontalalignment='center') 
+        ax.text( 0.485, ylab, "%.3f" % nrmax, horizontalalignment='center', color=highColor, style=highStyle) 
+        ax.text( 0.585, ylab, "%.3f" % pow(nrmin,2), horizontalalignment='center', color=lowColor, style=lowStyle) 
+        ax.text( 0.650, ylab, "%.3f" % pow(nrList[nbest][nl],2), color='blue', horizontalalignment='center') 
+        ax.text( 0.715, ylab, "%.3f" % pow(nrmax,2), horizontalalignment='center', color=highColor, style=highStyle) 
 
-          tanDmin,tanDmax = tLimits( savetanD, nl )
-          lowColor = 'gray'
-          lowStyle = 'oblique'
-          highColor = 'gray'
-          highStyle = 'oblique'
-          if tanDeltaListIn[nl][0] < tanDmin :
-            lowColor = 'black'               # search range extends below lower limit
-            lowStyle = 'normal'
-          if tanDeltaListIn[nl][-1] > tmax :
-            highColor = 'black'              # search range extends above upper limit
-            highStyle = 'normal'
-          ax.text( 0.80, ylab, "%.4f" % tanDmin, horizontalalignment='center', color=lowColor, style=lowStyle ) 
-          ax.text( 0.87, ylab, "%.4f" % (tanDeltaList[nbest][nl]), horizontalalignment='center', color='blue' ) 
-          ax.text( 0.94, ylab, "%.4f" % tanDmax, horizontalalignment='center', color=highColor, style=highStyle ) 
+        tanDmin,tanDmax = tLimits( savetanD, nl )
+        lowColor = 'gray'
+        lowStyle = 'oblique'
+        highColor = 'gray'
+        highStyle = 'oblique'
+        if tanDeltaListIn[ntest][0] < tanDmin :
+          lowColor = 'black'               # search range extends below lower limit
+          lowStyle = 'normal'
+        if tanDeltaListIn[ntest][-1] > tmax :
+          highColor = 'black'              # search range extends above upper limit
+          highStyle = 'normal'
+        ax.text( 0.80, ylab, "%.4f" % tanDmin, horizontalalignment='center', color=lowColor, style=lowStyle ) 
+        ax.text( 0.87, ylab, "%.4f" % (tanDeltaList[nbest][nl]), horizontalalignment='center', color='blue' ) 
+        ax.text( 0.94, ylab, "%.4f" % tanDmax, horizontalalignment='center', color=highColor, style=highStyle ) 
 
     # put total modeled thickness on last line if more than 1 layer
       if nlayers > 1 :
@@ -1671,7 +1688,7 @@ def tabulateResults( pickleFile, outFile="summary.csv" ) :
 # vary thickness of each layer over a range, predict transmission curve
 # fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
 # fuzzy1 does (weighted) vector average of ALL allowed thicknesses to get final transmission amp and phase;
-def fuzzy1( fitFile, fGHz=numpy.arange(65.,175.1,.1), angIdeg=5.16 ) :
+def fuzzy1( fitFile, fGHz=numpy.arange(76.,115.,.01), angIdeg=5.16 ) :
     fitParams = readFitFile( fitFile )
     tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     ntrials = len(tcmList)
@@ -2046,60 +2063,65 @@ def profile( t, nr, tscale, dt=.0005, tanD=.01 ) :
     fout1.close()
     fout2.close()
 
-# ==== UNFINISHED!! ====
-'''
-# csvOut reads pickle file written by nrefracFit, returns csv lines giving:
-#   line 1:  puckLabel,picklefile,dataFile(s),chisq,{layer1 params}
-#   line 2:  ,,,,{layer2 params}
-#   line N:  ,,,,{layerN params} 
-#   where layer params are {tsrchmin,tmin,tbest,tmax,tsrchmax,nrsrchmin,nrmin,nrbest,nrmax,nrsrchmax,tanDsrchmin,etc}
-def csvOut{ pickleFile }
-    try :
-      fin = open( pickleFile, "rb" )
-      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
-    except :
-      fin = open( pickleFile, "rb" )
-      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
-      dateString = " "
-    fin.close() 
-    nlayers = len( tcmList[0] )
+# use Born and Wolf [13.4] equations 24 and 25 to compute amplitude and phase of signal
+#   transmitted through a single lossy sheet
+# these may be compared with output of fuzzy1 using my normal formulation
+# as of 25mar2019, there is still a bug or incompatibility of some kind - peaks from lossy = dips from fuzzy1
 
-    print "\n10 best fits minimizing overall residuals:"
-    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+def lossy( fitFile, fGHz=numpy.arange(76.,115.,.01), angIdeg=5.16 ) :
+    fitParams = readFitFile( fitFile )
+    tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    ntrials = len(tcmList)
+    if ntrials > 1 :
+      print "FATAL - this routine handles single layer only"
+      return
+    theta1 = math.radians(angIdeg)
+    tcm = tcmList[0]
+    nr = nrList[0]
+    tanD = tanDeltaList[0] 
+    print tcm, nr, tanD
 
-  # create savet,saven,savetanD lists, containing all configurations with chisq< 2.* minchisq
-    savet = []
-    savenr = []
-    savetanD = []
-    for n in range(0,len(chisq[-1])) :
-      if chisq[-1,n] < 2.*chisq[-1,nbest]:
-        savet.append( tcmList[n] )
-        savenr.append( nrList[n] )
-        savetanD.append( tanDeltaList[n] )
+  # use complexNC to compute u2 and v2, eqns (4)
+    NC = complexNC( 1., theta1, nr, tanD )
+    u2 = numpy.real(NC)
+    v2 = numpy.imag(NC)
+    print "u2 = ",u2,",   v2 = ",v2
+    costheta1 = math.cos(theta1)
 
-  fitParams = { "datafileList": datafileList, \
-                "title" : title, \
-                "tcmRange" : totcmRange, \
-                "tcmList" : tcmList, \
-                "nrList" : nrList, \
-                "tanDeltaList" : tanDeltaList,
-                "deltaTinList" : deltaTinList }
-  # write the output string
-    outString1 = "%s,%s,%s,%s" % (pickleFile[:pickleFile.index('.')],pickleFile,fitParams['datafileList'],chisq[-1])
-
-
-# summaryPlot will make bar graph plot showing results for a 2 layer puck
-def summaryPlot( infile ) :
-    pyplot.ioff()
-    pp = PdfPages( "summary.pdf")
-    fig =  pyplot.figure( figsize=(11,8) )
-
-    ymin = .1
-    yrange = .8
-    ax1 = fig.add_axes( [.05,ymin,.05,yrange] )   # puck labels
-    ax2 = fig.add_axes( [.10,ymin,.20,yrange] )   # eps1
-    ax3 = fig.add_axes( [.30,ymin,.20,yrange] )   # t1
-    ax4 = fig.add_axes( [.50,ymin,.20,yrange] )   # eps2
-    ax5 = fig.add_axes( [.70,ymin,.20,yrange] )   # t2
+    rho12 = math.sqrt( (sq(costheta1 - u2) + sq(v2))/( sq(costheta1 + u2) + sq(v2) ) )     # eqn (6)
+    phi12 = numpy.arctan2( 2*v2*costheta1 , sq(u2) + sq(v2) - sq(costheta1) )              # eqn (6)
+      
+    tau12 = math.sqrt( sq(2*costheta1)/( sq(costheta1 + u2) + sq(v2) ))                    # eqn (8)
+    chi12 = numpy.arctan2( -v2 , costheta1 + u2)                                           # eqn (8) 
     
-'''
+    rho23 = rho12                 # eqn(9), using n3=n1, theta3=theta1
+    phi23 = phi12
+
+    tau23 = math.sqrt( 4.*(sq(u2)+sq(v2))/( sq(costheta1 + u2) + sq(v2)) )                 # eqn(10)
+    chi23 = numpy.arctan2( v2*costheta1,  sq(u2) + sq(v2) + u2*costheta1 )                 # eqn(10)
+  
+    print chi12,chi23,phi12,phi23
+
+  # copy fitFile parameters to output file
+    fin = open( fitFile+".fitFile", "r")
+    fout = open( fitFile+".lossymodel", "w" )
+    fout.write("# %s.model\n" % fitFile)
+    fout.write("# ---------------------------------------------------- \n")
+    for line in fin:
+      fout.write("# %s" % line)
+    fout.write("# ---------------------------------------------------- \n")
+
+  # now write out the model data, in format compatible with readTransData
+    unc = .02
+    
+    for f in fGHz :
+      eta = 2 * math.pi * tcm * f/clight        # eqn(18)
+      trans = tau12 * tau23 * numpy.exp(-v2*eta) * numpy.exp(1j*(chi12+chi23+u2*eta)) / \
+        (1 + rho12*rho23*numpy.exp(-2.*v2*eta) * numpy.exp(1j*(phi12+phi23+2*u2*eta) ) ) / \
+        numpy.exp(1j * eta * costheta1 )  
+
+      amplitude = numpy.absolute( trans )
+      phase = numpy.angle( trans, deg=True )
+      pwr = numpy.power( amplitude, 2 )
+      fout.write("%8.2f  %8.6f  %8.3f  %6.4f   1  %9.5f\n" % (f, amplitude, phase, unc, pwr ) )
+    fout.close()
