@@ -32,8 +32,6 @@ import bisect
 # lambda is alternate way of defining simple function
 sin = lambda arg: numpy.sin(arg)
 cos = lambda arg: numpy.cos(arg)
-inv = lambda Mat: numpy.linalg.inv(Mat)
-dr = lambda theta: math.pi*theta/180.
 pow = lambda arg, index: numpy.power(arg, index)
 sq = lambda arg: pow(arg, 2)
 
@@ -353,7 +351,6 @@ def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
         # h = nrefrac * tcm * cos(theta2)
         # Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
         nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
-        print nCosTheta2
         h = tcm * nCosTheta2
         Y1 = nCosTheta2
         M = numpy.dot( numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] ), M)
@@ -962,6 +959,8 @@ def findPeriod( fGHz, trans ) :
 #
 def selectPrefitData( fGHz, trans, phase, unc ) :
     period = findPeriod( fGHz, trans)					    # estimated period of transmission data, GHz
+    if (period < 1.) or (period > 10.) :
+      period = 5.
     tma = numpy.ma.asarray( trans )     # create masked array of transmission data
 
   # create list of maxima, one per period
@@ -1077,7 +1076,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       print "\nreading data file %s" % datafile
       f,amp,phs,u,angI,FTS = readTransFile( datafile, path=path )     # read single data file
 
-    # create sparse data set for prefit, probing peaks and valleys; save as an odd-numbered data set
+    # create sparse data set for prefit, probing peaks and valleys; save as an even-numbered data set (0,2,...)
       pf, pamp, pphs, pu =  selectPrefitData( f, amp, phs, u ) 
       fGHz.append( pf )
       vecmeas.append( pamp * numpy.exp(1j*numpy.radians(pphs)) )
@@ -1086,7 +1085,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       angIdeg.append( angI )  
       FTSdata.append( FTS )
 
-    # now append full data set to lists; these will be even-numbered
+    # now append full data set to lists; these will be odd-numbered 
       fGHz.append(f)
       vecmeas.append( amp * numpy.exp(1j*numpy.radians(phs)) )  
       unc.append(u)
@@ -1101,17 +1100,17 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
     ntrials = len( tcmList )
     nlayers = len( tcmList[0] )
 
-  # one chisq array for prefit, one for fit to each dataset, one for joint fit
+  # one chisq array for prefit (to all datasets), one for fit to each dataset, one for joint fit
     chisq = 1.e6*numpy.ones( (nDataSets+2, ntrials) )
 
-  # for prefit, model odd-numbered data sets only, calculate reduced chisq for every possible trial
+  # for prefit, model even-numbered data sets only, calculate reduced chisq for every possible trial
     secs0 = time.time()       
     print "\nbeginning prefit"
     print "modeling %d layers, %d trials" % (nlayers, ntrials)
     for i in range(0,ntrials) :
-      # print i, tcmList[i]/2.54, nrList[i], tanDeltaList[i]
       printElapsed( ntrials, i, 1000, secs0 )
       errs = []
+    # datasets 0,2,4,... are prefit data sets
       for j in range(0,2*nDataSets,2) :
         phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
         if FTSdata[j] :
@@ -1119,7 +1118,9 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
         else :
           vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
         errs.append( (vecmeas[j]-vecmodel)/unc[j] )
-      chisq[0,i] = numpy.var( numpy.concatenate(errs) )
+      allerrs = numpy.concatenate(errs)   # errors from all datasets
+      chisq[0,i] = numpy.real(numpy.sum( allerrs * numpy.conj(allerrs) ))/len(allerrs)
+         # reduced chisq = 1/N * sum[((meas-model)/unc)^2]
     nbest = printBest( chisq[0], tcmList, nrList, tanDeltaList )      # nbest is INDEX of parameters with smallest chisq
     pchisqCutoff = pCutoff*chisq[0,nbest]
 
@@ -1143,6 +1144,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       for i in range(ntrials+1, len(tcmList) ) :
         printElapsed( ntrials2, i-ntrials, 1000, secs0 )
         errs = []
+      # datasets 0,2,4,... are prefit data sets
         for j in range(0,2*nDataSets,2) :
           phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
           if FTSdata[j] :
@@ -1150,7 +1152,8 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
           else :
             vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
           errs.append( (vecmeas[j]-vecmodel)/unc[j] )
-        chisq[0,i] = numpy.var( numpy.concatenate(errs) )
+        allerrs = numpy.concatenate(errs)   # errors from all datasets
+        chisq[0,i] = numpy.real(numpy.sum( allerrs * numpy.conj(allerrs) ))/len(allerrs)
 
     # find new best fits
       nbest = printBest( chisq[0], tcmList, nrList, tanDeltaList )      # nbest is INDEX of parameters with smallest chisq
@@ -1175,16 +1178,23 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       else :
         imodel = imodel+1
         errs = []
-        for j in range(1, len(fGHz), 2) :
+
+      # datasets 1,3,5,... are full data sets
+        for j in range(1, len(fGHz), 2) :    
           phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
           if FTSdata[j] :
             vecmodel = amp*amp
           else :
             vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
           errs.append( (vecmeas[j]-vecmodel)/unc[j] )
-          chisq[(j+1)/2, i] = numpy.var(errs[-1])      # this is variance for fit to single data set only!
-          # print "chisq[%d, %d] = %.3f" % ( (j+1)/2, i, numpy.var(errs[-1]))
-      chisq[-1,i] = numpy.var( numpy.concatenate(errs) )   # this is variance for joint fit to all data
+
+     # ====== code as of 26mar2019 ===================================================================== #
+     #     chisq[(j+1)/2, i] = numpy.var(errs[-1])      # this is variance for fit to single data set only!
+     # chisq[-1,i] = numpy.var( numpy.concatenate(errs) )   # this is variance for joint fit to all data
+     #======= new code ==================================================================================#
+          chisq[(j+1)/2, i] = numpy.real(numpy.sum( errs[-1] * numpy.conj(errs[-1]) ))/len(errs[-1])
+      allerrs = numpy.concatenate(errs)
+      chisq[-1,i] = numpy.real( numpy.sum( allerrs * numpy.conj(allerrs) ))/len(allerrs)
     nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
 
   # save the date and time (added 31-oct-2018)
