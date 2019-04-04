@@ -15,7 +15,7 @@ import string
 import random
 import matplotlib
 import os
-# matplotlib.use('GTKAgg')
+matplotlib.use('GTKAgg')
 import matplotlib.pyplot as pyplot
 import matplotlib.colors as colors 
 from matplotlib.backends.backend_pdf import PdfPages
@@ -24,6 +24,8 @@ from matplotlib.patches import Rectangle
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from scipy import signal
+from scipy.stats import norm
+import matplotlib.mlab as mlab
 
 ckms = 2.99792e5    # speed of light in km/sec
 hplanck = 6.626e-27  # planck's constant in erg-s
@@ -137,15 +139,16 @@ def readspec( inspec, vsource=5. ) :
     chan = []
     freq = []
     flux = []
+    vs0 = 0.    # default value
     fin = open( inspec, "r")
     for line in fin :
       a = line.split()
       if "vsource:" in line :
         vs0 = float(a[2])
       if not line.startswith("#") :
-        chan.append( int(a[0]) )
-        freq.append( float(a[1])/(1.-(vsource-vs0)/ckms) )
-        flux.append( float(a[2]) ) 
+          chan.append( int(a[0]) )
+          freq.append( float(a[1])/(1.-(vsource-vs0)/ckms) )
+          flux.append( float(a[2]) ) 
     fin.close()
 
   # special case: renumber channels to handle B3 BN spectra made in 4 sections, each labeled chan 1-480
@@ -2597,7 +2600,7 @@ def mosspectra( ) :
         infile = "/alma_scr/plambeck/220GHz_mosaic/miriad/mos.%s.cm" % spw
         hann = 1
         # outfile = "/o/plambeck/OriALMA/220Spectra/%s.%s.txt2" % (clump["name"],spw)
-        outfile = "/alma_scr/plambeck/XCLASS/%s.%s.txt" % (clump["name"],spw)
+        outfile = "/alma_scr/plambeck/XCLASS/%s.%s.dat" % (clump["name"],spw)
         print infile
         [chan, freq, flux ] = getspec( infile, region=clump["region"], \
            vsource=clump["vlsr"], hann=hann )
@@ -2646,6 +2649,10 @@ def vecs( poli, pa, olay, delta=.03, scale=5., color=0 ) :
     fin_poli = open("imtablog_poli","r")
     fin_pa = open("imtablog_pa","r")
     fout = open(olay,"w")
+    fout.write("# overlay file created by ori3.vecs from %s, %s\n" % (poli,pa))
+    fout.write("# delta = %.3f (gap between vectors, arcsec)\n" % delta)
+    fout.write("# scale = %.3f (scale - negative indicates all one length)\n" % scale)
+    fout.write("# each segment is created with 2 vectors starting at sampling point, 180 degrees apart\n")
     fout.write("color %d\n" % color)
     for line1,line2 in zip(fin_poli,fin_pa) :
       a = line1.split()
@@ -2672,13 +2679,149 @@ def vecs( poli, pa, olay, delta=.03, scale=5., color=0 ) :
     fin_pa.close()
     fout.close()
 
+# hann designed to read stacked spectra from Adam
+# writes out files with format compatible with dumpspec (chan, freqGHz, amp are 1st 3 items)
 def hann( infile, outfile, hann=15 ) :
     fGHz,amp = numpy.loadtxt( infile, unpack=True )
-    h = numpy.hanning( hann+2 )	# for odd n, numpy returns a window function with 0 as first and last values
+    h = numpy.hanning( hann+2 )	# for odd n, numpy.hanning returns a window function with 0 as first and last values
     sm = h[1:-1]/numpy.sum(h)
-      # for some reason numpy.hanning returns an array 
+      # normalize the array
     amp2 = numpy.convolve( amp, sm, mode="same")
     fout = open( outfile, "w" )
+    fout.write("# created with ori3.hann\n")
+    fout.write("# infile: %s\n" % infile)
+    fout.write("# hann: %d\n" % hann)
+    fout.write("# vsource: 5.0\n")    # this is only for SrcI spectra
+    fout.write("# col 1 = (fake) channel, 2 = freq, 3 = smoothed spectrum, 4 = original spectrum\n")
+  # write out in format that can be used by readspec
+    n = 0
     for f,a,a2 in zip(fGHz,amp,amp2) :
-      fout.write("%10.6f %10.5f %10.5f\n" % (f,a,a2))
+      n = n + 1
+      fout.write("%5d  %10.6f %10.5f %10.5f\n" % (n,f,a2,a))
     fout.close()
+
+# creates histogram of position angles, does Gaussian fit to get sigma
+# designed for Davis-Chandra-Fermi method, 3/28/19
+def PAhisto( imageFile, region="arcsec,box(1.2)" ) :
+    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog region=%s format=(3F12.5)" % (imageFile,region) ) ), \
+       stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+    result = p.communicate()[0]
+    x,y,pa = numpy.loadtxt("imtablog", unpack=True )
+    print "found %d points" % len(pa)
+
+  # adjust points affected by 180 degree ambiguities
+    nadjust = 0
+    for i in range(0,len(pa)) :
+      if pa[i] < -145. :
+        #print "%12.5f %12.5f %12.5f" % ( x[i],y[i],pa[i] )
+        pa[i] = pa[i] + 180.
+        nadjust = nadjust + 1
+      if pa[i] > 145. :
+        #print "%12.5f %12.5f %12.5f" % ( x[i],y[i],pa[i] )
+        pa[i] = pa[i] - 180.
+        nadjust = nadjust + 1
+    print "corrected 180 degree shifts on %d/%d points" % (nadjust,len(pa))
+
+  # make the plot
+    pyplot.ioff()
+    pp = PdfPages("histo.pdf")
+    fig = pyplot.figure( figsize=(11,7) )
+    n, bins, patches = pyplot.hist( pa, bins=41, range=[-20.5,20.5], alpha=0.3 )
+    mu,sigma = norm.fit(pa)
+    print mu,sigma
+    print "sigma = %.2f degrees" % (math.sqrt(numpy.var(pa)))
+    sigma = 3.
+    mu = 0.
+    xpdf = numpy.arange(-22.,22.01,.01)
+    ypdf = 2800.*mlab.normpdf( xpdf, mu, sigma)
+    pyplot.plot(xpdf,ypdf,"r-",linewidth=3)
+    pyplot.tick_params(labelsize=18)
+    pyplot.xlim([-22,22])
+    pyplot.xlabel("$\Delta$PA (deg)", fontsize=18)
+    pyplot.ylabel("N", fontsize=18)
+    #pyplot.grid(True)
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+
+# generate data for a plot of StokesV vs poli
+# use imtab to read in StokesI, poli, StokesV data on a channel-by-channel basis
+# poli is masked, so will have fewer points
+# find V,I pixels corresponding to each poli pixel; write [chan, velocity, x, y, I, poli, V] to outfile
+# ideally this routine would check to make sure pixels, map center, etc is identical, but this version
+#    does not do these checks
+#
+def VV( Imap, polimap, Vmap, region, chanrange ):
+    
+  # step 1: use imlist to retrieve velocity and freq information from the header
+    p= subprocess.Popen( ( shlex.split('imlist in=%s' % Imap) ), \
+        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    for line in lines :
+      if len(line) > 1 :
+        a = line.split()
+        n = string.find( line, "restfreq:" )
+        if n >= 0 :
+          restfreq = float( line[n+9:].split()[0] )
+        n = string.find( line, "crval3  :" )
+        if n >= 0 :
+          v1 = float( line[n+9:].split()[0] )
+        n = string.find( line, "cdelt3  :" )
+        if n >= 0 :
+          dv = float( line[n+9:].split()[0] )
+    print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
+
+  # now step through given channel range
+    fout = open("VV","w")
+    for ichan in range( chanrange[0],chanrange[1]+1) :
+      vchan = v1 + (ichan-1)*dv
+      p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
+         (polimap,region,ichan) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+      result = p.communicate()[0]
+      try :
+        xpoli,ypoli,poli = numpy.loadtxt("imtablog", unpack=True )
+        npts = len(poli)
+      except :
+        npts = 0
+      print "%s channel %d has %d points" % (polimap,ichan,npts)
+
+      if npts > 0 :
+        p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
+           (Imap,region,ichan) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+        result = p.communicate()[0]
+        xI,yI,I = numpy.loadtxt("imtablog", unpack=True )
+
+        p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
+           (Vmap,region,ichan) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+        result = p.communicate()[0]
+        xV,yV,V = numpy.loadtxt("imtablog", unpack=True )
+ 
+      # the following code requires that pixel order dumped by imtab always is the same
+        nI = 0
+        Imax = 0.
+        VImax = 0.
+        VPmax = 0.
+        PImax = 0.
+        for n in range(0,npts) :
+          while (xI[nI] != xpoli[n]) or (yI[nI] != ypoli[n]) :
+            nI = nI + 1
+          if (xI[nI] == xpoli[n]) and (yI[nI] == ypoli[n]) and (xV[nI] == xpoli[n]) and (yV[nI] == ypoli[n]) :
+            if I[nI] > Imax :
+              Imax = I[nI]
+            VIratio = abs(V[nI])/I[nI]
+            VPratio = abs(V[nI])/poli[n]
+            PIratio = poli[n]/I[nI]
+            if VIratio > VImax :
+              VImax = VIratio
+            if VPratio > VPmax :
+              VPmax = VPratio
+            if PIratio > PImax :
+              PImax = PIratio 
+          else :
+            print "FATAL - I and V arrays don't match"
+            break
+
+      fout.write("%5d  %7.3f  %9.5f  %7.5f  %7.5f  %7.5f\n" % \
+         (ichan, vchan, Imax, PImax, VImax, VPmax))
+    fout.close()     
