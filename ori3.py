@@ -2825,3 +2825,85 @@ def VV( Imap, polimap, Vmap, region, chanrange ):
       fout.write("%5d  %7.3f  %9.5f  %7.5f  %7.5f  %7.5f\n" % \
          (ichan, vchan, Imax, PImax, VImax, VPmax))
     fout.close()     
+
+# helper function to read intensity vs velocity from imspec output
+# this routine trims off leading and trailing text, then reads spectrum with numpy.loadtxt
+def readImspecFile( infile ) :
+    fin = open(infile, "r")
+    read = False
+    sp = []
+    for line in fin :
+      if read :
+        if (len(line) < 2) :     # spectrum ends with blank line
+           read = False
+        else :
+          sp.append(line)
+      elif ("Relativist" in line ):
+        read = True
+    chan, vlsr, flux, dummy1, npts = numpy.loadtxt( sp, unpack=True )
+    return chan,vlsr,flux
+ 
+# reads I and V spectra produced by imspec
+# computes derivative of I
+# writes out new file containing [chan,vlsr,I,Ideriv,V]
+def ZeemanTest( Ifile, Vfile, outfile ):
+    chanI, vlsrI, fluxI = readImspecFile( Ifile ) 
+    deriv = numpy.gradient( fluxI )
+    chanV, vlsrV, fluxV = readImspecFile( Vfile ) 
+    fout = open( outfile, "w")
+    for n,v,I,Id,V in zip(chanI,vlsrI,fluxI,deriv,fluxV) :
+      fout.write("%8d %8.2f %12.3e %12.3e %12.3e\n" % (n, v, I, Id, V) )
+    fout.close()
+
+# compute polarization statistics (P/I, V/I, V/P) vs velocity for SiO masers
+
+def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,100], outfile="polStats.dat" ):
+    
+  # use imlist to retrieve velocity information from the header
+    Imap = IQUVmapList[0]
+    print Imap
+    p= subprocess.Popen( ( shlex.split('imlist in=%s' % Imap) ), \
+        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    for line in lines :
+      if len(line) > 1 :
+        a = line.split()
+        n = string.find( line, "restfreq:" )
+        if n >= 0 :
+          restfreq = float( line[n+9:].split()[0] )
+        n = string.find( line, "crval3  :" )
+        if n >= 0 :
+          v1 = float( line[n+9:].split()[0] )
+        n = string.find( line, "cdelt3  :" )
+        if n >= 0 :
+          dv = float( line[n+9:].split()[0] )
+    print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
+
+    fout = open(outfile, "w")
+
+  # read I,Q,U,V data for each channel range
+    for ichan in range( chanrange[0],chanrange[1]+1) :
+      vchan = v1 + (ichan-1)*dv
+      z = []
+      for nmap in range( 0,4 ):
+        p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
+           (IQUVmapList[nmap],region,ichan) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+        result = p.communicate()[0]
+        x,y,flx = numpy.loadtxt("imtablog", unpack=True )
+        z.append(flx)
+      #poli = numpy.sqrt(numpy.power(z[1],2) + numpy.power(z[2],2)) 
+      #poli = numpy.ma.masked_where( poli < pcutoff, poli )
+      #print numpy.amin(numpy.ma.compressed(poli))
+      #poli = numpy.ma.masked_where( z[0] < icutoff, poli )
+      #polm = numpy.ma.compressed(poli/z[0])
+      #voverp = numpy.ma.compressed(numpy.absolute(z[3])/poli)
+      fracv = numpy.absolute(z[3])/z[0]
+      fracv1 = numpy.ma.compressed(numpy.ma.masked_where( z[0] < icutoff, fracv))
+      print len(fracv1)
+      a = numpy.percentile( fracv1, [5,25,50,75,95] )
+      fout.write("%5d  %7.2f  %5d  %7.4f %7.4f %7.4f %7.4f %7.4f\n" % \
+        (ichan, vchan, len(fracv1), a[0],a[1],a[2],a[3],a[4]) )
+    fout.close()
+      
+
