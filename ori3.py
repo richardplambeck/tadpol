@@ -2855,9 +2855,23 @@ def ZeemanTest( Ifile, Vfile, outfile ):
       fout.write("%8d %8.2f %12.3e %12.3e %12.3e\n" % (n, v, I, Id, V) )
     fout.close()
 
+def plt( x, y, z) :
+    nx = len(numpy.unique(x))
+    ny = len(numpy.unique(y))
+    fig,ax = pyplot.subplots(nrows=2, ncols=2 )
+    im = ax[0,0].imshow(numpy.reshape(z[0], (nx,ny)), origin="lower")
+    ax[0,0].set_aspect('equal',adjustable='box')
+    im = ax[0,1].imshow(numpy.reshape(z[1], (nx,ny)), origin="lower")
+    ax[0,1].set_aspect('equal',adjustable='box' )
+    im = ax[1,0].imshow(numpy.reshape(z[2], (nx,ny)), origin="lower")
+    ax[1,0].set_aspect('equal',adjustable='box')
+    im = ax[1,1].imshow(numpy.reshape(z[3], (nx,ny)), origin="lower")
+    ax[1,1].set_aspect('equal',adjustable='box')
+    pyplot.subplots_adjust( wspace=.1, hspace=.1)
+    pyplot.show()
+    
 # compute polarization statistics (P/I, V/I, V/P) vs velocity for SiO masers
-
-def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,100], outfile="polStats.dat" ):
+def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,100] ):
     
   # use imlist to retrieve velocity information from the header
     Imap = IQUVmapList[0]
@@ -2880,8 +2894,6 @@ def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange
           dv = float( line[n+9:].split()[0] )
     print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
 
-    fout = open(outfile, "w")
-
   # read I,Q,U,V data for each channel range
     for ichan in range( chanrange[0],chanrange[1]+1) :
       vchan = v1 + (ichan-1)*dv
@@ -2892,18 +2904,46 @@ def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange
         result = p.communicate()[0]
         x,y,flx = numpy.loadtxt("imtablog", unpack=True )
         z.append(flx)
-      #poli = numpy.sqrt(numpy.power(z[1],2) + numpy.power(z[2],2)) 
-      #poli = numpy.ma.masked_where( poli < pcutoff, poli )
-      #print numpy.amin(numpy.ma.compressed(poli))
-      #poli = numpy.ma.masked_where( z[0] < icutoff, poli )
-      #polm = numpy.ma.compressed(poli/z[0])
-      #voverp = numpy.ma.compressed(numpy.absolute(z[3])/poli)
-      fracv = numpy.absolute(z[3])/z[0]
-      fracv1 = numpy.ma.compressed(numpy.ma.masked_where( z[0] < icutoff, fracv))
-      print len(fracv1)
-      a = numpy.percentile( fracv1, [5,25,50,75,95] )
+
+    # compute linear pol from Q and U, flagged where P < pcutoff, I < icutoff
+      poli = numpy.sqrt(numpy.power(z[1],2) + numpy.power(z[2],2)) 
+      poli = numpy.ma.masked_where( poli < pcutoff, poli )
+      poli = numpy.ma.masked_where( z[0] < icutoff, poli)
+
+    # fractional linear pol, flagged where P < pcutoff, I < icutoff
+      polm = (poli/z[0])
+      pdump( ichan, vchan, polm, "polmStats.dat" )
+
+    # fractional circular pol, flagged where I < Icutoff
+      fracv = numpy.ma.masked_where( z[0] < icutoff, numpy.absolute(z[3])/z[0] )
+      pdump( ichan, vchan, fracv, "fracvStats.dat" )
+
+    # fractional circular pol, flagged where P < pcutoff, I < icutoff
+      fracv1 = numpy.ma.masked_where( z[0] < icutoff, fracv )
+      pdump( ichan, vchan, fracv1, "fracv1Stats.dat" )
+
+    # circular/linear pol, flagged where P < pcutoff, I < icutoff
+      voverp = numpy.absolute(z[3])/poli
+      voverp = numpy.ma.masked_where( poli < pcutoff, voverp ) 
+      voverp = numpy.ma.masked_where( z[0] < icutoff, voverp )
+      pdump( ichan, vchan, voverp, "voverpStats.dat" )
+
+     # plt( x, y, [z[0],polm,fracv,voverp] )
+
+    # dump percentiles of I as well
+      iflagged = numpy.ma.masked_where( z[0] < icutoff, z[0] )
+      pdump( ichan, vchan, iflagged, "Iflagged.dat" )
+
+def pdump( ichan, vchan, arr, outfile ) :
+    fout = open(outfile,"a")
+    arr1 = numpy.ma.compressed( arr )      # ditch the masked values
+    nl = len(arr1)
+    print "%3d  %s  %d points" % (ichan, outfile, nl)
+    if nl > 10 :
+      a = numpy.percentile( arr1, [5,25,50,75,95] )
       fout.write("%5d  %7.2f  %5d  %7.4f %7.4f %7.4f %7.4f %7.4f\n" % \
-        (ichan, vchan, len(fracv1), a[0],a[1],a[2],a[3],a[4]) )
+        (ichan, vchan, nl, a[0],a[1],a[2],a[3],a[4]) )
+    else :
+      print "skipping percentiles for %s" % outfile
     fout.close()
-      
 
