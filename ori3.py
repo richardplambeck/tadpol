@@ -2871,7 +2871,8 @@ def plt( x, y, z) :
     pyplot.show()
     
 # compute polarization statistics (P/I, V/I, V/P) vs velocity for SiO masers
-def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,100] ):
+#def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,100] ):
+def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,105] ):
     
   # use imlist to retrieve velocity information from the header
     Imap = IQUVmapList[0]
@@ -2894,7 +2895,28 @@ def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange
           dv = float( line[n+9:].split()[0] )
     print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
 
+  # write header info into each of the 6 output files
+    for outfile in ["Istat.dat", "fracPstat.dat", "fracP1stat.dat", "fracVstat.dat", "fracV1stat.dat", "VoverPstat.dat"] :
+      fout = open(outfile,"w")
+      fout.write("# %s\n" % outfile)
+      fout.write("# created by ori3.polStats\n")
+      fout.write("# input files: %s\n" % IQUVmapList[0] )
+      fout.write("#              %s\n" % IQUVmapList[1] )
+      fout.write("#              %s\n" % IQUVmapList[2] )
+      fout.write("#              %s\n" % IQUVmapList[3] )
+      fout.write("# region: %s\n" % region )
+      fout.write("# icutoff: %.5f\n" % icutoff )
+      fout.write("# pcutoff: %.5f\n" % pcutoff )
+      fout.write("#\n#  chan  vel   npixels   5_pct 25_pct 50_pct 75_pct 95_pct\n")
+      fout.close()
+
   # read I,Q,U,V data for each channel range
+
+    ifl = []
+    fp = []
+    fv = []
+    vp = []
+
     for ichan in range( chanrange[0],chanrange[1]+1) :
       vchan = v1 + (ichan-1)*dv
       z = []
@@ -2905,34 +2927,49 @@ def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange
         x,y,flx = numpy.loadtxt("imtablog", unpack=True )
         z.append(flx)
 
-    # compute linear pol from Q and U, flagged where P < pcutoff, I < icutoff
-      poli = numpy.sqrt(numpy.power(z[1],2) + numpy.power(z[2],2)) 
-      poli = numpy.ma.masked_where( poli < pcutoff, poli )
-      poli = numpy.ma.masked_where( z[0] < icutoff, poli)
+    # dump percentiles of I
+      iflagged = numpy.ma.masked_where( z[0] < icutoff, z[0] )
+      ifl = ifl + numpy.ma.compressed( iflagged ).tolist() 
+      pdump( ichan, vchan, iflagged, "Istat.dat" )
 
-    # fractional linear pol, flagged where P < pcutoff, I < icutoff
+    # compute fractional linear pol flagged where I < icutoff
+      poli = numpy.sqrt(numpy.power(z[1],2) + numpy.power(z[2],2)) 
+      poli = numpy.ma.masked_where( z[0] < icutoff, poli)
       polm = (poli/z[0])
-      pdump( ichan, vchan, polm, "polmStats.dat" )
+      fp = fp + numpy.ma.compressed(polm).tolist() 
+      pdump( ichan, vchan, polm, "fracPstat.dat" )
+
+    # fractional linear pol flagged where I < icutoff AND P < pcutoff
+      polm = numpy.ma.masked_where( poli < pcutoff, polm )
+      pdump( ichan, vchan, polm, "fracP1stat.dat" )
 
     # fractional circular pol, flagged where I < Icutoff
       fracv = numpy.ma.masked_where( z[0] < icutoff, numpy.absolute(z[3])/z[0] )
-      pdump( ichan, vchan, fracv, "fracvStats.dat" )
+      fv = fv + numpy.ma.compressed( fracv ).tolist()
+      pdump( ichan, vchan, fracv, "fracVstat.dat" )
 
-    # fractional circular pol, flagged where P < pcutoff, I < icutoff
-      fracv1 = numpy.ma.masked_where( z[0] < icutoff, fracv )
-      pdump( ichan, vchan, fracv1, "fracv1Stats.dat" )
+    # fractional circular pol, flagged where I < icutoff AND P < pcutoff
+      fracv1 = numpy.ma.masked_where( poli < pcutoff, fracv )
+      pdump( ichan, vchan, fracv1, "fracV1stat.dat" )
 
     # circular/linear pol, flagged where P < pcutoff, I < icutoff
       voverp = numpy.absolute(z[3])/poli
-      voverp = numpy.ma.masked_where( poli < pcutoff, voverp ) 
       voverp = numpy.ma.masked_where( z[0] < icutoff, voverp )
-      pdump( ichan, vchan, voverp, "voverpStats.dat" )
+      vp = vp + numpy.ma.compressed( voverp ).tolist()
+      voverp = numpy.ma.masked_where( poli < pcutoff, voverp ) 
+      pdump( ichan, vchan, voverp, "VoverPstat.dat" )
 
      # plt( x, y, [z[0],polm,fracv,voverp] )
+  #    print len(ifl), len(fp), len(fv), len(vp)
 
-    # dump percentiles of I as well
-      iflagged = numpy.ma.masked_where( z[0] < icutoff, z[0] )
-      pdump( ichan, vchan, iflagged, "Iflagged.dat" )
+  # plot fracp, fracv vs I
+  #  fig,ax = pyplot.subplots( nrows=2 )
+  #  ax[0].scatter( ifl, fp, alpha=0.1 )
+  #  pyplot.title("P/I vs I")
+  #  ax[1].scatter( ifl, fv, alpha=0.1 )
+  #  pyplot.title("V/I vs I")
+  #  pyplot.show()
+    
 
 def pdump( ichan, vchan, arr, outfile ) :
     fout = open(outfile,"a")
@@ -2947,3 +2984,117 @@ def pdump( ichan, vchan, arr, outfile ) :
       print "skipping percentiles for %s" % outfile
     fout.close()
 
+# helper routine for polspec; use imspec to dump 1 spectrum from infile
+
+def dump1( infile, region, tmpfile="junk") :
+    print "reading %s" % infile
+    chan = []
+    vlsr = []
+    y = []
+    ngood = 0
+    nflagged = 0
+    p= subprocess.Popen( ( shlex.split("imspec in=%s region=%s options=list,eformat,noheader log=%s" % \
+      (infile,region,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+    if "Fatal Error" in result :
+      print " --- fatal --- "
+      return
+  # can't use numpy.loadtxt because sometimes points are masked
+    fin = open(tmpfile, "r")
+    for line in fin :
+      if "All points masked for plane" in line :
+        nflagged = nflagged + 1
+        chan.append(int(line[27:])) 
+        vlsr.append(-10000.)
+        y.append(0.)
+      else :
+        ngood = ngood + 1
+        a = line.split()
+        chan.append(int(a[0]))
+        vlsr.append(float(a[1]) )
+        y.append(float(a[2]))
+    fin.close()
+    print "%d good values, %d flagged values" % (ngood,nflagged)
+    return chan,vlsr,y
+
+# helper routine for polspec to take out 180 degree flips in PA
+# midpt is midpt of range; newpa constrained to be in the range midpt-90 to midpt+90
+def paflip( pa, midpt=80 ) :
+    panew = []
+    for angle in pa :
+      while angle > midpt+90.:
+        angle = angle - 180.
+      while angle < midpt-90. :
+        angle = angle + 180.
+      panew.append(angle)
+    return panew
+
+# dump out pickle file containing [chan, vel, I, poli, pa, paerr, V] table for a particular region
+def polspec( rootfile, region, outfile, tmpfile="junk" ):
+    chan,vlsr,I = dump1( rootfile + ".I.cm", region )
+    dummy,dummy,poli = dump1( rootfile + ".poli", region )
+    dummy,dummy,pa = dump1( rootfile + ".pa", region )
+    panew = paflip(pa) 
+    dummy,dummy,paerr = dump1( rootfile + ".paerr", region )
+    dummy,dummy,V = dump1( rootfile + ".V.cm", region )
+    fout = open( outfile, "wb" )     # binary because I'll be pickling to it
+    pickle.dump( [rootfile,region,chan,vlsr,I,poli,panew,paerr,V], fout )
+    fout.close() 
+
+# helper file for spectralPlot
+def plotPolPanel( ax, label, vlsr, I, poli, V, ymin, ymax ) :
+    ax.plot( vlsr, I, color='black', linewidth=0.5 )
+    ax.plot( vlsr, poli, color='red', linewidth=0.5 )
+    ax.plot( vlsr, V, color='blue', linewidth=0.5 )
+    ax.set_xlim( -14., 23. )
+    ax.tick_params( labelsize=10 )
+    if ymin:
+      ax.set_ylim( ymin, ymax )
+    ax.grid( True, linewidth=0.1, color="0.05" )   # color=0.1 is a light gray
+    ax.annotate( "%s" % label, xy=(.95,.85), xycoords='axes fraction', \
+        horizontalalignment="right", size=10 )
+
+def plotPApanel( ax, vlsr10, pa10, pa10err, vlsr21, pa21, pa21err ) :
+    ax.errorbar(vlsr10,pa10,yerr=pa10err,fmt='o',color='red') 
+    ax.errorbar(vlsr21,pa21,yerr=pa21err,fmt='D',color='blue') 
+    ax.set_xlim( -14., 22. )
+    ax.set_ylim( 50., 130. )
+    ax.grid( True, linewidth=0.02, color="0.02" )   # color=0.1 is a light gray
+     
+# specialized plotting routine for polarization plots
+def polPlot( posList ) :
+    pyplot.ioff()
+    pp = PdfPages("polPlot.pdf")
+    fig = pyplot.figure( figsize=(8,11) )
+    xa = .1
+    ya = .82
+
+    for pos in posList :
+      fin = open( pos["pos21"], "rb" ) 
+      [rootfile,region,chan,vlsr21,I21,poli21,pa21,pa21err,V21] = pickle.load( fin )
+      fin.close()
+      ax = fig.add_axes( [xa,ya,.38,.15] )
+      plotPolPanel( ax, "2-1", vlsr21, I21, poli21, V21, pos["ymin21"], pos["ymax21"]  )
+      ax.set_xticklabels( [] )
+      ax.annotate( "%s" % pos["label"], xy=(.5,.82), xycoords='axes fraction', \
+        horizontalalignment="center", size=16 )
+
+      fin = open( pos["pos10"], "rb" ) 
+      [rootfile,region,chan,vlsr10,I10,poli10,pa10,pa10err,V10] = pickle.load( fin )
+      fin.close()
+      ya = ya - .15
+      ax = fig.add_axes( [xa,ya,.38,.15] )
+      plotPolPanel( ax, "1-0", vlsr10, I10, poli10, V10, pos["ymin10"], pos["ymax10"]  )
+
+      #ya = ya - .1
+      #ax = fig.add_axes( [xa,ya,.38,.1] )
+      #plotPApanel( ax, vlsr10, pa10, pa10err, vlsr21, pa21, pa21err )
+      ya = ya - .2
+      if ya < .3 :
+        xa = xa + .46
+        ya = .82
+    
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
