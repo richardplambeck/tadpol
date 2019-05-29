@@ -2985,7 +2985,6 @@ def pdump( ichan, vchan, arr, outfile ) :
     fout.close()
 
 # helper routine for polspec; use imspec to dump 1 spectrum from infile
-
 def dump1( infile, region, tmpfile="junk") :
     print "reading %s" % infile
     chan = []
@@ -3098,3 +3097,113 @@ def polPlot( posList ) :
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
+
+    
+# compute percentiles of P/I vs I, V/I vs I, V/I vs P (NOT as function of velocity)
+#def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,105] ):
+def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,105] ):
+    
+  # write header info into each of the 3 output files
+    fout = open("polStats2.dat","w")
+    fout.write("# created by ori3.polStats2\n")
+    fout.write("# input files: %s\n" % IQUVmapList[0] )
+    fout.write("#              %s\n" % IQUVmapList[1] )
+    fout.write("#              %s\n" % IQUVmapList[2] )
+    fout.write("#              %s\n" % IQUVmapList[3] )
+    fout.write("# region: %s\n" % region )
+    fout.write("# chanrange: [%d,%d]\n" % (chanrange[0],chanrange[1]))
+    fout.write("# icutoff: %.5f\n" % icutoff )
+    fout.write("#\n#  Imin  Imax    25_pct 50_pct 75_pct 95_pct\n")
+
+  # create giant array of I,Q,U,V for every pixel
+
+    ifl = []
+    fp = []
+    fv = []
+    vp = []
+    z = [ [],[],[],[] ]    
+
+    for ichan in range( chanrange[0],chanrange[1]+1) :
+      print "processing chan %d" % ichan
+      for nmap in range( 0,4 ):
+        p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
+           (IQUVmapList[nmap],region,ichan) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+        result = p.communicate()[0]
+        x,y,flx = numpy.loadtxt("imtablog", unpack=True )
+        z[nmap].append(flx)
+
+  # now concatenate lists of numpy arrays into single arrays
+    iarr = numpy.concatenate(z[0])
+    qarr = numpy.concatenate(z[1])
+    uarr = numpy.concatenate(z[2])
+    varr = numpy.concatenate(z[3])
+
+    deltaI = .05
+    PI = []
+    ABSV = []
+
+    for Imin in numpy.arange(icutoff,2.,deltaI):
+      print "Imin = %.5f" % Imin
+      fracp = []
+      fracv = []
+      npts = 0
+   
+    # write percentiles of poli/I and abs(V)/I vs I
+      for i,q,u,v in zip( iarr,qarr,uarr,varr ) :
+        if (i > Imin) and (i <= (Imin+deltaI)) :
+          npts = npts + 1
+          poli = math.sqrt( q*q + u*u)
+          fracp.append( poli/i )
+          fracv.append( abs(v)/i )
+
+        # fill out PI and ABSV arrays as we go
+          PI.append(poli)
+          ABSV.append( abs(v) )
+
+      if npts > 50 :
+        a = numpy.percentile( fracp, [25,50,75,95] )
+        fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f" % \
+          (Imin, Imin+deltaI, Imin+deltaI/2., npts, a[0],a[1],a[2],a[3]) )
+        a = numpy.percentile( fracv, [25,50,75,95] )
+        fout.write("    %7.4f %7.4f %7.4f %7.4f\n" % \
+          (a[0],a[1],a[2],a[3]) )
+    fout.close()
+
+  # now use the accumulated PI and ABSV arrays to write percentiles of abs(V)/P vs P
+  # note that all these points fulfil the requirement that i > Imin
+
+    fout = open("polStats2.voverp","w")
+    fout.write("# created by ori3.polStats2\n")
+    fout.write("# input files: %s\n" % IQUVmapList[0] )
+    fout.write("#              %s\n" % IQUVmapList[1] )
+    fout.write("#              %s\n" % IQUVmapList[2] )
+    fout.write("#              %s\n" % IQUVmapList[3] )
+    fout.write("# region: %s\n" % region )
+    fout.write("# chanrange: [%d,%d]\n" % (chanrange[0],chanrange[1]))
+    fout.write("# icutoff: %.5f\n" % icutoff )
+    fout.write("#\n#  Pmin  Pmax  Pmid  25_pct 50_pct 75_pct 95_pct\n")
+
+    deltaP = .05
+    for Pmin in numpy.arange(pcutoff,2.,deltaP):
+      print "Pmin = %.5f" % Pmin
+      voverp = []
+      npts = 0
+      for poli,absv in zip( PI, ABSV ) :
+        if (poli > Pmin) and (poli <= (Pmin+deltaP)) :  
+          voverp.append( absv/poli )
+          npts = npts + 1
+      if npts > 50 :
+        a = numpy.percentile( voverp, [25,50,75,95] )
+        fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f\n" % \
+          (Pmin, Pmin+deltaP, Pmin+deltaP/2., npts, a[0],a[1],a[2],a[3]) )
+    fout.close()
+
+  # plot fracp, fracv vs I
+  #  fig,ax = pyplot.subplots( nrows=2 )
+  #  ax[0].scatter( ifl, fp, alpha=0.1 )
+  #  pyplot.title("P/I vs I")
+  #  ax[1].scatter( ifl, fv, alpha=0.1 )
+  #  pyplot.title("V/I vs I")
+  #  pyplot.show()
+    
+
