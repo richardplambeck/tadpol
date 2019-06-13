@@ -22,6 +22,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Circle
 from matplotlib.patches import Rectangle
 from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.axes_grid1 import ImageGrid
 from matplotlib import cm
 from scipy import signal
 from scipy.stats import norm
@@ -2634,22 +2635,28 @@ def clumpBoxes( infile="xx.olay", box=1. ) :
       print "(%.2f,%.2f,%.2f,%.2f)" % (draArcsec+box/2.,ddecArcsec-box/2.,draArcsec-box/2.,ddecArcsec+box/2.)
 
 # generate vector field as overlay file (to compare SiO and 29SiO pol directions on one plot, 5/10/18)
-def vecs( poli, pa, olay, delta=.03, scale=5., color=0 ) :
+def vecs( poli, pa, region, olay, delta=.03, scale=5., color=0, writemode="w" ) :
   
-    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog_poli format=(3F12.5)" % poli ) ), \
+    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog_poli format=(3F12.5) region=%s" % (poli,region) ) ), \
        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
-    result = p.communicate()[0]
-    print result
-    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog_pa format=(3F12.5)" % pa ) ), \
+    result1 = p.communicate()[0]
+    a1 = result1.split()
+    p = subprocess.Popen( ( shlex.split("imtab in=%s log=imtablog_pa format=(3F12.5) region=%s" % (pa,region) ) ), \
        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
-    result = p.communicate()[0]
-    print result
+    result2 = p.communicate()[0]
+    a2 = result2.split()
+    print a2[6],a2[7],a2[8]
+    if a2[7] == "Fatal" :
+      return
   
   # open the logs, fill out lists, then convert to array
     fin_poli = open("imtablog_poli","r")
     fin_pa = open("imtablog_pa","r")
-    fout = open(olay,"w")
-    fout.write("# overlay file created by ori3.vecs from %s, %s\n" % (poli,pa))
+    fout = open(olay,writemode)
+    fout.write("# overlay file created by ori3.vecs\n")
+    fout.write("# poli file: %s\n" % poli)
+    fout.write("# pa file: %s\n" % pa)
+    fout.write("# region: %s\n" % region)
     fout.write("# delta = %.3f (gap between vectors, arcsec)\n" % delta)
     fout.write("# scale = %.3f (scale - negative indicates all one length)\n" % scale)
     fout.write("# each segment is created with 2 vectors starting at sampling point, 180 degrees apart\n")
@@ -2664,7 +2671,7 @@ def vecs( poli, pa, olay, delta=.03, scale=5., color=0 ) :
         fracRA,wholeRA = math.modf( float(a[0])/delta )
         fracDEC,wholeDEc = math.modf( float(a[1])/delta )
         if abs(fracRA) < 0.1*delta and abs(fracDEC) < 0.1*delta :
-          print a[0],a[1],a[2],b[2]
+          #print a[0],a[1],a[2],b[2]
           if scale > 0.:
             length = scale*float(a[2])
           else :
@@ -3098,6 +3105,45 @@ def polPlot( posList ) :
     pp.close()
     pyplot.show()
 
+def polPlot2( posList, j21=False ) :
+    pyplot.ioff()
+    pp = PdfPages("polPlot.pdf")
+    fig = pyplot.figure( figsize=(8,11) )
+    xa = .1
+    ya = .78
+
+    for pos in posList :
+      if j21 :
+        fin = open( pos["pos21"], "rb" ) 
+        [rootfile,region,chan,vlsr21,I21,poli21,pa21,pa21err,V21] = pickle.load( fin )
+        fin.close()
+        ax = fig.add_axes( [xa,ya,.78,.2] )
+        plotPolPanel( ax, "2-1", vlsr21, I21, poli21, V21, pos["ymin21"], pos["ymax21"]  )
+        ax.set_xticklabels( [] )
+        ax.annotate( "%s" % pos["label"], xy=(.5,.82), xycoords='axes fraction', \
+          horizontalalignment="center", size=16 )
+
+      else:
+        fin = open( pos["pos10"], "rb" ) 
+        [rootfile,region,chan,vlsr10,I10,poli10,pa10,pa10err,V10] = pickle.load( fin )
+        fin.close()
+        ax = fig.add_axes( [xa,ya,.78,.2] )
+        plotPolPanel( ax, "1-0", vlsr10, I10, poli10, V10, pos["ymin10"], pos["ymax10"]  )
+        ax.annotate( "%s" % pos["label"], xy=(.5,.82), xycoords='axes fraction', \
+          horizontalalignment="center", size=16 )
+
+      #ya = ya - .1
+      #ax = fig.add_axes( [xa,ya,.38,.1] )
+      #plotPApanel( ax, vlsr10, pa10, pa10err, vlsr21, pa21, pa21err )
+      ya = ya - .22
+      if ya < .05 :
+        xa = xa + .46
+        ya = .82
+    
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+
     
 # compute percentiles of P/I vs I, V/I vs I, V/I vs P (NOT as function of velocity)
 #def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,105] ):
@@ -3207,3 +3253,66 @@ def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrang
   #  pyplot.show()
     
 
+# panelPlot plots series of velocity chans
+# Stokes V is in color; Stokes I is contours
+
+def panelPlot( IQUVmapList, region, Vrange, contourList ) :
+    pp = PdfPages("panels.pdf")
+    ncols = 3
+    nrows = 4 
+    fig = pyplot.figure( figsize=(8,11) )
+ 
+  # use ImageGrid to make neat array of boxes
+    ax = ImageGrid( fig, 111, nrows_ncols=(nrows,ncols), share_all=True, axes_pad=0.1, \
+      cbar_location="top", cbar_mode="single", cbar_pad=.3, cbar_size="3%" )
+
+  # figure out velocity scale axis
+    p= subprocess.Popen( ( shlex.split('imlist in=%s' % IQUVmapList[0]) ), \
+        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    for line in lines :
+      if len(line) > 1 :
+        a = line.split()
+        n = string.find( line, "restfreq:" )
+        if n >= 0 :
+          restfreq = float( line[n+9:].split()[0] )
+        n = string.find( line, "crval3  :" )
+        if n >= 0 :
+          v1 = float( line[n+9:].split()[0] )
+        n = string.find( line, "cdelt3  :" )
+        if n >= 0 :
+          dv = float( line[n+9:].split()[0] )
+    print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
+
+  
+    ichan = 6
+    for ipanel in range(0,nrows*ncols) : 
+      z = [ [],[],[],[] ]    
+      for nmap in range( 0,4 ):
+        p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
+           (IQUVmapList[nmap],region,ichan) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+        result = p.communicate()[0]
+        x,y,flx = numpy.loadtxt("imtablog", unpack=True )
+        z[nmap].append(flx)
+      nx = len( numpy.unique( x ) )
+      ny = len( numpy.unique( y ) )
+      print "nx = %d, ny = %d" % (nx,ny)
+      im = ax[ipanel].imshow(numpy.reshape(flx, (ny,nx) ), origin='lower', aspect='equal', \
+        extent=[x[0],x[-1],y[0],y[-1]], vmin=Vrange[0], vmax=Vrange[1], cmap='RdBu' )
+      ax[ipanel].contour( x.reshape(ny,nx), y.reshape(ny,nx), numpy.array(z[0]).reshape(ny,nx), \
+        colors='black', levels=contourList, linewidths=.4 )
+
+    # print velocity in upper right corner
+      vlsr = v1 + dv*(ichan-1)
+      ax[ipanel].text( .95, .95, "%5.1f" % vlsr, horizontalalignment="right", verticalalignment="top", \
+         transform=ax[ipanel].transAxes )
+      ax[ipanel].tick_params( axis='both', which='major', labelsize=8 )
+      ichan = ichan + 1
+
+    ax.cbar_axes[0].colorbar(im)
+    ax.cbar_axes[0].tick_params( axis='both', which='major', labelsize=8 )
+    ax.cbar_axes[0].set_title("Stokes V (Jy/beam)\n", fontdict={'fontsize':10}) 
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
