@@ -171,22 +171,7 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=1, tmpfile
     '''dump out spectrum of selected region with imspec, return [chan, freqLSR, flux] arrays'''
 
   # step 1: use imlist to retrieve velocity and freq information from the header
-    p= subprocess.Popen( ( shlex.split('imlist in=%s' % infile) ), \
-        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
-    result = p.communicate()[0]
-    lines = result.split("\n")
-    for line in lines :
-      if len(line) > 1 :
-        a = line.split()
-        n = string.find( line, "restfreq:" )
-        if n >= 0 :
-          restfreq = float( line[n+9:].split()[0] )
-        n = string.find( line, "crval3  :" )
-        if n >= 0 :
-          v1 = float( line[n+9:].split()[0] )
-        n = string.find( line, "cdelt3  :" )
-        if n >= 0 :
-          dv = float( line[n+9:].split()[0] )
+    restfreq,v1,dv = getVelInfo( IQUVmapList[0] )
     print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
 
   # step 2: use imspec to dump out the spectrum for the selected region to tmpfile
@@ -3253,21 +3238,9 @@ def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrang
   #  pyplot.show()
     
 
-# panelPlot plots series of velocity chans
-# Stokes V is in color; Stokes I is contours
-
-def panelPlot( IQUVmapList, region, Vrange, contourList ) :
-    pp = PdfPages("panels.pdf")
-    ncols = 3
-    nrows = 4 
-    fig = pyplot.figure( figsize=(8,11) )
- 
-  # use ImageGrid to make neat array of boxes
-    ax = ImageGrid( fig, 111, nrows_ncols=(nrows,ncols), share_all=True, axes_pad=0.1, \
-      cbar_location="top", cbar_mode="single", cbar_pad=.3, cbar_size="3%" )
-
-  # figure out velocity scale axis
-    p= subprocess.Popen( ( shlex.split('imlist in=%s' % IQUVmapList[0]) ), \
+# retrieve restfreq and channel velocities from miriad map
+def getVelInfo( miriadMap ) :
+    p= subprocess.Popen( ( shlex.split('imlist in=%s' % miriadMap) ), \
         stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
     result = p.communicate()[0]
     lines = result.split("\n")
@@ -3284,10 +3257,37 @@ def panelPlot( IQUVmapList, region, Vrange, contourList ) :
         if n >= 0 :
           dv = float( line[n+9:].split()[0] )
     print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
+    return restfreq,v1,dv
 
+# panelPlot plots panels of pol data for a spectral line data cube
+# Stokes V is in color; Stokes I is contours
+# region is spatial region -- e.g., "arcsec,box(1)"
+# chanRange gives images to plot -- e.g., [16,50]
+# Vrange sets scale for Stokes V in Jy/beam -- e.g., [-.04,.04]
+# contourList is for Stokes I in Jy/beam -- e.g., [.05,.1,.2,.4]
+
+def panelPlot( IQUVmapList, region, chanRange, Vrange, contourList, outfile="panels.pdf" ) :
+    delta = 4
+    Pcutoff = .003
+    Icutoff = .01
+    vecScale = .3
+
+    pp = PdfPages( outfile )
+    ncols = 3
+    nrows = 5 
+    fig = pyplot.figure( figsize=(8,11) )
+ 
+  # use ImageGrid to make neat array of boxes
+    ax = ImageGrid( fig, 111, nrows_ncols=(nrows,ncols), share_all=True, axes_pad=0.1, \
+      cbar_location="top", cbar_mode="single", cbar_pad=.3, cbar_size="3%" )
+
+  # retrieve velocity axis
+    restfreq,v1,dv = getVelInfo( IQUVmapList[0] )
   
-    ichan = 6
-    for ipanel in range(0,nrows*ncols) : 
+  # read I,Q,U,V for each channel, plot 1 subpanel
+    ichan = chanRange[0]  
+    for ipanel in range(0, nrows*ncols ) :
+      print "processing channel %d" % ichan 
       z = [ [],[],[],[] ]    
       for nmap in range( 0,4 ):
         p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
@@ -3298,10 +3298,64 @@ def panelPlot( IQUVmapList, region, Vrange, contourList ) :
       nx = len( numpy.unique( x ) )
       ny = len( numpy.unique( y ) )
       print "nx = %d, ny = %d" % (nx,ny)
-      im = ax[ipanel].imshow(numpy.reshape(flx, (ny,nx) ), origin='lower', aspect='equal', \
-        extent=[x[0],x[-1],y[0],y[-1]], vmin=Vrange[0], vmax=Vrange[1], cmap='RdBu' )
-      ax[ipanel].contour( x.reshape(ny,nx), y.reshape(ny,nx), numpy.array(z[0]).reshape(ny,nx), \
+ 
+    # convert to 2d arrays
+      I = numpy.reshape(z[0], (ny,nx))
+      Q = numpy.reshape(z[1], (ny,nx))
+      U = numpy.reshape(z[2], (ny,nx))
+      V = numpy.reshape(z[3], (ny,nx))
+      X = numpy.reshape(x, (ny,nx))
+      Y = numpy.reshape(y, (ny,nx))
+
+    # pixel plot of Stokes V
+      im = ax[ipanel].imshow(V, origin='lower', aspect='equal', \
+        extent=[x[0],x[-1],y[0],y[-1]], vmin=Vrange[0], vmax=Vrange[1], cmap='RdBu_r' )
+
+    # set limits so that RA increases to the left
+      ax[ipanel].set_xlim( x[0],x[-1] )
+      ax[ipanel].set_ylim( y[0],y[-1] )
+
+    # contour plot of Stokes I
+      #ax[ipanel].contour( x.reshape(ny,nx), y.reshape(ny,nx), numpy.array(z[0]).reshape(ny,nx), \
+      ax[ipanel].contour( X, Y, I, \
         colors='black', levels=contourList, linewidths=.4 )
+
+    # compute poli and pa
+      poli = numpy.sqrt( numpy.power(Q,2) + numpy.power(U,2) )
+      pa = numpy.arctan2(Q,U)
+
+    # plot line segment wherever poli > Pcutoff and I > Icutoff
+    # use trick of creating one long line with None breaking up segments
+    #  xlist = []
+    #  ylist = []
+    #  for n in range(0,nx,delta) :
+    #    for m in range(0,ny,delta) :
+    #      if (I[m,n] > Icutoff) and (poli[m,n] > Pcutoff) :
+    #        lvec = poli[m,n]/I[m,n] * vecScale 
+    #        xlist.append( X[m,n] - lvec/2. * math.sin(pa[m,n]) )
+    #        xlist.append( X[m,n] + lvec/2. * math.sin(pa[m,n]) )
+    #        xlist.append( None )
+    #        ylist.append( Y[m,n] + lvec/2. * math.cos(pa[m,n]) )
+    #        ylist.append( Y[m,n] - lvec/2. * math.cos(pa[m,n]) )
+    #        ylist.append( None )
+    #  if len(xlist) > 1 :
+    #    ax[ipanel].plot( xlist, ylist, linestyle='-', color='white', linewidth=1)
+    #    ax[ipanel].plot( xlist, ylist, linestyle='-', color='black', linewidth=0.5)
+
+    # alternative method, coloring the vectors
+    #  for n in range(0,nx,delta) :
+    #    for m in range(0,ny,delta) :
+    #      if (I[m,n] > Icutoff) and (poli[m,n] > Pcutoff) :
+    #        xlist = [0,0]
+    #        ylist = [0,0]
+    #        lvec = poli[m,n]/I[m,n] * vecScale 
+    #        xlist[0] = X[m,n] - lvec/2. * math.sin(pa[m,n]) 
+    #        xlist[1] = X[m,n] + lvec/2. * math.sin(pa[m,n]) 
+    #        ylist[0] = Y[m,n] + lvec/2. * math.cos(pa[m,n]) 
+    #        ylist[1] = Y[m,n] - lvec/2. * math.cos(pa[m,n]) 
+    #        color = pa[m,n]/math.pi + 0.5
+    #        ax[ipanel].plot( xlist, ylist, linestyle='-', color='white', linewidth=1)
+    #        ax[ipanel].plot( xlist, ylist, linestyle='-', color=cm.hsv(color), linewidth=0.5)
 
     # print velocity in upper right corner
       vlsr = v1 + dv*(ichan-1)
@@ -3310,9 +3364,10 @@ def panelPlot( IQUVmapList, region, Vrange, contourList ) :
       ax[ipanel].tick_params( axis='both', which='major', labelsize=8 )
       ichan = ichan + 1
 
+  # finish up   
     ax.cbar_axes[0].colorbar(im)
     ax.cbar_axes[0].tick_params( axis='both', which='major', labelsize=8 )
-    ax.cbar_axes[0].set_title("Stokes V (Jy/beam)\n", fontdict={'fontsize':10}) 
+    ax.cbar_axes[0].set_title("Stokes V (Jy/beam)\n", fontdict={'fontsize':8}) 
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
