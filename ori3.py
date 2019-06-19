@@ -3145,7 +3145,7 @@ def polStats2( psDict, outfile ):
     fout.write("# region: %s\n" % psDict["region"] )
     fout.write("# chanrange: [%d,%d]\n" % (psDict["chanrange"][0],psDict["chanrange"][1]) )
     fout.write("# icutoff: %.5f\n" % psDict["icutoff"] )
-    fout.write("#\n#  Imin    Imax    Imean   npts  16_pct  50_pct   84_pct   95_pct\n")
+    fout.write("#\n#  Imin    Imax   Imean    npts   16_pct  50_pct  84_pct  95_pct\n")
 
   # create giant array of I,Q,U,V for every pixel
 
@@ -3172,43 +3172,41 @@ def polStats2( psDict, outfile ):
     qarr = numpy.concatenate(z[1])
     uarr = numpy.concatenate(z[2])
     varr = numpy.concatenate(z[3])
-    Imax = iarr.max()
     
-    deltaI = .05
     P = []
     ABSV = []
 
-    for Imin in numpy.arange(0.,Imax+deltaI,deltaI):
-      if (Imin+deltaI) > psDict["icutoff"] :
-        fracp = []
-        fracv = []
-        npts = 0
+    Imax = iarr.max()
+    I1 = psDict["icutoff"]
+    I2 = 1.3*I1
+
+    while I2 < Imax :
+      fracp = []
+      fracv = []
+      npts = 0
    
-      # write percentiles of poli/I and abs(V)/I vs I
-        for i,q,u,v in zip( iarr,qarr,uarr,varr ) :
-          if (i > Imin) and (i <= (Imin+deltaI)) :
-            npts = npts + 1
-            poli = math.sqrt( q*q + u*u)
-            fracp.append( poli/i )
-            #print i,poli,fracp[-1]
-            fracv.append( abs(v)/i )
+    # write percentiles of poli/I and abs(V)/I vs I
+      for i,q,u,v in zip( iarr,qarr,uarr,varr ) :
+        if (i > I1) and (i <= I2) :
+          npts = npts + 1
+          poli = math.sqrt( q*q + u*u)
+          fracp.append( poli/i )
+          fracv.append( abs(v)/i )
 
-          # fill out P and ABSV arrays as we go; needed to plot absV vs poli
-            P.append(poli)
-            ABSV.append( abs(v) )
+        # fill out P and ABSV arrays as we go; needed to plot absV vs poli
+          P.append(poli)
+          ABSV.append( abs(v) )
 
-        print "%4d points with %7.4f < I < %7.4f" % (npts,Imin,Imin+deltaI)
-        if npts > 20 :
-          #a = numpy.percentile( fracp, [25,50,75,95] )
-          a = numpy.percentile( fracp, [.1587, .50, .8414, .95] )
-          #print fracp
-          #print a
-          fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f" % \
-            (Imin, Imin+deltaI, Imin+deltaI/2., npts, a[0],a[1],a[2],a[3]) )
-          #a = numpy.percentile( numpy.array(fracv), [25,50,75,95] )
-          a = numpy.percentile( fracp, [.1587, .50, .8414, .95] )
-          fout.write("    %7.4f %7.4f %7.4f %7.4f\n" % \
-            (a[0],a[1],a[2],a[3]) )
+      print "%4d points with %7.4f < I < %7.4f" % (npts,I1,I2)
+      if npts > 20 :
+        a = numpy.percentile( fracp, [15.87, 50, 84.14, 95] )
+        fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f" % \
+          (I1, I2, (I1+I2)/2., npts, a[0],a[1],a[2],a[3]) )
+        a = numpy.percentile( fracv, [15.87, 50, 84.14, 95] )
+        fout.write("    %7.4f %7.4f %7.4f %7.4f\n" % \
+          (a[0],a[1],a[2],a[3]) )
+      I1 = I2
+      I2 = 1.3*I1
 
     fout.close()
 
@@ -3227,21 +3225,24 @@ def polStats2( psDict, outfile ):
     fout.write("# pcutoff: %.5f\n" % psDict["pcutoff"] )
     fout.write("#\n#  Pmin  Pmax  Pmid  16_pct 50pct 84_pct 95_pct\n")
 
-    deltaP = .05
     Pmax = numpy.array(P).max()
-    for Pmin in numpy.arange(0.,Pmax+deltaP,deltaP):
+    P1 = psDict["pcutoff"]
+    P2 = 1.3*P1
+
+    while P2 <= Pmax :
       voverp = []
       npts = 0
       for poli,absv in zip( P, ABSV ) :
-        if (poli > Pmin) and (poli <= (Pmin+deltaP)) :  
+        if (poli > P1) and (poli <= P2) :  
           voverp.append( absv/poli )
           npts = npts + 1
-      print "%4d points with %7.4f < P < %7.4f" % (npts,Pmin,Pmin+deltaP)
-      if npts > 50 :
-        #a = numpy.percentile( numpy.array(voverp), [25,50,75,95] )
-        a = numpy.percentile( fracp, [.1587, .50, .8414, .95] )
+      print "%4d points with %7.4f < P < %7.4f" % (npts,P1,P2)
+      if npts > 20 :
+        a = numpy.percentile( voverp, [15.87, 50, 84.14, 95] )
         fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f\n" % \
-          (Pmin, Pmin+deltaP, Pmin+deltaP/2., npts, a[0],a[1],a[2],a[3]) )
+          (P1, P2, (P1+P2)/2., npts, a[0],a[1],a[2],a[3]) )
+      P1 = P2
+      P2 = 1.3*P1
     fout.close()
 
   # plot fracp, fracv vs I
