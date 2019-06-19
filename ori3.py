@@ -3132,19 +3132,20 @@ def polPlot2( posList, j21=False ) :
     
 # compute percentiles of P/I vs I, V/I vs I, V/I vs P (NOT as function of velocity)
 #def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,105] ):
-def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange=[40,105] ):
+
+def polStats2( psDict, outfile ):
     
   # write header info into each of the 3 output files
-    fout = open("polStats2.dat","w")
+    fout = open(outfile+".vsI","w")
     fout.write("# created by ori3.polStats2\n")
-    fout.write("# input files: %s\n" % IQUVmapList[0] )
-    fout.write("#              %s\n" % IQUVmapList[1] )
-    fout.write("#              %s\n" % IQUVmapList[2] )
-    fout.write("#              %s\n" % IQUVmapList[3] )
-    fout.write("# region: %s\n" % region )
-    fout.write("# chanrange: [%d,%d]\n" % (chanrange[0],chanrange[1]))
-    fout.write("# icutoff: %.5f\n" % icutoff )
-    fout.write("#\n#  Imin  Imax    25_pct 50_pct 75_pct 95_pct\n")
+    fout.write("# input files: %s\n" % psDict["IQUVmapList"][0] )
+    fout.write("#              %s\n" % psDict["IQUVmapList"][1] )
+    fout.write("#              %s\n" % psDict["IQUVmapList"][2] )
+    fout.write("#              %s\n" % psDict["IQUVmapList"][3] )
+    fout.write("# region: %s\n" % psDict["region"] )
+    fout.write("# chanrange: [%d,%d]\n" % (psDict["chanrange"][0],psDict["chanrange"][1]) )
+    fout.write("# icutoff: %.5f\n" % psDict["icutoff"] )
+    fout.write("#\n#  Imin    Imax    Imean   npts  16_pct  50_pct   84_pct   95_pct\n")
 
   # create giant array of I,Q,U,V for every pixel
 
@@ -3154,11 +3155,14 @@ def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrang
     vp = []
     z = [ [],[],[],[] ]    
 
-    for ichan in range( chanrange[0],chanrange[1]+1) :
+    for ichan in range( psDict["chanrange"][0],psDict["chanrange"][1]+1) :
       print "processing chan %d" % ichan
       for nmap in range( 0,4 ):
+        print "imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % \
+           (psDict["IQUVmapList"][nmap],psDict["region"],ichan) 
         p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
-           (IQUVmapList[nmap],region,ichan) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+           (psDict["IQUVmapList"][nmap],psDict["region"],ichan) ) ), \
+           stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
         result = p.communicate()[0]
         x,y,flx = numpy.loadtxt("imtablog", unpack=True )
         z[nmap].append(flx)
@@ -3168,63 +3172,74 @@ def polStats2( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrang
     qarr = numpy.concatenate(z[1])
     uarr = numpy.concatenate(z[2])
     varr = numpy.concatenate(z[3])
-
+    Imax = iarr.max()
+    
     deltaI = .05
-    PI = []
+    P = []
     ABSV = []
 
-    for Imin in numpy.arange(icutoff,2.,deltaI):
-      print "Imin = %.5f" % Imin
-      fracp = []
-      fracv = []
-      npts = 0
+    for Imin in numpy.arange(0.,Imax+deltaI,deltaI):
+      if (Imin+deltaI) > psDict["icutoff"] :
+        fracp = []
+        fracv = []
+        npts = 0
    
-    # write percentiles of poli/I and abs(V)/I vs I
-      for i,q,u,v in zip( iarr,qarr,uarr,varr ) :
-        if (i > Imin) and (i <= (Imin+deltaI)) :
-          npts = npts + 1
-          poli = math.sqrt( q*q + u*u)
-          fracp.append( poli/i )
-          fracv.append( abs(v)/i )
+      # write percentiles of poli/I and abs(V)/I vs I
+        for i,q,u,v in zip( iarr,qarr,uarr,varr ) :
+          if (i > Imin) and (i <= (Imin+deltaI)) :
+            npts = npts + 1
+            poli = math.sqrt( q*q + u*u)
+            fracp.append( poli/i )
+            #print i,poli,fracp[-1]
+            fracv.append( abs(v)/i )
 
-        # fill out PI and ABSV arrays as we go
-          PI.append(poli)
-          ABSV.append( abs(v) )
+          # fill out P and ABSV arrays as we go; needed to plot absV vs poli
+            P.append(poli)
+            ABSV.append( abs(v) )
 
-      if npts > 50 :
-        a = numpy.percentile( fracp, [25,50,75,95] )
-        fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f" % \
-          (Imin, Imin+deltaI, Imin+deltaI/2., npts, a[0],a[1],a[2],a[3]) )
-        a = numpy.percentile( fracv, [25,50,75,95] )
-        fout.write("    %7.4f %7.4f %7.4f %7.4f\n" % \
-          (a[0],a[1],a[2],a[3]) )
+        print "%4d points with %7.4f < I < %7.4f" % (npts,Imin,Imin+deltaI)
+        if npts > 20 :
+          #a = numpy.percentile( fracp, [25,50,75,95] )
+          a = numpy.percentile( fracp, [.1587, .50, .8414, .95] )
+          #print fracp
+          #print a
+          fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f" % \
+            (Imin, Imin+deltaI, Imin+deltaI/2., npts, a[0],a[1],a[2],a[3]) )
+          #a = numpy.percentile( numpy.array(fracv), [25,50,75,95] )
+          a = numpy.percentile( fracp, [.1587, .50, .8414, .95] )
+          fout.write("    %7.4f %7.4f %7.4f %7.4f\n" % \
+            (a[0],a[1],a[2],a[3]) )
+
     fout.close()
 
-  # now use the accumulated PI and ABSV arrays to write percentiles of abs(V)/P vs P
+  # now use the accumulated P and ABSV arrays to write percentiles of abs(V)/P vs P
   # note that all these points fulfil the requirement that i > Imin
 
-    fout = open("polStats2.voverp","w")
+    fout = open(outfile+".vsP","w")
     fout.write("# created by ori3.polStats2\n")
-    fout.write("# input files: %s\n" % IQUVmapList[0] )
-    fout.write("#              %s\n" % IQUVmapList[1] )
-    fout.write("#              %s\n" % IQUVmapList[2] )
-    fout.write("#              %s\n" % IQUVmapList[3] )
-    fout.write("# region: %s\n" % region )
-    fout.write("# chanrange: [%d,%d]\n" % (chanrange[0],chanrange[1]))
-    fout.write("# icutoff: %.5f\n" % icutoff )
-    fout.write("#\n#  Pmin  Pmax  Pmid  25_pct 50_pct 75_pct 95_pct\n")
+    fout.write("# input files: %s\n" % psDict["IQUVmapList"][0] )
+    fout.write("#              %s\n" % psDict["IQUVmapList"][1] )
+    fout.write("#              %s\n" % psDict["IQUVmapList"][2] )
+    fout.write("#              %s\n" % psDict["IQUVmapList"][3] )
+    fout.write("# region: %s\n" % psDict["region"] )
+    fout.write("# chanrange: [%d,%d]\n" % (psDict["chanrange"][0],psDict["chanrange"][1]))
+    fout.write("# icutoff: %.5f\n" % psDict["icutoff"] )
+    fout.write("# pcutoff: %.5f\n" % psDict["pcutoff"] )
+    fout.write("#\n#  Pmin  Pmax  Pmid  16_pct 50pct 84_pct 95_pct\n")
 
     deltaP = .05
-    for Pmin in numpy.arange(pcutoff,2.,deltaP):
-      print "Pmin = %.5f" % Pmin
+    Pmax = numpy.array(P).max()
+    for Pmin in numpy.arange(0.,Pmax+deltaP,deltaP):
       voverp = []
       npts = 0
-      for poli,absv in zip( PI, ABSV ) :
+      for poli,absv in zip( P, ABSV ) :
         if (poli > Pmin) and (poli <= (Pmin+deltaP)) :  
           voverp.append( absv/poli )
           npts = npts + 1
+      print "%4d points with %7.4f < P < %7.4f" % (npts,Pmin,Pmin+deltaP)
       if npts > 50 :
-        a = numpy.percentile( voverp, [25,50,75,95] )
+        #a = numpy.percentile( numpy.array(voverp), [25,50,75,95] )
+        a = numpy.percentile( fracp, [.1587, .50, .8414, .95] )
         fout.write("%7.4f %7.4f %7.4f  %6d  %7.4f %7.4f %7.4f %7.4f\n" % \
           (Pmin, Pmin+deltaP, Pmin+deltaP/2., npts, a[0],a[1],a[2],a[3]) )
     fout.close()
@@ -3273,8 +3288,8 @@ def panelPlot( IQUVmapList, region, chanRange, Vrange, contourList, outfile="pan
     vecScale = .3
 
     pp = PdfPages( outfile )
-    ncols = 3
-    nrows = 5 
+    ncols = 2
+    nrows = 3 
     fig = pyplot.figure( figsize=(8,11) )
  
   # use ImageGrid to make neat array of boxes
@@ -3304,6 +3319,8 @@ def panelPlot( IQUVmapList, region, chanRange, Vrange, contourList, outfile="pan
       Q = numpy.reshape(z[1], (ny,nx))
       U = numpy.reshape(z[2], (ny,nx))
       V = numpy.reshape(z[3], (ny,nx))
+      Vf = numpy.ma.masked_where( I < Icutoff, V/I )
+      Vfrac = numpy.ma.masked_where( numpy.abs(Vf) < .01, Vf )
       X = numpy.reshape(x, (ny,nx))
       Y = numpy.reshape(y, (ny,nx))
 
