@@ -2954,13 +2954,6 @@ def polStats( IQUVmapList, pcutoff, icutoff, region='arcsec,box(1.2)', chanrange
      # plt( x, y, [z[0],polm,fracv,voverp] )
   #    print len(ifl), len(fp), len(fv), len(vp)
 
-  # plot fracp, fracv vs I
-  #  fig,ax = pyplot.subplots( nrows=2 )
-  #  ax[0].scatter( ifl, fp, alpha=0.1 )
-  #  pyplot.title("P/I vs I")
-  #  ax[1].scatter( ifl, fv, alpha=0.1 )
-  #  pyplot.title("V/I vs I")
-  #  pyplot.show()
     
 
 def pdump( ichan, vchan, arr, outfile ) :
@@ -3172,6 +3165,12 @@ def polStats2( psDict, outfile ):
     qarr = numpy.concatenate(z[1])
     uarr = numpy.concatenate(z[2])
     varr = numpy.concatenate(z[3])
+    # poliarr = numpy.sqrt(numpy.power(qarr,2) + numpy.power(uarr,2))
+    # fracparr = poliarr/iarr
+    # fracvarr = numpy.abs(varr)/iarr
+    iplot = []
+    fracpplot = []
+    fracvplot = []
     
     P = []
     ABSV = []
@@ -3192,6 +3191,11 @@ def polStats2( psDict, outfile ):
           poli = math.sqrt( q*q + u*u)
           fracp.append( poli/i )
           fracv.append( abs(v)/i )
+
+        # accumulate values for scatter plots
+          iplot.append(i)
+          fracpplot.append( poli/i )
+          fracvplot.append( abs(v)/i )
 
         # fill out P and ABSV arrays as we go; needed to plot absV vs poli
           P.append(poli)
@@ -3246,12 +3250,12 @@ def polStats2( psDict, outfile ):
     fout.close()
 
   # plot fracp, fracv vs I
-  #  fig,ax = pyplot.subplots( nrows=2 )
-  #  ax[0].scatter( ifl, fp, alpha=0.1 )
-  #  pyplot.title("P/I vs I")
-  #  ax[1].scatter( ifl, fv, alpha=0.1 )
-  #  pyplot.title("V/I vs I")
-  #  pyplot.show()
+    fig,ax = pyplot.subplots( ncols=2 )
+    ax[0].scatter( iplot, fracpplot, alpha=0.1 )
+    pyplot.title("P/I vs I")
+    ax[1].scatter( iplot, fracvplot, alpha=0.1 )
+    pyplot.title("V/I vs I")
+    pyplot.show()
     
 
 # retrieve restfreq and channel velocities from miriad map
@@ -3283,7 +3287,7 @@ def getVelInfo( miriadMap ) :
 # contourList is for Stokes I in Jy/beam -- e.g., [.05,.1,.2,.4]
 
 def panelPlot( IQUVmapList, region, chanRange, Vrange, contourList, outfile="panels.pdf" ) :
-    delta = 4
+    delta = 6
     Pcutoff = .003
     Icutoff = .01
     vecScale = .3
@@ -3336,7 +3340,7 @@ def panelPlot( IQUVmapList, region, chanRange, Vrange, contourList, outfile="pan
     # contour plot of Stokes I
       #ax[ipanel].contour( x.reshape(ny,nx), y.reshape(ny,nx), numpy.array(z[0]).reshape(ny,nx), \
       ax[ipanel].contour( X, Y, I, \
-        colors='black', levels=contourList, linewidths=.4 )
+        colors='gray', levels=contourList, linewidths=.4 )
 
     # compute poli and pa
       poli = numpy.sqrt( numpy.power(Q,2) + numpy.power(U,2) )
@@ -3344,21 +3348,21 @@ def panelPlot( IQUVmapList, region, chanRange, Vrange, contourList, outfile="pan
 
     # plot line segment wherever poli > Pcutoff and I > Icutoff
     # use trick of creating one long line with None breaking up segments
-    #  xlist = []
-    #  ylist = []
-    #  for n in range(0,nx,delta) :
-    #    for m in range(0,ny,delta) :
-    #      if (I[m,n] > Icutoff) and (poli[m,n] > Pcutoff) :
-    #        lvec = poli[m,n]/I[m,n] * vecScale 
-    #        xlist.append( X[m,n] - lvec/2. * math.sin(pa[m,n]) )
-    #        xlist.append( X[m,n] + lvec/2. * math.sin(pa[m,n]) )
-    #        xlist.append( None )
-    #        ylist.append( Y[m,n] + lvec/2. * math.cos(pa[m,n]) )
-    #        ylist.append( Y[m,n] - lvec/2. * math.cos(pa[m,n]) )
-    #        ylist.append( None )
-    #  if len(xlist) > 1 :
-    #    ax[ipanel].plot( xlist, ylist, linestyle='-', color='white', linewidth=1)
-    #    ax[ipanel].plot( xlist, ylist, linestyle='-', color='black', linewidth=0.5)
+      xlist = []
+      ylist = []
+      for n in range(0,nx,delta) :
+        for m in range(0,ny,delta) :
+          if (I[m,n] > Icutoff) and (poli[m,n] > Pcutoff) :
+            lvec = poli[m,n]/I[m,n] * vecScale 
+            xlist.append( X[m,n] - lvec/2. * math.sin(pa[m,n]) )
+            xlist.append( X[m,n] + lvec/2. * math.sin(pa[m,n]) )
+            xlist.append( None )
+            ylist.append( Y[m,n] + lvec/2. * math.cos(pa[m,n]) )
+            ylist.append( Y[m,n] - lvec/2. * math.cos(pa[m,n]) )
+            ylist.append( None )
+      if len(xlist) > 1 :
+        ax[ipanel].plot( xlist, ylist, linestyle='-', color='white', linewidth=1)
+        ax[ipanel].plot( xlist, ylist, linestyle='-', color='black', linewidth=0.5)
 
     # alternative method, coloring the vectors
     #  for n in range(0,nx,delta) :
@@ -3389,3 +3393,104 @@ def panelPlot( IQUVmapList, region, chanRange, Vrange, contourList, outfile="pan
     pyplot.savefig( pp, format='pdf' )
     pp.close()
     pyplot.show()
+
+# create single average polarization spectrum from maps of I,Q,U,V
+# also compute statistics of fractional P and fractional V
+def polStats3( mapDict,  outfile="polStats3.dat" ):
+    
+  # use imlist to retrieve velocity information from the header
+    Imap = mapDict["IQUVmapList"][0]
+    print Imap
+    p= subprocess.Popen( ( shlex.split('imlist in=%s' % Imap) ), \
+        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    for line in lines :
+      if len(line) > 1 :
+        a = line.split()
+        n = string.find( line, "restfreq:" )
+        if n >= 0 :
+          restfreq = float( line[n+9:].split()[0] )
+        n = string.find( line, "crval3  :" )
+        if n >= 0 :
+          v1 = float( line[n+9:].split()[0] )
+        n = string.find( line, "cdelt3  :" )
+        if n >= 0 :
+          dv = float( line[n+9:].split()[0] )
+    print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
+
+  # use imspec to retrieve "sum of beam in equivalent region' = number of pixels per beam
+    p= subprocess.Popen( ( shlex.split('imspec in=%s region=image(1)' % Imap )), \
+        stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    result = p.communicate()[0]
+    lines = result.split("\n")
+    for line in lines :
+      if len(line) > 1 :
+        a = line.split()
+        n = string.find( line, "Sum of beam in equivalent region:" )
+        if n >= 0 :
+          pixelsPerBeam = float( line[n+33:].split()[0] )
+    print "pixels per beam = %.2f" % pixelsPerBeam
+    icutoff = mapDict["icutoff"]
+
+  # write header info into the output file
+    fout = open(outfile,"w")
+    fout.write("# created by ori3.polStats3\n")
+    fout.write("# input files: %s\n" % mapDict["IQUVmapList"][0] )
+    fout.write("#              %s\n" % mapDict["IQUVmapList"][1] )
+    fout.write("#              %s\n" % mapDict["IQUVmapList"][2] )
+    fout.write("#              %s\n" % mapDict["IQUVmapList"][3] )
+    fout.write("# region: %s\n" % mapDict["region"] )
+    fout.write("# icutoff: %.5f\n" % mapDict["icutoff"] )
+    fout.write("# beam oversampling factor: %.2f\n" % pixelsPerBeam )
+    fout.write("#\n#     vel     npix      Itot     Pvector    Pscalar      PAvec    PAmean   PAminus    PAplus\n")
+
+  # read I,Q,U,V data for each channel range
+    for ichan in range( mapDict["chanrange"][0],mapDict["chanrange"][1]+1) :
+      vchan = v1 + (ichan-1)*dv
+      z = []
+      for nmap in range( 0,4 ):
+        p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s(%d) log=imtablog format=(3F12.5)" % 
+           (mapDict["IQUVmapList"][nmap],mapDict["region"],ichan) ) ), stdout=subprocess.PIPE, \
+           stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+        result = p.communicate()[0]
+        x,y,flx = numpy.loadtxt("imtablog", unpack=True )
+        z.append(flx)
+
+    # flag I,Q,U, then compute integrated flux (sum of unflagged / pixelsPerBeam)
+      Iflagged = numpy.ma.compressed( numpy.ma.masked_where( z[0] < icutoff, z[0] ))
+      Qflagged = numpy.ma.compressed( numpy.ma.masked_where( z[0] < icutoff, z[1]) )
+      Uflagged = numpy.ma.compressed( numpy.ma.masked_where( z[0] < icutoff, z[2]) )
+      print "processing chan %d, VLSR %.3f: npixels = %d" % (ichan,vchan,len(Iflagged))
+
+    # define default values of 0 in case all pixels are flagged
+      Itot = 0.
+      Psca = 0.
+      Pvec = 0.
+      PAavg = 0.
+      a = [0.,0.,0.]
+
+      if len(Iflagged) > 0 :
+        Itot = numpy.sum( Iflagged )/ pixelsPerBeam 
+        poli = numpy.sqrt(numpy.power(Qflagged,2) + numpy.power(Uflagged,2))   # no noise bias correction!
+        Psca = numpy.ma.sum( poli )/ pixelsPerBeam 
+        Pvec = math.sqrt( pow(numpy.sum(Qflagged),2) + pow(numpy.sum(Uflagged),2) ) / pixelsPerBeam
+        PAavg = numpy.degrees( 0.5 * numpy.arctan2( numpy.sum(Uflagged), numpy.sum(Qflagged)))
+        if PAavg < 0. :
+          PAavg = PAavg + 180.
+        PA = numpy.degrees( 0.5 * numpy.arctan2( Uflagged, Qflagged ))
+        deltaPA = []
+        for pa in PA :
+          while (pa - PAavg) > 90. :   
+            pa = pa - 180.
+          while (pa - PAavg) < -90. :
+            pa = pa + 180.
+          deltaPA.append(pa)
+          a = numpy.percentile( deltaPA, [15.87, 50, 84.14] )
+    
+    # write out results for this channel
+      fout.write("%10.3f  %6d  %9.4f  %9.4f  %9.4f   %8.2f  %8.2f  %8.2f  %8.2f\n" % \
+        (vchan, len(Qflagged), Itot, Pvec, Psca, PAavg, a[1], a[0], a[2]) )
+    fout.close()
+
+
