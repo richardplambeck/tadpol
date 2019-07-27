@@ -3494,3 +3494,76 @@ def polStats3( mapDict,  outfile="polStats3.dat" ):
     fout.close()
 
 
+# fig6 is designed to plot integrated intensity I and V, for Fig 6
+def fig6( IQUVmapList, offset, Vrange, contourList, lim, boxList, title, outfile ) :
+
+    pp = PdfPages( outfile )
+    fig = pyplot.figure( figsize=(8,11) )
+ 
+  # use ImageGrid to make neat array of boxes
+    ax = ImageGrid( fig, 111, nrows_ncols=(1,1), share_all=True, axes_pad=0.1, \
+      cbar_location="right", cbar_mode="single", cbar_pad=.3, cbar_size="3%" )
+
+  # read in region a little bigger than box
+    region="arcsec,box(%.2f)" % ( lim + abs(offset[0]) + abs(offset[1]) + .1)
+
+  # read I,Q,U,V for each channel, plot 1 subpanel
+    z = [ [],[],[],[] ]    
+    for nmap in range( 0,4 ):
+      p = subprocess.Popen( ( shlex.split("imtab in=%s region=%s log=imtablog format=(3F12.5)" % 
+         (IQUVmapList[nmap],region) ) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)  
+      result = p.communicate()[0]
+      x,y,flx = numpy.loadtxt("imtablog", unpack=True )
+      x = x + offset[0]
+      y = y + offset[1]
+      z[nmap].append(flx)
+    nx = len( numpy.unique( x ) )
+    ny = len( numpy.unique( y ) )
+    print "nx = %d, ny = %d" % (nx,ny)
+ 
+  # convert to 2d arrays
+    I = numpy.reshape(z[0], (ny,nx))
+    Q = numpy.reshape(z[1], (ny,nx))
+    U = numpy.reshape(z[2], (ny,nx))
+    V = numpy.reshape(z[3], (ny,nx))
+    #Vf = numpy.ma.masked_where( I < Icutoff, V/I )
+    #Vfrac = numpy.ma.masked_where( numpy.abs(Vf) < .01, Vf )
+    X = numpy.reshape(x, (ny,nx))
+    Y = numpy.reshape(y, (ny,nx))
+
+    ipanel = 0
+  # pixel plot of Stokes V
+    im = ax[ipanel].imshow(V, origin='lower', aspect='equal', \
+      extent=[x[0],x[-1],y[0],y[-1]], vmin=Vrange[0], vmax=Vrange[1], cmap='RdBu_r' )
+
+  # set limits so that RA increases to the left
+    ax[ipanel].set_xlim( lim, -lim )
+    ax[ipanel].set_ylim( -lim, lim )
+
+  # contour plot of Stokes I
+    ax[ipanel].contour( X, Y, I, \
+      colors='gray', levels=contourList, linewidths=.4 )
+    ax[ipanel].minorticks_on()
+
+    for box in boxList :
+      print box
+      Rect = Rectangle( (box[0]-box[2]/2., box[1]-box[2]/2.), box[2], box[2], \
+        fill=False, edgecolor='white', alpha=1., linewidth=2)   # target range
+      ax[ipanel].add_patch( Rect )
+      Rect = Rectangle( (box[0]-box[2]/2., box[1]-box[2]/2.), box[2], box[2], \
+        fill=False, edgecolor='green', alpha=1., linewidth=1)   # target range
+      ax[ipanel].text( box[3], box[4], box[5] )
+      ax[ipanel].add_patch( Rect )
+      ax[ipanel].set_xlabel( "RA offset (arcsec)" )
+      ax[ipanel].set_ylabel( "DEC offset (arcsec)" )
+      ax[ipanel].set_title( title )
+
+
+  # finish up   
+    ax.cbar_axes[0].colorbar(im)
+    ax.cbar_axes[0].tick_params( axis='both', which='major', labelsize=12 )
+    ax.cbar_axes[0].set_title("Stokes V\n(Jy/beam)", fontdict={'fontsize':12}) 
+    pyplot.savefig( pp, format='pdf' )
+    pp.close()
+    pyplot.show()
+
