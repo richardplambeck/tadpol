@@ -2135,3 +2135,24 @@ def lossy( fitFile, fGHz=numpy.arange(76.,115.,.01), angIdeg=5.16 ) :
       pwr = numpy.power( amplitude, 2 )
       fout.write("%8.2f  %8.6f  %8.3f  %6.4f   1  %9.5f\n" % (f, amplitude, phase, unc, pwr ) )
     fout.close()
+
+# 02jul2019 - plot FFT of power measurement
+def powFFT( infile) :
+    f,ptrans,p,pref1,pref2 = numpy.loadtxt( infile+".pow", unpack=True )     # read single data file
+    #win = scipy.signal.windows.blackmanharris(len(f))
+    win = scipy.signal.windows.hann(len(f))
+    yf = scipy.fftpack.fft(win*pref1) 
+    xf = scipy.fftpack.fftfreq( len(f), (f[1]-f[0])*1.e9 )
+    xp = scipy.fftpack.fftshift(xf)
+    print xp[0],xp[1]
+    yp = scipy.fftpack.fftshift(yf)
+    fig = pyplot.subplot(1,1,1)
+    fig.semilogy( xp, numpy.abs(yp), "-", color="b", linewidth=0.5)
+    fig.set_xlim( [0,7.e-9] )
+    fig.grid()
+    pyplot.show()
+    #fout = open("junk2","w")
+    #npts = len(yf)
+    #for n in range(1,npts//2) :
+    #  fout.write("%10.5f  %10.5f  %10.5f  %10.5f  %10.5f\n" % (xf[n],numpy.abs(yf[n]),xf[npts-n],abs(yf[npts-n]), numpy.abs(yf2[n]) ) )
+    #fout.close()
