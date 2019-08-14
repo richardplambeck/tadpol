@@ -336,11 +336,13 @@ def minmax( varray, margin=.05 ) :
 # tcm is list of thicknesses
 # nrefrac is list of refractive indices
 # tanDelta is list of loss tangents
+
 def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
     theta1 = math.radians(angIdeg)
     Y0 = cos(theta1)
     phs = [] 
     trans = []
+    # refl = []
     for freq in fGHzArr :
       M = numpy.identity(2)
       k0 = -2.*math.pi*freq/clight
@@ -356,16 +358,135 @@ def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
         M = numpy.dot( numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] ), M)
         tcmtotal = tcmtotal + tcm
     # solve for ampTperp (complex); then compute transmission and phase change relative to air 
-      ampTperp = 2.*Y0/(Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) 
+      denom = (Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) 
+      ampTperp = 2.*Y0/denom
+              #  / numpy.exp(-1j * k0 * tcm * cos(theta1) )   alternate way of correcting for air path
+      # ampRperp = (Y0*M.item(0,0) + Y0*Y0*M.item(0,1) - M.item(1,0) - Y0*M.item(1,1)) / denom
+      trans.append( abs( ampTperp ) )
+      phs.append( numpy.angle( ampTperp, deg=True ) - 360.* freq * tcmtotal * cos(theta1) / clight )
+      # refl.append( abs( ampRperp) )
+    return unwrap(numpy.array(phs) ), numpy.array(trans) #, numpy.array(refl)
+      
+# solveStack2 is customized for my transmission measurements (no computation of reflectivity)
+# it tries to speed up calculation by computing h and Y1 once, before going through freq array
+# again, this routine assumes E is perpendicular to plane of incidence ("s wave", "TE")
+# computes theoretical transmission for arbitrary stack of ISOTROPIC layers
+# fGHz is array of frequencies
+# angIdeg is angle of incidence to stack, in degrees
+# tcm is list of thicknesses
+# nrefrac is list of refractive indices
+# tanDelta is list of loss tangents
+
+def solveStack2( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
+    theta1 = math.radians(angIdeg)
+    Y0 = cos(theta1)
+
+  # first pass through stack to create h and Y1 vectors
+    harr = []
+    Y1arr = []
+    tcmtotal = 0.
+    for tcm,nrefrac,tanDelta in zip( tcmArr,nrArr,tanDeltaArr ) :
+      # theta2 = math.asin( math.sin(theta1)/nrefrac )
+      # h = nrefrac * tcm * cos(theta2)
+      # Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+      nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+      harr.append(tcm * nCosTheta2)
+      Y1arr.append(nCosTheta2)
+      tcmtotal = tcmtotal + tcm
+
+  # now go through freq array
+    phs = [] 
+    trans = []
+    for freq in fGHzArr :
+      M = numpy.identity(2)
+      k0 = -2.*math.pi*freq/clight
+      for tcm,h,Y1 in zip( tcmArr,harr,Y1arr ) :
+        M = numpy.dot( numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] ), M)
+
+    # solve for ampTperp (complex); then compute transmission and phase change relative to air 
+      denom = (Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) 
+      ampTperp = 2.*Y0/denom
               #  / numpy.exp(-1j * k0 * tcm * cos(theta1) )   alternate way of correcting for air path
       trans.append( abs( ampTperp ) )
       phs.append( numpy.angle( ampTperp, deg=True ) - 360.* freq * tcmtotal * cos(theta1) / clight )
     return unwrap(numpy.array(phs) ), numpy.array(trans)
       
+# TMrefl is for comparison with Grace's calculation
 
+def solveRefl( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr, mode="TE" ) :
+    theta1 = math.radians(angIdeg)
+    Y0 = cos(theta1)
+
+  # first pass through stack to create h and Y1 vectors
+    harr = []
+    Y1arr = []
+    tcmtotal = 0.
+    for tcm,nrefrac,tanDelta in zip( tcmArr,nrArr,tanDeltaArr ) :
+      theta2 = math.asin( math.sin(theta1)/nrefrac )
+      harr.append(nrefrac * tcm * cos(theta2))
+      if mode == "TE" :
+        Y1arr.append(nrefrac * cos(theta2))
+      else :
+        Y1arr.append(nrefrac/cos(theta2))  # for E parallel to plane of incidence
+      #nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+      #harr.append(tcm * nCosTheta2)
+      #Y1arr.append(nCosTheta2)
+      tcmtotal = tcmtotal + tcm
+
+  # now go through freq array
+    refl = []
+    for freq in fGHzArr :
+      M = numpy.identity(2)
+      k0 = -2.*math.pi*freq/clight
+      for tcm,h,Y1 in zip( tcmArr,harr,Y1arr ) :
+        M = numpy.dot( numpy.matrix( [[cos(k0*h), 1j*sin(k0*h)/Y1],[1j*Y1*sin(k0*h), cos(k0*h)]] ), M)
+
+    # solve for ampTpar (complex); then compute transmission and phase change relative to air 
+      denom = (Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) 
+      ampRperp = (Y0*M.item(0,0) + Y0*Y0*M.item(0,1) - M.item(1,0) - Y0*M.item(1,1)) / denom
+      refl.append( abs( ampRperp) )
+    return numpy.array(refl)
+      
+
+# this was a failed attempt to compute transfer matrix vs freq in one shot
+def solveStack3( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
+    theta1 = math.radians(angIdeg)
+    Y0 = cos(theta1)
+
+  # first pass through stack to create h and Y1 vectors
+    harr = []
+    Y1arr = []
+    tcmtotal = 0.
+    for tcm,nrefrac,tanDelta in zip( tcmArr,nrArr,tanDeltaArr ) :
+      # theta2 = math.asin( math.sin(theta1)/nrefrac )
+      # h = nrefrac * tcm * cos(theta2)
+      # Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
+      nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+      harr.append(tcm * nCosTheta2)
+      Y1arr.append(nCosTheta2)
+      tcmtotal = tcmtotal + tcm
+
+  # now go through freq array
+    phs = [] 
+    trans = []
+    M = []
+    k0 = -2.*math.pi/clight
+    for freq in fGHzArr :
+      M.append( numpy.identity(2) )
+    for tcm,h,Y1 in zip( tcmArr,harr,Y1arr ) :
+      M = numpy.dot( numpy.matrix( [[cos(k0*fGHzArr*h), 1j*sin(k0*fGHzArr*h)/Y1],[1j*Y1*sin(k0*fGHzArr*h), cos(k0*fGHzArr*h)]] ), M)
+
+    # solve for ampTperp (complex); then compute transmission and phase change relative to air 
+    denom = (Y0*M.item(0,0) + Y0*Y0*M.item(0,1) + M.item(1,0) + Y0*M.item(1,1)) 
+    ampTperp = 2.*Y0/denom
+              #  / numpy.exp(-1j * k0 * tcm * cos(theta1) )   alternate way of correcting for air path
+    trans = abs( ampTperp ) 
+    phs = numpy.angle( ampTperp, deg=True ) - 360.* freq * tcmtotal * cos(theta1) / clight 
+    return unwrap(phs), trans
+      
 # converts alpha to tanDelta, using average index of 3.25
-def tanD (fGHz, alpha) :
-  print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
+# def tanD (fGHz, alpha) :
+#   print "tanDelta = %.2e" %  (alpha * clight/ (2.*math.pi*3.25*fGHz) )
 
 # strip out plane corresponding to variables jx,jy from a multidimensional data cube, passing through point with lowest variance
 # that is, identify rows in vec where all variables other than jx,jy are held at their optimum value
@@ -397,8 +518,8 @@ def checkSensitivity2() :
     nrArr1 = numpy.array( [2.21, 3.113] )
     nrArr2 = numpy.array( [2.35, 3.115] )
     tanDeltaArr = numpy.array( [0.,0.] ) 
-    phs1,trans1 = solveStack(fGHzArr, angIdeg, tcmArr1, nrArr1, tanDeltaArr ) 
-    phs2,trans2 = solveStack(fGHzArr, angIdeg, tcmArr2, nrArr2, tanDeltaArr ) 
+    phs1,trans1,refl1 = solveStack(fGHzArr, angIdeg, tcmArr1, nrArr1, tanDeltaArr ) 
+    phs2,trans2,refl2 = solveStack(fGHzArr, angIdeg, tcmArr2, nrArr2, tanDeltaArr ) 
     print phs1
     print phs2
     print trans1
@@ -485,7 +606,6 @@ def quickFind2( fGHz ):
     if NoSolution :
        print "no solution"
          
-
 # show correlations between params for refractive index fits - specialized to just 2 layers
 def covarPlot2( pickleFile, chisqIndex=-1, worstRatio=10., FTS=False ) :
     fin = open( pickleFile, "r" )
@@ -1112,7 +1232,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       errs = []
     # datasets 0,2,4,... are prefit data sets
       for j in range(0,2*nDataSets,2) :
-        phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
+        phs,amp = solveStack2( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
         if FTSdata[j] :
           vecmodel = amp*amp
         else :
@@ -1181,7 +1301,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
 
       # datasets 1,3,5,... are full data sets
         for j in range(1, len(fGHz), 2) :    
-          phs,amp = solveStack( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
+          phs,amp = solveStack2( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
           if FTSdata[j] :
             vecmodel = amp*amp
           else :
@@ -1259,7 +1379,7 @@ def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/O
       pf, pamp, pphs, pu =  selectPrefitData( fGHz, trans, dphs_meas, unc ) 
 
     # recalculate the model amps and phases for the best fit parameters
-      dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
+      dphs_est,trans_est = solveStack2( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
 
     # plot phase unless FTS
       xmin,xmax = minmax( fGHz )
@@ -1464,7 +1584,7 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       pf, pamp, pphs, pu =  selectPrefitData( fGHz, trans, dphs_meas, unc ) 
 
     # recalculate the model amps and phases for the best fit parameters
-      dphs_est,trans_est = solveStack( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
+      dphs_est,trans_est = solveStack2( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
 
     # plot phase unless FTS
       xmin,xmax = minmax( fGHz )
@@ -1705,7 +1825,7 @@ def fuzzy1( fitFile, fGHz=numpy.arange(76.,115.,.01), angIdeg=5.16 ) :
     print "averaging results of %d trials" % ntrials
     vecmodel = numpy.zeros( len(fGHz), dtype=complex )
     for n in range(0,ntrials) :
-      phs,amp = solveStack( fGHz, angIdeg, tcmList[n], nrList[n], tanDeltaList[n] ) 
+      phs,amp = solveStack2( fGHz, angIdeg, tcmList[n], nrList[n], tanDeltaList[n] ) 
       vecmodel = vecmodel + amp * numpy.exp(1j*numpy.radians(phs))
     vecmodel = vecmodel/float(ntrials)
     amplitude = numpy.absolute( vecmodel )
@@ -1759,7 +1879,7 @@ def fuzzy2( fitFile, angIdeg=5.16 ) :
     vecmodel = numpy.zeros( len(fGHz), dtype=complex )
     for n in range(0,ntrials) :
       [tcmListSm, nrListSm, tanDeltaListSm ] = smoothTransitions( tcmList[n], nrList[n], tanDeltaList[n], deltaTcmList, fitFile )
-      phs,amp = solveStack( fGHz, angIdeg, tcmListSm, nrListSm, tanDeltaListSm ) 
+      phs,amp = solveStack2( fGHz, angIdeg, tcmListSm, nrListSm, tanDeltaListSm ) 
       vecmodel = vecmodel + amp * numpy.exp(1j*numpy.radians(phs))
     vecmodel = vecmodel/float(ntrials)
     amplitude = numpy.absolute( vecmodel )
@@ -2156,3 +2276,34 @@ def powFFT( infile) :
     #for n in range(1,npts//2) :
     #  fout.write("%10.5f  %10.5f  %10.5f  %10.5f  %10.5f\n" % (xf[n],numpy.abs(yf[n]),xf[npts-n],abs(yf[npts-n]), numpy.abs(yf2[n]) ) )
     #fout.close()
+
+# computes reflected power to compare with Grace Chesmore data
+def GraceCmp( fitFile, fGHz=numpy.arange(76.,180.,.02), angIdeg=10., mode="TM" ) :
+    fitParams = readFitFile( fitFile )
+    tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
+    ntrials = len(tcmList)
+    if ntrials > 1 :
+      print "error - only 1 model allowed"
+      return
+    for n in range(0,ntrials) :
+      #refl = TMrefl( fGHz, angIdeg, tcmList[n], nrList[n], tanDeltaList[n] ) 
+      refl = solveRefl( fGHz, angIdeg, tcmList[n], nrList[n], tanDeltaList[n], mode=mode ) 
+    pwr = numpy.power( refl, 2 )
+    print "average reflected power = %.3f" % (numpy.average(pwr))
+
+  # copy fitFile parameters to output file
+    fin = open( fitFile+".fitFile", "r")
+    fout = open( fitFile+".model", "w" )
+    fout.write("# %s.model\n" % fitFile)
+    fout.write("# ---------------------------------------------------- \n")
+    for line in fin:
+      fout.write("# %s" % line)
+    fout.write("# ---------------------------------------------------- \n")
+    fout.write("# averaged results of %d trials\n" % ntrials)
+    fout.write("# average power transmission = %.3f\n#\n" % (numpy.average(pwr)) )
+
+  # now write out the model data, in format compatible with readTransData
+    unc = .02
+    for i in range(0,len(fGHz)) :
+      fout.write("%8.2f  %9.5f\n" % (fGHz[i], pwr[i] ) )
+    fout.close()
