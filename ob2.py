@@ -377,26 +377,35 @@ def solveStack( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
 # nrefrac is list of refractive indices
 # tanDelta is list of loss tangents
 
-def solveStack2( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
+def solveStack2( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr, calcR=False ) :
     theta1 = math.radians(angIdeg)
     Y0 = cos(theta1)
 
   # first pass through stack to create h and Y1 vectors
     harr = []
     Y1arr = []
+    # harr2 = []
+    # Y1arr2 = []
     tcmtotal = 0.
     for tcm,nrefrac,tanDelta in zip( tcmArr,nrArr,tanDeltaArr ) :
-      # theta2 = math.asin( math.sin(theta1)/nrefrac )
-      # h = nrefrac * tcm * cos(theta2)
-      # Y1 = nrefrac * cos(theta2)  # for E perpendicular to plane of incidence
-      nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
-      harr.append(tcm * nCosTheta2)
-      Y1arr.append(nCosTheta2)
+
+    # method 1 for handling loss
+      theta2 = math.asin( math.sin(theta1)/nrefrac )
+      ncomplex = nrefrac*(1.+1.j*tanDelta/2.)
+      harr.append(ncomplex * tcm * cos(theta2))
+      Y1arr.append(ncomplex * cos(theta2))  # for E perpendicular to plane of incidence
+   
+    # method 2 for handling loss
+    #  nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+    #  harr2.append(tcm * nCosTheta2)
+    #  Y1arr2.append(nCosTheta2)
+
       tcmtotal = tcmtotal + tcm
 
   # now go through freq array
     phs = [] 
     trans = []
+    refl = []
     for freq in fGHzArr :
       M = numpy.identity(2)
       k0 = -2.*math.pi*freq/clight
@@ -409,6 +418,9 @@ def solveStack2( fGHzArr, angIdeg, tcmArr, nrArr, tanDeltaArr ) :
               #  / numpy.exp(-1j * k0 * tcm * cos(theta1) )   alternate way of correcting for air path
       trans.append( abs( ampTperp ) )
       phs.append( numpy.angle( ampTperp, deg=True ) - 360.* freq * tcmtotal * cos(theta1) / clight )
+      if calcR :
+        ampRperp = (Y0*M.item(0,0) + Y0*Y0*M.item(0,1) - M.item(1,0) - Y0*M.item(1,1)) / denom
+        refl.append( abs( ampRperp) )
     return unwrap(numpy.array(phs) ), numpy.array(trans)
       
 # TMrefl is for comparison with Grace's calculation
@@ -1179,7 +1191,7 @@ def printElapsed( ntrials, i, nblock, secs0 ) :
 #   chisq[0] < pCutoff * pchisqBest
 # fitFile lists input files, parameter ranges to search etc; but angIdeg comes from individual files
 #
-def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plambeck/PolarBear/OpticsBench/", calcR=False ) :
 
   # fitParams dictionary contains list of data files, parameter ranges to search, etc
     fitParams = readFitFile( fitFile )
@@ -1232,7 +1244,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       errs = []
     # datasets 0,2,4,... are prefit data sets
       for j in range(0,2*nDataSets,2) :
-        phs,amp = solveStack2( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
+        phs,amp = solveStack2( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i], calcR ) 
         if FTSdata[j] :
           vecmodel = amp*amp
         else :
@@ -1301,7 +1313,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
 
       # datasets 1,3,5,... are full data sets
         for j in range(1, len(fGHz), 2) :    
-          phs,amp = solveStack2( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i] ) 
+          phs,amp = solveStack2( fGHz[j], angIdeg[j], tcmList[i], nrList[i], tanDeltaList[i], calcR ) 
           if FTSdata[j] :
             vecmodel = amp*amp
           else :
@@ -2307,3 +2319,15 @@ def GraceCmp( fitFile, fGHz=numpy.arange(76.,180.,.02), angIdeg=10., mode="TM" )
     for i in range(0,len(fGHz)) :
       fout.write("%8.2f  %9.5f\n" % (fGHz[i], pwr[i] ) )
     fout.close()
+
+# this is a quick test to compare simple expression for complex refractive index
+#   vs expression given by complexNC; 8/16/2019
+def losstest() :
+    nrefrac = 3.
+    theta1 = numpy.radians(45.)
+    for tanDelta in numpy.arange(0.,2.1,.1) :
+      theta2 = math.asin( math.sin(theta1)/nrefrac )
+      nc = nrefrac*(1.+1.j*tanDelta/2.)*cos(theta2)
+      nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
+      print "%5.2f  %8.5f %8.5f   %8.5f %8.5f" % (tanDelta, numpy.real(nc), numpy.imag(nc), \
+        numpy.real(nCosTheta2), numpy.imag(nCosTheta2) )
