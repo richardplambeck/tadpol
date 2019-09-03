@@ -2331,3 +2331,182 @@ def losstest() :
       nCosTheta2 = complexNC( 1., theta1, nrefrac, tanDelta )
       print "%5.2f  %8.5f %8.5f   %8.5f %8.5f" % (tanDelta, numpy.real(nc), numpy.imag(nc), \
         numpy.real(nCosTheta2), numpy.imag(nCosTheta2) )
+
+# fit curve to dielectric constant of HA008/Metco6051 spray coatings
+def HA008fit( dataFile, outFile="HA008model.dat" ) :
+    x,y = numpy.loadtxt(dataFile, usecols=(1,2), unpack=True)  # x=fraction of HA008, y=dielectric constant
+    p = numpy.polyfit(x,y,2)   # fit 2nd order polynomial to the data
+    xout = numpy.arange(0.,1.01,.01)
+    yout = p[0]*numpy.power(xout,2) + p[1]*xout + p[2]
+    fout = open( outFile, "w" )
+    for x1,y1 in zip(xout,yout) :
+      fout.write("%5.2f  %7.4f\n" % (x1,y1))
+    fout.close()
+
+
+# open picklefile
+# produce plot of power transmission vs frequency for all models in pickle file with
+#   chisq < 2* minchisq
+def transPlot( pickleFile, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
+
+    fGHz = numpy.arange(70.,180.,.1)
+    angIdeg = 0.
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+
+  # dateString was added on 31-oct-2018; must be able to handle earlier files without it
+    try :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
+    except :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      dateString = " "
+    fin.close() 
+    nlayers = len( tcmList[0] )
+
+    print "\n10 best fits minimizing overall residuals:"
+    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+
+  # create savet,saven,savetanD lists, containing all configurations with chisq< 2.* minchisq
+    savet = []
+    savenr = []
+    savetanD = []
+    for n in range(0,len(chisq[-1])) :
+      if chisq[-1,n] < 2.*chisq[-1,nbest]:
+        savet.append( tcmList[n] )
+        savenr.append( nrList[n] )
+        savetanD.append( tanDeltaList[n] )
+
+  # begin the plot
+    pyplot.ioff()
+    pp = PdfPages( pickleFile + ".pdf")
+    fig =  pyplot.figure( figsize=(11,8) )
+    pyplot.suptitle( "%s   %s" % (fitParams["title"],pickleFile), fontsize=12 )
+
+  # calculate the model amps and phases for the best fit parameters
+    dphs_est,trans_est = solveStack2( fGHz, angIdeg, tcmList[nbest], nrList[nbest], tanDeltaList[nbest] ) 
+    power = numpy.power(trans_est,2) 
+    xmin,xmax = minmax( fGHz )
+    ax = fig.add_axes( [.1,.6,.85,.32] )
+    ax.set_ylabel("transmitted pwr", fontsize=10)
+    ymin,ymax = minmax( power )
+    ax.axis( [xmin, xmax, ymin, ymax] )
+    ax.plot( fGHz, power, "r-" )
+    ax.tick_params( labelsize=10 )
+    pyplot.grid(True)
+
+  # now plot all other powers that are allowed
+    for tcmL,nrL,tanDeltaL in zip(savet,savenr,savetanD) :
+      dphs_est,trans_est = solveStack2( fGHz, angIdeg, tcmL, nrL, tanDeltaL ) 
+      power = numpy.power(trans_est,2) 
+    ax.plot( fGHz, power, "b-" )
+
+
+  # (fictitious) bottom panel lists search ranges, limits, best values
+    fontSize = 12
+    ystep = .12
+    ax = fig.add_axes( [.1,.1,.85,.2])
+    ylab = 1 - ystep
+    ax.text( 0.1, ylab, "angle = %.2f deg; allowed thickness = [%s]" % \
+      ( angIdeg, makeString(fitParams["tcmRange"]/2.54) ), transform=ax.transAxes, \
+      horizontalalignment='left', fontsize=fontSize, color="black", rotation='horizontal' )
+    ax.text( 0.9, ylab, "reduced chisq = %.3f " % chisq[-1,nbest], transform=ax.transAxes, \
+      horizontalalignment='right', fontsize=fontSize, color="black", rotation='horizontal' )
+
+    tcmListIn = fitParams["tcmList"]
+    nrListIn = fitParams["nrList"]
+    tanDeltaListIn = fitParams["tanDeltaList"]
+
+    ylab = ylab - ystep - .08
+    ax.text( 0.03, ylab, "layer", style='oblique', horizontalalignment='center')
+    ax.text( 0.18, ylab, "thickness", style='oblique', horizontalalignment='center')
+    ax.text( 0.42, ylab, "index", style='oblique', horizontalalignment='center')
+    ax.text( 0.65, ylab, "epsilon", style='oblique', horizontalalignment='center')
+    ax.text( 0.87, ylab, "tanDelta", style='oblique', horizontalalignment='center')
+    ylab = ylab - 0.02
+     
+    totThickness = 0.
+    for nl in range(0,nlayers) : 
+      ylab = ylab - ystep 
+      nlyr = nl+1
+      ntest = nl
+      if nrListIn[nl][0] < 0. :
+        nlyr = int(-1*nrListIn[nl][0])
+        ntest = nlyr - 1    # use for checking search range; use mirror value
+        #ax.text( 0.0, ylab, "%d: mirror layer %d" % (nl+1, -1*nrListIn[nl][0]), \
+        #  transform=ax.transAxes, horizontalalignment='left', fontsize=fontSize, \
+        #  color="black", rotation='horizontal' )
+
+      ax.text( 0.03, ylab, "%d" % nlyr, horizontalalignment='center')
+      tmin,tmax = tLimits( savet, nl)
+      lowColor = 'gray'
+      lowStyle = 'oblique'
+      highColor = 'gray'
+      highStyle = 'oblique'
+      if tcmListIn[ntest][0] < tmin :
+        lowColor = 'black'               # search range extends below lower limit
+        lowStyle = 'normal'
+      if tcmListIn[ntest][-1] > tmax :
+        highColor = 'black'              # search range extends above upper limit
+        highStyle = 'normal'
+      ax.text( 0.105, ylab, "%.4f" % (tmin/2.54), horizontalalignment='center', color=lowColor, style=lowStyle ) 
+      ax.text( 0.180, ylab, "%.4f" % (tcmList[nbest][nl]/2.54), horizontalalignment='center', color='blue' ) 
+      ax.text( 0.255, ylab, "%.4f" % (tmax/2.54), horizontalalignment='center', color=highColor, style=highStyle ) 
+      totThickness = totThickness + tcmList[nbest][nl]/2.54
+
+      nrmin,nrmax = tLimits( savenr, nl )
+      lowColor = 'gray' 
+      lowStyle = 'oblique'
+      highColor = 'gray'
+      highStyle = 'oblique'
+      if nrListIn[ntest][0] < nrmin :
+        lowColor = 'black'               # search range extends below lower limit
+        lowStyle = 'normal'
+      if nrListIn[ntest][-1] > nrmax :
+        highColor = 'black'              # search range extends above upper limit
+        highStyle = 'normal'
+      ax.text( 0.355, ylab, "%.3f" % nrmin, horizontalalignment='center', color=lowColor, style=lowStyle) 
+      ax.text( 0.420, ylab, "%.3f" % (nrList[nbest][nl]), color='blue', horizontalalignment='center') 
+      ax.text( 0.485, ylab, "%.3f" % nrmax, horizontalalignment='center', color=highColor, style=highStyle) 
+      ax.text( 0.585, ylab, "%.3f" % pow(nrmin,2), horizontalalignment='center', color=lowColor, style=lowStyle) 
+      ax.text( 0.650, ylab, "%.3f" % pow(nrList[nbest][nl],2), color='blue', horizontalalignment='center') 
+      ax.text( 0.715, ylab, "%.3f" % pow(nrmax,2), horizontalalignment='center', color=highColor, style=highStyle) 
+
+      tanDmin,tanDmax = tLimits( savetanD, nl )
+      lowColor = 'gray'
+      lowStyle = 'oblique'
+      highColor = 'gray'
+      highStyle = 'oblique'
+      if tanDeltaListIn[ntest][0] < tanDmin :
+        lowColor = 'black'               # search range extends below lower limit
+        lowStyle = 'normal'
+      if tanDeltaListIn[ntest][-1] > tmax :
+        highColor = 'black'              # search range extends above upper limit
+        highStyle = 'normal'
+      ax.text( 0.80, ylab, "%.4f" % tanDmin, horizontalalignment='center', color=lowColor, style=lowStyle ) 
+      ax.text( 0.87, ylab, "%.4f" % (tanDeltaList[nbest][nl]), horizontalalignment='center', color='blue' ) 
+      ax.text( 0.94, ylab, "%.4f" % tanDmax, horizontalalignment='center', color=highColor, style=highStyle ) 
+
+  # put total modeled thickness on last line if more than 1 layer
+    if nlayers > 1 :
+      ylab = ylab - ystep 
+      ax.text( 0.180, ylab, "%.4f" % totThickness, horizontalalignment='center', color='blue' ) 
+
+    pyplot.axis('off')
+
+  # print date and time at the bottom
+    ax = fig.add_axes( [.1,.05,.85,.1])
+    ax.text(.5, 0., "%s" % dateString, \
+          transform=ax.transAxes, horizontalalignment='center', fontsize=fontSize, \
+          color="black", rotation='horizontal' )
+    pyplot.axis('off')
+
+    pyplot.savefig( pp, format="pdf" )
+    if not pdfOnly :
+      pyplot.show()
+    else :
+      print "plot saved to file %s" % (pickleFile + ".pdf")
+    pp.close()
+
