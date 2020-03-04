@@ -66,6 +66,7 @@ def makeList( inString ) :
 #
 def readTransFile( infile, path="/o/plambeck/PolarBear/OpticsBench/" ) :
   fin = open( path + infile, "r" )
+  print "reading data from file ", (path + infile)
   fGHz = []
   trans = []
   dphi = []
@@ -2347,6 +2348,7 @@ def HA008fit( dataFile, outFile="HA008model.dat" ) :
 # open picklefile
 # produce plot of power transmission vs frequency for all models in pickle file with
 #   chisq < 2* minchisq
+# this routine runs very slowly!!
 def transPlot( pickleFile, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
     fGHz = numpy.arange(70.,180.,.1)
@@ -2381,7 +2383,7 @@ def transPlot( pickleFile, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBenc
 
   # begin the plot
     pyplot.ioff()
-    pp = PdfPages( pickleFile + ".pdf")
+    pp = PdfPages( pickleFile + ".transPower.pdf")
     fig =  pyplot.figure( figsize=(11,8) )
     pyplot.suptitle( "%s   %s" % (fitParams["title"],pickleFile), fontsize=12 )
 
