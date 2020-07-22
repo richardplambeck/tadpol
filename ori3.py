@@ -28,20 +28,21 @@ from scipy import signal
 from scipy.stats import norm
 import matplotlib.mlab as mlab
 
-ckms = 2.99792e5    # speed of light in km/sec
+ckms = 2.99792458e5    # speed of light in km/sec
 hplanck = 6.626e-27  # planck's constant in erg-s
 kboltzmann = 1.38e-16  # boltzmann's constant in erg/K
-ccgs = 2.99792e10   # speed of light in cm/sec
+ccgs = 2.99792458e10   # speed of light in cm/sec
 
 # plotParams dictionary controls plotting details
-plotParams = { "npanels" : 2,
-               "maxPanelsPerPage" : 2,
+plotParams = { "npanels" : 4,
+               "maxPanelsPerPage" : 4,
                "nlap" : 20,
-               "ymin" : .4,       # -.1 for band7, -.2 for band9
-               "ymax" : 1.1,      # 1.95 for band7, 4.8 for band9
+               "ymin" : -.1,       # -.1 for band7, -.2 for band9, .4 for ?
+               "ymax" : 1.95,      # 1.95 for band7, 4.8 for band9, 1.1 for ?
                #"linelistFile" : "/o/plambeck/OriALMA/Band7B/Spectra/splat_ann.csv", 
                #"linelistFile" : "/o/plambeck/OriALMA/Spectra/splat_ann.csv", 
-               "linelistFile" : "/o/plambeck/OriALMA/Salty/LowResData/salts.csv", 
+               #"linelistFile" : "/o/plambeck/OriALMA/Salty/LowResData/salts.csv", 
+               "linelistFile" : None,
                "title" : "Title",      # placeholder for title, to be filled in later
                "contLevel" : 0.,
                "rms" : 0.0,       # if shading good channels, shade box ranges from contLevel-shadeHgt to contLevel+shadeHgt
@@ -73,13 +74,13 @@ B9spw2 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw2.100plus.a.txt",
 B9spw3 = {'file': "/big_scr6/plambeck/650GHz/miriad/spw3.100plus.a.txt", 
           'flag': "/big_scr6/plambeck/650GHz/miriad/flags_a3"}
 
-BN7spw0 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw0.ch100.txt", 
+BN7spw0 = {'file': "/big_scr6/plambeck/Cycle1_350GHzBN/miriad/spw0.ch100.txt", 
            'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b0"}
-BN7spw1 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw1.ch100.txt", 
+BN7spw1 = {'file': "/big_scr6/plambeck/Cycle1_350GHzBN/miriad/spw1.ch100.txt", 
            'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b1"}
-BN7spw2 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw2.ch100.txt", 
+BN7spw2 = {'file': "/big_scr6/plambeck/Cycle1_350GHzBN/miriad/spw2.ch100.txt", 
            'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b2"}
-BN7spw3 = {'file': "/big_scr6/plambeck/350GHzBN/miriad/spw3.ch100.txt", 
+BN7spw3 = {'file': "/big_scr6/plambeck/Cycle1_350GHzBN/miriad/spw3.ch100.txt", 
            'flag': "/o/plambeck/OriALMA/Band7/Spectra/BNflags_b3"}
 
 B8spw0 = {'file': "/big_scr6/plambeck/460GHz/miriad/spw0.ch250.txt", 
@@ -119,7 +120,9 @@ B7spw2 = {'file': "spw2.100plus.a.txt",
 B7spw3 = {'file': "spw3.100plus.a.txt", 
           'flag': "flags_b3"}
 
-specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
+#specList = [B7spw0,B7spw1,B7spw2,B7spw3,B9spw0,B9spw1,B9spw2,B9spw3]
+#specList = [BN7spw0,BN7spw1,BN7spw2,BN7spw3]
+specList = [B8spw0,B8spw1,B8spw2,B8spw3]
 
 
 # run getspec, dump spectrum to a text file; adjust freq scale to be correct for source at LSR velocity vsource
@@ -167,19 +170,36 @@ def readspec( inspec, vsource=5. ) :
 #       - from this, one can compute the restfreq of that channel in the LSR=0 frame (the lab frame) 
 #       - getspec divides by doppler factor to compute restfreq in the source frame (lsr=vsource) 
 
-def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=1, tmpfile="junk" ):
+def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=1, tmpfile="junk", units='Jy' ):
     '''dump out spectrum of selected region with imspec, return [chan, freqLSR, flux] arrays'''
 
   # step 1: use imlist to retrieve velocity and freq information from the header
-    restfreq,v1,dv = getVelInfo( IQUVmapList[0] )
-    print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
+    #restfreq,v1,dv = getVelInfo( IQUVmapList[0] )   # 19feb2020 not sure what this was about...
+    restfreq,v1,dv = getVelInfo( infile )  # inserted this 19feb2020 to run mosspectra
+    #print "restfreq = %.5f GHz; v1 = %.3f km/sec; dv = %.3f km/sec" % (restfreq,v1,dv)        
 
   # step 2: use imspec to dump out the spectrum for the selected region to tmpfile
     chan = []
     freq = []
     flux = []
-    p= subprocess.Popen( ( shlex.split("imspec in=%s region=%s options=list,eformat,noheader,hanning,%d log=%s" % \
-      (infile,region,hann,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    print "infile: ",infile
+    print "region: ",region
+    print "hann:   ",hann
+    print "tmpfile:",tmpfile
+    if units == "K" :
+      options = "list,eformat,noheader,hanning,%d,tb" % hann
+      plot = "mean"
+      print "units:  K"
+    else :
+      options = "list,eformat,noheader,hanning,%d" % hann
+      plot = "flux"
+      print "units:  Jy"
+    cmdstr = "imspec in=%s region=%s options=%s plot=%s log=%s" % \
+      (infile,region,options,plot,tmpfile)
+    print cmdstr
+    #p= subprocess.Popen( ( shlex.split("imspec in=%s region=%s options=list,eformat,noheader,hanning,%d log=%s" % \
+    #  (infile,region,hann,tmpfile) )), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    p= subprocess.Popen( ( shlex.split(cmdstr) ), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
     time.sleep(1)
     result = p.communicate()[0]
     print result
@@ -195,7 +215,10 @@ def getspec( infile, region='relpix,box(-2,-2,0,0)', vsource=0., hann=1, tmpfile
         chan.append( int(a[0]) )
         nchan = int( a[0] )
         vlsr = float( a[1] )
-        flux.append( float( a[2] ) )
+        if units == "K" :
+          flux.append( float( a[3] ) )      # for options=tb (units="K"),  imspec displays "Sum" in a[2], "Mean" in a[3]
+        else :
+          flux.append( float( a[2] ) )	    
 
       # just to be safe, compare vlsr from file with vlsr computed from crval3
         vlsrcalc = v1 + (nchan - 1) * dv
@@ -341,8 +364,8 @@ def processLineList( lineListFile, vsource ) :
               widthCol = n
             if "Color" in a[n] :
               colorCol = n
-          #print "nameCol = %d, freqCol = %d, TLcol = %d, QNcol = %d, intensityCol = %d, colorCol = %d, widthCol = %d" % \
-          #   (nameCol,freqCol,QNcol,TLcol,intensityCol,colorCol,widthCol)
+          print "nameCol = %d, freqCol = %d, TLcol = %d, QNcol = %d, intensityCol = %d, colorCol = %d, widthCol = %d" % \
+             (nameCol,freqCol,QNcol,TLcol,intensityCol,colorCol,widthCol)
 
       # vlsr line gives vlsr of all lines that follow, until next vlsr line
         elif "VLSR" in line : 
@@ -358,9 +381,9 @@ def processLineList( lineListFile, vsource ) :
 
         # sometimes freq shows up as calculated freq, other times as measured freq
           if len(a[freqCol]) > 0 :
-            freq.append( dopfac * float(a[freqCol].split(",")[0])/1.e9 )
+            #freq.append( dopfac * float(a[freqCol].split(",")[0])/1.e9 )  # new style Splatalogue output
+            freq.append( dopfac * float(a[freqCol]) )     # old style Splatalogue output
             print "... ", a[nameCol], dopfac, a[freqCol], freq[-1]
-            #freq.append( dopfac * float(a[freqCol]) )
           else :
             freq.append( dopfac * float(a[altFreqCol]) )
 
@@ -522,8 +545,10 @@ def ann( p, freq, flux, fmin, fmax, plotParams, vsource ) :
           #   arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )    # use arrowstyle="->" to get arrow
           #else :
           p.annotate( "%s" % (name[n]), xy=(linefreq[n],yval), \
-             xytext=(linefreq[n],0.92*plotParams["ymax"]), horizontalalignment="center", rotation="vertical", size=7, \
+             xytext=(linefreq[n],0.9*plotParams["ymax"]+0.1*plotParams["ymin"]), \
+             horizontalalignment="center", rotation="vertical", size=7, \
              arrowprops=dict( arrowstyle="-", linewidth=0.2 ) )
+               # 0.9*max + 0.1*min = 0.9*(max-min) + ymin; don't end label too close to top of box
           if shadeColor[n] :
             deltaGHz = shadeWidth[n]/(2.*2.998e5) * linefreq[n]
             fillmax = linefreq[n]+deltaGHz
@@ -819,13 +844,13 @@ def JPLintensity( freqMHz, Sba, EupperK, ElowerK, Qrs, T ) :
 
 #def pubFig( specList=[B9spw0,B9spw1,B9spw2,B9spw3], plotParams=plotParams, vsource=5. ) :
 #def pubFig( specList=[B7spw0,B7spw1,B7spw2,B7spw3], plotParams=plotParams, vsource=5. ) :
-#def pubFig( specList=[BN7spw0,BN7spw1,BN7spw2,BN7spw3], plotParams=plotParams, vsource=9. ) :
 #def pubFig( specList=[BN7spw0,BN7spw1], plotParams=plotParams, vsource=9. ) :
 #def pubFig( specList=[B8spw0,B8spw1,B8spw2,B8spw3], plotParams=plotParams, vsource=5. ) :
 #def pubFig( specList=[B6spw0,B6spw1,B6spw2,B6spw3], plotParams=plotParams, vsource=5. ) :
 #def pubFig( specList=[B7Bspw0,B7Bspw1,B7Bspw2,B7Bspw3], plotParams=plotParams, vsource=5. ) :
 
 def pubFig( specList, plotParams, vsource=5. ) :
+#def pubFig( specList=[BN7spw0,BN7spw1,BN7spw2,BN7spw3], plotParams=plotParams, vsource=9. ) :
     pyplot.ioff()
     pp = PdfPages("spectrum.pdf")
     ymin = plotParams["ymin"]
@@ -856,7 +881,7 @@ def pubFig( specList, plotParams, vsource=5. ) :
       p3 = p.twiny()   
       p3.axis( [chmin, chmax, ymin, ymax] )
       #p3.xaxis.set_minor_locator( x_locator )
-      p3.tick_params( axis='x', which='major', labelsize=8 )
+      p3.tick_params( axis='x', which='major', labelsize=6 )
 
       x_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
       p.xaxis.set_major_formatter( x_formatter )
@@ -1623,12 +1648,16 @@ def plotRecomb( infile='snip_recomb', nrows=2, ncols=1, vmin=-45., vmax=55. ) :
 
 # ========================== plot position velocity diagram ========================== #
 
-def extractParameter( instring, param ) :
+# paramTyp = Float,String
+def extractParameter( instring, param, paramType="Float" ) :
     '''extract parameter "param" from imlist output, passed to this routine as instring'''
     n = instring.find( param )
     if n > 0 :
       a = instring[n:].split()
-      return float( a[2] )
+      if paramType == "String" :
+        return a[2]
+      else :
+        return float( a[2] )
     else :
       return None
   
@@ -1673,20 +1702,41 @@ def readpv( imageFile, vmin=-1.e8, vmax=1.e8, pmin=-1.e8, pmax=1.e8 ) :
     fin.close()
     return [ numpy.array(vel), numpy.array(pos), numpy.array(flx) ]
 
-# pv plot
-def plotpv( imageFile, pmin=-1.1, pmax=1.5 ) :
+# pv plot - used in Plambeck and Wright 2016
+def plotpv( imageFile, pmin=-1.1, pmax=1.5, zmin=-.02, zmax=0.1 ) :
     fig = pyplot.figure()
     ax1 = fig.add_axes( [.1,.1,.7,.7])      # main plot
     ax2 = fig.add_axes([.85,.1,.015,.7])    # color wedge
     ax2.tick_params( labelsize=10 )
     ax1.tick_params( labelsize=10 )
-    [vel, pos, flx] = readpv( imageFile, pmin=pmin, pmax=pmax )
+    # [vel, pos, flx] = readpv( imageFile, pmin=pmin, pmax=pmax )
+    [vel, pos, flx] = readpv( imageFile )
     ax1.axis( [vel[0], vel[-1], pos[0], pos[-1]] )
     nv = len( numpy.unique( vel ) )
     np = len( numpy.unique( pos ) )
     print "nv = %d, np = %d" % (nv,np)
-    imgplot = ax1.imshow(numpy.reshape(flx, (np,nv) ), origin='lower', aspect='auto', \
-        extent=[vel[0],vel[-1],pos[-1],pos[0]], vmin=-.02, vmax=.1 )
+    imgplot = ax1.imshow( numpy.reshape(flx, (nv,np) ), origin='lower', aspect='auto', \
+        extent=[vel[0],vel[-1],pos[-1],pos[0]], vmin=zmin, vmax=zmax )
+    ax1.grid( True, linewidth=1, color="white")   # color=0.1 is a light gray
+    pyplot.colorbar( imgplot, cax=ax2  )
+    pyplot.show()
+
+# set up for BN - make offset the horizontal axis, velocity vertical
+#  (note: need to transpose flx matrix to make this work)
+# zmin and zmax are min and max amplitude to be plotted
+def plotpv2( imageFile, pmin=-1.1, pmax=1.5, zmin=-.02, zmax=0.1  ) :
+    fig = pyplot.figure()
+    ax1 = fig.add_axes( [.1,.1,.7,.7])      # main plot
+    ax2 = fig.add_axes([.85,.1,.015,.7])    # color wedge
+    ax2.tick_params( labelsize=10 )
+    ax1.tick_params( labelsize=10 )
+    [vel, pos, flx] = readpv( imageFile )
+    ax1.axis( [pos[0], pos[-1], vel[0], vel[-1]] )
+    nv = len( numpy.unique( vel ) )
+    np = len( numpy.unique( pos ) )
+    print "nv = %d, np = %d" % (nv,np)
+    imgplot = ax1.imshow( numpy.transpose( numpy.reshape(flx, (nv,np) ) ), origin='lower', aspect='auto', \
+        extent=[pos[-1],pos[0],vel[-1],vel[0]], vmin=zmin, vmax=zmax)
     ax1.grid( True, linewidth=1, color="white")   # color=0.1 is a light gray
     pyplot.colorbar( imgplot, cax=ax2  )
     pyplot.show()
@@ -2549,7 +2599,9 @@ def archivePlot( infile, frqBand, radec=["05:35:14.109","-05:22:22.73"], frqMark
 #              { "name":"SrcIdisk", "region":"arcsec,polygon(.14,-.2,-.03,.02,.01,.07,.22,-.14)",  "vlsr":5.}   use for highres
 
 # added 9 nov 2017; trying to find region with simpler spectrum for Suchi to fit
-clumpList = [ { "name": "SW",   "region" : "arcsec,box(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. } ] 
+#clumpList = [ { "name": "SW",   "region" : "arcsec,box(-5.71,-6.93,-6.71,-5.93)", "vlsr" : 10. } ] 
+# added 19 feb 2020 trying to fit box more accurately to the dust clump
+clumpList = [ { "name": "SW2",   "region" : "arcsec,polygon(-5.1,-6.6,-5.9,-5.4,-7.9,-6.4,-7.2,-7.6)", "vlsr" : 11. } ] 
 
 # use imlist options=stat to get statistics of region; return [plane, max, min, rms] arrays
 def dumpstats( infile, region, tmpfile="junk" ) :
@@ -2578,35 +2630,38 @@ def dumpstats( infile, region, tmpfile="junk" ) :
     return plane, smax, smin, srms
     fin.close()
 
-# mosspectra is designed to write out spectra for Suchi's project
-def mosspectra( ) :
+# makeSWspectra uses (revised) mosspectra to write out spectra for Suchi's project
+# originally all this was encoded inside mosspectra; needs to be tested!
+def makeSWspectra() :
     noisebox = 'arcsec,box(10)'
     for clump in clumpList:
-      for spw in ["spw0", "spw1", "spw2", "spw3"] :
+      #for spw in ["spw0", "spw1", "spw2", "spw3"] :
+      for spw in ["spw0"] :  
         infile = "/alma_scr/plambeck/220GHz_mosaic/miriad/mos.%s.cm" % spw
-        hann = 1
-        # outfile = "/o/plambeck/OriALMA/220Spectra/%s.%s.txt2" % (clump["name"],spw)
         outfile = "/alma_scr/plambeck/XCLASS/%s.%s.dat" % (clump["name"],spw)
-        print infile
-        [chan, freq, flux ] = getspec( infile, region=clump["region"], \
-           vsource=clump["vlsr"], hann=hann )
-        [plane, smax, smin, srms ] = dumpstats( infile, region=noisebox )
-        print "spectra contains %d chans; stats contains %d planes" % (len(chan),len(plane))
-        if len(plane) != len(chan) :
-          print "FATAL ERROR"
-          return
-        fout = open( outfile, "w" )
-        fout.write("# spectrum created with ori3.mosspectra\n")
-        fout.write("# infile: %s\n" % infile)
-        fout.write("# region: %s\n" % clump["region"] )
-        fout.write("# vsource: %.2f\n" % clump["vlsr"] )
-        fout.write("# hann: %d\n" % hann)
-        fout.write("# noisebox: %s\n" % noisebox )
-        fout.write("#  freq_MHz       flux     map_max     map_min    map_rms   plane\n")
-        for [chn,frq,flx] in zip( chan, freq, flux ) :
-          n = int(chn)-1 
-          fout.write("%13.5f  %9.7f  %9.7f  %9.7f  %9.7f  %5d\n" % (1000.*frq,flx,smax[n],smin[n],srms[n],chn))
-        fout.close() 
+        mosspectra( infile, outfile, clump["region"], clump["vlsr"], noisebox )
+
+# mosspectra is designed to write out spectra for Suchi's project
+def mosspectra( infile, outfile, region, vlsr, hann=1, noisebox='arcsec,box(10)', units="Jy" ) :
+    [chan, freq, flux ] = getspec( infile, region=region, vsource=vlsr, hann=hann, units=units )
+    [plane, smax, smin, srms ] = dumpstats( infile, region=noisebox )
+    print "spectra have %d chans; stats have %d planes" % (len(chan),len(plane))
+    if len(plane) != len(chan) :
+      print "FATAL ERROR"
+      return
+    fout = open( outfile, "w" )
+    fout.write("# spectrum created with ori3.mosspectra\n")
+    fout.write("# infile: %s\n" % infile)
+    fout.write("# region: %s\n" % region )
+    fout.write("# vsource: %.2f\n" % vlsr )
+    fout.write("# hann: %d\n" % hann)
+    fout.write("# noisebox: %s\n" % noisebox )
+    fout.write("# units: %s\n" % units )
+    fout.write("#  freq_MHz       flux     map_max     map_min    map_rms   plane\n")
+    for [chn,frq,flx] in zip( chan, freq, flux ) :
+      n = int(chn)-1 
+      fout.write("%13.5f  %9.7f  %9.7f  %9.7f  %9.7f  %5d\n" % (1000.*frq,flx,smax[n],smin[n],srms[n],chn))
+    fout.close() 
 
 # short routine to read absolute positions from olay file, generate regions
 def clumpBoxes( infile="xx.olay", box=1. ) :
@@ -3567,3 +3622,12 @@ def fig6( IQUVmapList, offset, Vrange, contourList, lim, boxList, title, outfile
     pp.close()
     pyplot.show()
 
+def suchi( spw, name, freq ):
+    p= subprocess.Popen( ( shlex.split("suchi.csh %s %s %12.8f" % (spw,name,freq))), stdout=subprocess.PIPE,stdin=subprocess.PIPE,stderr=subprocess.STDOUT)
+    time.sleep(1)
+    result = p.communicate()[0]
+
+# compute (mu^2)S in Debye^2 from Einstein A using eqn A3 in Cummins et al 1986
+def mu2S( Aup, gup, fGHz ):
+    mu2S = gup * Aup * 3. * hplanck * pow(ccgs,3) / (64.* pow(math.pi,4) * pow(fGHz*1.e9,3))
+    print mu2S/pow(1.e-18,2) 
