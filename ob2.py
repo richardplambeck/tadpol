@@ -215,8 +215,8 @@ def expandTree( tcmRange, tcmListIn, nrListIn, tanDListIn ) :
       if b[n+nlayers][0] < 0. :
         m = int( abs(b[n+nlayers][0]) + 0.5 )    # e.g., -1 -> 1
         try :
-          b[n+nlayers] = b[m+nlayers-1]
           print "mirrored refractive indices for layer %d into layer %d" % (m,n+1)
+          b[n+nlayers] = b[m+nlayers-1]
         except :
           print "mirroring failed; tried to copy row %d into row %d" % (m+nlayers-1,n+nlayers)
           return
@@ -1626,7 +1626,8 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
         ax.plot( [fGHz[0],fGHz[-1]],[dphiavg,dphiavg],"r--" )
         ax.set_ylabel("residual (deg)", fontsize=10)
         ax.set_xlabel("freq (GHz)", fontsize=10)
-        ax.set_ylim( [-9.,9.] )
+        #ax.set_ylim( [-9.,9.] )
+        ax.set_ylim( [-3.,3.] )
         pyplot.grid(True)
 
     # top right panel is transmission vs freq, measured and theoretical
@@ -1666,7 +1667,8 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
       ax.plot( fGHz, dtrans, "o-", ms=1. )
       ax.set_xlabel("freq (GHz)", fontsize=10)
       ax.set_ylabel("residual", fontsize=10)
-      ax.set_ylim( [-.09,.09] )
+      #ax.set_ylim( [-.09,.09] )
+      ax.set_ylim( [-.03,.03] )
       pyplot.grid(True)
 
     # (fictitious) bottom panel lists search ranges, limits, best values
@@ -1740,6 +1742,7 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
         ax.text( 0.715, ylab, "%.3f" % pow(nrmax,2), horizontalalignment='center', color=highColor, style=highStyle) 
 
         tanDmin,tanDmax = tLimits( savetanD, nl )
+        print "tanDmin, tanDmax = ",tanDmin,tanDmax
         lowColor = 'gray'
         lowStyle = 'oblique'
         highColor = 'gray'
@@ -1747,7 +1750,7 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
         if tanDeltaListIn[ntest][0] < tanDmin :
           lowColor = 'black'               # search range extends below lower limit
           lowStyle = 'normal'
-        if tanDeltaListIn[ntest][-1] > tmax :
+        if tanDeltaListIn[ntest][-1] > tanDmax :
           highColor = 'black'              # search range extends above upper limit
           highStyle = 'normal'
         ax.text( 0.80, ylab, "%.4f" % tanDmin, horizontalalignment='center', color=lowColor, style=lowStyle ) 
@@ -1831,7 +1834,7 @@ def tabulateResults( pickleFile, outFile="summary.csv" ) :
 # vary thickness of each layer over a range, predict transmission curve
 # fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
 # fuzzy1 does (weighted) vector average of ALL allowed thicknesses to get final transmission amp and phase;
-def fuzzy1( fitFile, fGHz=numpy.arange(76.,115.,.01), angIdeg=5.16 ) :
+def fuzzy1( fitFile, fGHz=numpy.arange(70.,115.,.01), angIdeg=5.16 ) :
     fitParams = readFitFile( fitFile )
     tcmList,nrList,tanDeltaList = expandTree( fitParams["tcmRange"], fitParams["tcmList"], fitParams["nrList"], fitParams["tanDeltaList"] )
     ntrials = len(tcmList)
@@ -1854,6 +1857,7 @@ def fuzzy1( fitFile, fGHz=numpy.arange(76.,115.,.01), angIdeg=5.16 ) :
     for line in fin:
       fout.write("# %s" % line)
     fout.write("# ---------------------------------------------------- \n")
+    fout.write("# angIdeg = %.2f\n" % angIdeg)
     fout.write("# averaged results of %d trials\n" % ntrials)
     fout.write("# average power transmission = %.3f\n#\n" % (numpy.average(pwr)) )
 
