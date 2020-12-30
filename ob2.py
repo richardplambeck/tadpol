@@ -262,9 +262,10 @@ def printBest( merit, tcmList, nrList, tanDeltaList, ndump=10 ) :
       ndump = ntrials
     merit2 = numpy.abs(merit)
     nbest = merit2.argsort()[:ndump]    # finds indexes of ndump smallest values
-    print nbest
-    for nb in nbest:
-      print tcmList[nb]/2.54, nrList[nb], tanDeltaList[nb], merit[nb]
+    if ndump > 1 :
+      print nbest
+      for nb in nbest:
+        print tcmList[nb]/2.54, nrList[nb], tanDeltaList[nb], merit[nb]
     return nbest[0]
 
 # returns min and max in save array
@@ -1238,6 +1239,7 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
 
   # for prefit, model even-numbered data sets only, calculate reduced chisq for every possible trial
     secs0 = time.time()       
+    kdump = 4
     print "\nbeginning prefit"
     print "modeling %d layers, %d trials" % (nlayers, ntrials)
     for i in range(0,ntrials) :
@@ -1250,6 +1252,17 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
           vecmodel = amp*amp
         else :
           vecmodel = amp * numpy.exp(1j*numpy.radians(phs))
+
+      # ---- DEBUG ----
+      #  print "-----------"
+      #  print "  vecmeas[%d]  = " % kdump, vecmeas[j][kdump], abs(vecmeas[j][kdump]), numpy.angle(vecmeas[j][kdump], deg=True)
+      #  print "  vecmodel[%d] = " % kdump, vecmodel[kdump], abs(vecmodel[kdump]), numpy.angle(vecmodel[kdump], deg=True)
+      #  print "  difference = ",  vecmeas[j][kdump]-vecmodel[kdump]
+      #  print "  unc = ",unc[j][kdump]
+      #  tmp = (vecmeas[j][kdump]-vecmodel[kdump])/unc[j][kdump]
+      #  print "  contrib = ", tmp * numpy.conj(tmp)
+      # ---- DEBUG ----
+
         errs.append( (vecmeas[j]-vecmodel)/unc[j] )
       allerrs = numpy.concatenate(errs)   # errors from all datasets
       chisq[0,i] = numpy.real(numpy.sum( allerrs * numpy.conj(allerrs) ))/len(allerrs)
@@ -1344,9 +1357,13 @@ def nrefracFit( fitFile, pCutoff=5., pdfOnly=False, Iterate=False, path="/o/plam
       # note: angIdeg was used in fit, but it is stored in each data file
     fout.close() 
 
+  # print 1-line summary that may be copied to Google sheets
+    printSummary( pickleFile )
+
   # plot the fit
     time.sleep(1)
     plotFit2( pickleFile, pdfOnly=pdfOnly, path=path )
+
 
 def plotFit( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/OpticsBench/" ) :
 
@@ -1568,8 +1585,8 @@ def plotFit2( pickleFile, FTS=False, pdfOnly=False, path="/o/plambeck/PolarBear/
     fin.close() 
     nlayers = len( tcmList[0] )
 
-    print "\n10 best fits minimizing overall residuals:"
-    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList ) 
+    print "\nbest fit minimizing overall residual:"
+    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList, ndump=1 ) 
 
   # create savet,saven,savetanD lists, containing all configurations with chisq< 2.* minchisq
     savet = []
@@ -1830,6 +1847,33 @@ def tabulateResults( pickleFile, outFile="summary.csv" ) :
           tanDfit[nl,1], tanDfit[nl,2], fitParams["tanDeltaList"][nl][-1]) )
     fout.write("\n")
     fout.close()
+
+# print summary of fit results in csv format
+# copy this to clipboard, then paste into Google sheets
+#
+def printSummary( pickleFile ) :
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+    try :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
+    except :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      dateString = " "
+    fin.close() 
+
+    nlayers = len( tcmList[0] )
+    nbest = printBest( chisq[-1], tcmList, nrList, tanDeltaList, ndump=1 ) 
+    summStr = "pkl.%s" % (pickleFile[ pickleFile.find("pickle.")+7 :] )
+    summStr += ", %.3f" %  chisq[-1][nbest]
+    for nl in range(0,nlayers) :
+      summStr += ",   %.4f" % (tcmList[nbest][nl]/2.54)
+      summStr += ", %.3f" % (nrList[nbest][nl])
+      summStr += ", %.4f"  % (tanDeltaList[nbest][nl])
+    summStr += "\n"
+    print summStr
 
 # vary thickness of each layer over a range, predict transmission curve
 # fitFile contains total thickness range of each layer; nr and tanDelta should be single-valued
