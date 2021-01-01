@@ -1848,6 +1848,65 @@ def tabulateResults( pickleFile, outFile="summary.csv" ) :
     fout.write("\n")
     fout.close()
 
+# highly specialized subroutine to write key fit data from pickle files to a text file for
+#   further plotting/analysis; based on code from tabulateResults
+# designed specifically for witness samples with a single test layer on alumina; writes out
+#   [lower search limit, lower 1 sigma limit, best fit, upper 1 sigma value, upper search limit]
+#   for dielectric constant (not refractive index), and for thickness DIFFERENCES from nominal
+#   for the AR layer and the alumina puck
+# shortLabel = descriptive label (e.g., "OM batch 1, 48% HA1744") 
+# nomThickness0 = coating thickness inferred from micrometer measurements, inches (e.g., .01945)
+# nomThickness1 = puck thickness from micrometer measurements, inches (e.g., .24965)
+#
+def tabulateWitness( pickleFile, shortLabel, nomThickness0, nomThickness1, outFile="OM.tab" ) :
+
+  # read fit results from pickleFile
+    print "loading fit results from file %s" % pickleFile
+    try :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq,dateString] = pickle.load( fin )
+    except :
+      fin = open( pickleFile, "rb" )
+      [fitParams,tcmList,nrList,tanDeltaList,chisq] = pickle.load( fin )
+      dateString = " "
+    fin.close() 
+    nlayers = len( tcmList[0] )
+ 
+  # print fit results, uncertainties, and chisq for each dataset individually 
+    fout = open( outFile, "a" )
+    fout.write("\n# pickleFile, shortLabel, dataset, bestChiSq, [eps], [deltaT0 mils], [deltaT1 mils]\n")
+    for j in range(1,len(chisq)):
+
+    # for fits to a single data set, don't write out joint fit results, as they are the same as individual fit
+      if (len(chisq) == 3) and (j == 2) :
+        break
+
+      dataset = "joint fit"
+      if j < len(chisq)-1 :
+        dataset = fitParams["datafileList"][j-1].strip(".avg.dat")
+
+      bestChisq,tcmFit,nrFit,tanDfit = summarize( chisq[j], tcmList, nrList, tanDeltaList )
+      fout.write("%15s, %15s, %17s,  %7.3f," % (pickleFile, shortLabel, dataset, bestChisq ) )
+
+      nl = 0
+      epsSearchMin = pow( fitParams["nrList"][nl][0], 2) 
+      epsSearchMax = pow( fitParams["nrList"][nl][-1], 2) 
+      fout.write("    %5.3f,%5.3f,%5.3f,%5.3f,%5.3f," % (epsSearchMin, pow(nrFit[nl,0],2), pow(nrFit[nl,1],2), \
+         pow(nrFit[nl,2],2), epsSearchMax) ) 
+      thicknessArray = [ fitParams["tcmList"][nl][0]/2.54, tcmFit[nl,0]/2.54, tcmFit[nl,1]/2.54, \
+         tcmFit[nl,2]/2.54, fitParams["tcmList"][nl][-1]/2.54 ] 
+      dT = 1000.* (numpy.array(thicknessArray) - nomThickness0)    # convert to mils
+      fout.write("    %5.2f,%5.2f,%5.2f,%5.2f,%5.2f,"  % (dT[0],dT[1],dT[2],dT[3],dT[4]) )
+
+      nl = 1
+      thicknessArray = [ fitParams["tcmList"][nl][0]/2.54, tcmFit[nl,0]/2.54, tcmFit[nl,1]/2.54, \
+         tcmFit[nl,2]/2.54, fitParams["tcmList"][nl][-1]/2.54 ] 
+      dT = 1000.* (numpy.array(thicknessArray) - nomThickness1)
+      fout.write("    %5.2f,%5.2f,%5.2f,%5.2f,%5.2f,"  % (dT[0],dT[1],dT[2],dT[3],dT[4]) )
+
+    fout.write("\n")
+    fout.close()
+
 # print summary of fit results in csv format
 # copy this to clipboard, then paste into Google sheets
 #
